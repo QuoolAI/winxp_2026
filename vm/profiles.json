@@ -1,0 +1,20 @@
+{
+  "x86": {
+    "executable": "qemu-system-i386",
+    "machine": "pc-i440fx-8.2",
+    "cpu": "pentium3",
+    "memory_mib": 512,
+    "cpus": 1,
+    "vga": "cirrus",
+    "status": "baseline candidate; XP boot unverified"
+  },
+  "amd64": {
+    "executable": "qemu-system-x86_64",
+    "machine": "pc-i440fx-8.2",
+    "cpu": "qemu64",
+    "memory_mib": 1024,
+    "cpus": 1,
+    "vga": "cirrus",
+    "status": "harness only; no NT 5.2 source baseline supplied"
+  }
+}

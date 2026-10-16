@@ -1,0 +1,4 @@
+# Private source inventories, build output, logs and guest disks.
+/.work/
+__pycache__/
+*.pyc

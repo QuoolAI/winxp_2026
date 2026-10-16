@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/shorthorn-project/One-Core-API-Source.git",
+  "commit": "9eb3c31de9460c1ccce3f6a10c9c4a704f032514",
+  "spec2def_sha256": "0fede9f57ff5907b5b1c6b26ecb827f89fe316f3c42a2bd53693d24306f4f2a6",
+  "scope": "Isolated API-set forwarder experiments; no XP source overlay or installation"
+}
