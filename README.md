@@ -20,8 +20,12 @@ I do not own this source code, I just found a leak repository and forked my GitH
 
 See [the baseline checkpoint and runbook](docs/build-vm-baseline.md) for the
 source inventory, native build prerequisites, QEMU commands, and verified limits.
-The current results establish a working diagnostic harness, not a Windows build
-or successful Windows boot. Source files remain unchanged.
+The [supplied XP SP3 guest](docs/xp-sp3-guest.md) now boots locally in KVM and
+passes six native regression observations. Login and ACPI shutdown were also
+observed. [Four checked source kernels now link](docs/native-kernel-build.md);
+matching NTFS and checked HAL builds also succeeded. The KVM source boot
+currently stops at the checked HAL APIC readback assertion before login.
+Source files remain unchanged; guest disks and evidence stay private under `.work/`.
 
 [One-Core-API analysis and reuse](docs/onecore-analysis.md) documents a pinned
 upstream experiment that builds API-set forwarding DLLs on Linux for x86 and

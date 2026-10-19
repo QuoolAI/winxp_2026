@@ -27,6 +27,12 @@ Explorer, and queries active driver services. It creates no external network
 connection, installs no service, and requests no shutdown. Run as the same user
 as the desktop; permissions can legitimately cause failures.
 
+Driver enumeration consumes 4 KiB pages and follows the service resume handle.
+It accepts valid partial results accompanying `ERROR_MORE_DATA`, rejects stalled
+continuation, and stops after at most 256 pages. A `driver_services` record gives
+the number of running services observed and pages consumed. This fixed the
+original one-allocation failure on the supplied XP SP3 guest.
+
 Exit 0 means its six implemented observations passed; it does not mean the full
 regression suite passed. Exit 1 indicates a failed observation, and exit 3 means
 no output destination accepted at least one record. Each JSONL case has its own
@@ -35,7 +41,10 @@ shutdown are explicitly `not_tested`, even when the process exits 0. Loopback
 does not test NIC drivers, DNS, TLS or Internet access. Driver enumeration does
 not prove correct initialization of any particular physical device.
 
-No guest execution has been performed: there is no supplied bootable custom XP
-image. The first runtime milestone is to collect these records with image hashes
-and screenshots, then add explicit login/shutdown observations and application
-fixtures. Do not reinterpret firmware-only QEMU results as guest passes.
+The corrected probe was executed on the [supplied XP SP3 guest](../../docs/xp-sp3-guest.md)
+under Administrator and XP25, and after rebooting its build overlay. All six
+observations passed; driver enumeration returned 70 running services across two
+pages. The original failure, serial records, executable hash and installed-disk
+hash are retained. Manual login and shutdown observations are separate from the
+probe's four `not_tested` cases. No bootable custom XP image or game baseline has
+been established.

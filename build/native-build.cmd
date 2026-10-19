@@ -37,7 +37,8 @@ set "XP_RAZZLE=offline no_urt no_title"
 if /i "%XP_ARCH%"=="amd64" set "XP_RAZZLE=%XP_RAZZLE% Win64 Amd64"
 if /i "%XP_FLAVOR%"=="free" set "XP_RAZZLE=%XP_RAZZLE% free"
 mkdir "%XP_OUTPUT%\temp"
-call "%XP_SOURCE%\tools\razzle.cmd" %XP_RAZZLE% temp "%XP_OUTPUT%\temp" binaries_dir "%XP_OUTPUT%\binaries" > "%XP_OUTPUT%\native.log" 2>&1
+rem Razzle retains argument quotes in TEMP and BinariesDir. Spaces were rejected above.
+call "%XP_SOURCE%\tools\razzle.cmd" %XP_RAZZLE% temp %XP_OUTPUT%\temp binaries_dir %XP_OUTPUT%\binaries > "%XP_OUTPUT%\native.log" 2>&1
 if not defined NTMAKEENV exit /b 2
 if not defined _NTTREE exit /b 2
 set "XP_TARGET=%XP_SOURCE%"
@@ -47,6 +48,10 @@ pushd "%XP_TARGET%"
 if errorlevel 1 exit /b 2
 "%XP_SOURCE%\tools\x86\build.exe" -Z >> "%XP_OUTPUT%\native.log" 2>&1
 set "XP_RESULT=%ERRORLEVEL%"
+rem This legacy build.exe can return zero after child NMAKE failures.
+findstr /l /c:"BUILD: nmake.exe failed" "%XP_OUTPUT%\native.log" >nul
+if not errorlevel 1 set "XP_RESULT=1"
+for %%F in (build*.err) do if exist "%%F" if %%~zF GTR 0 set "XP_RESULT=1"
 for %%F in (build*.log build*.err build*.wrn) do if exist "%%F" copy /y "%%F" "%XP_OUTPUT%\" >nul
 popd
 echo Native build command exit code: %XP_RESULT%

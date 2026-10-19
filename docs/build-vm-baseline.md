@@ -2,6 +2,11 @@
 
 Checkpoint: 2026-10-15 (America/Los_Angeles; artifacts use UTC on 2026-10-16).
 
+This page retains the original host-only checkpoint. The later
+[2026-10-18–19 supplied XP SP3 guest record](xp-sp3-guest.md) establishes a local
+Windows runtime, probe results and shutdown evidence. It supersedes this page's
+historical statements that no XP media or Windows guest was available.
+
 The source inventory and offline QEMU diagnostic harness work. Native compilation
 and Windows boot have not been achieved. No files under `Source/` were changed.
 
@@ -135,12 +140,13 @@ python C:\xpbaseline\build\attempt.py --source C:\ntcopy --arch x86 --flavor che
 ```
 
 The wrapper initializes the supplied Razzle environment in offline mode, targets
-`base\ntos` for kernel scope, and records native build logs. It has not been
-executed on Windows, so its Windows behavior is still unverified. A zero command
+`base\ntos` for kernel scope, and records native build logs. It has now been
+exercised in the [supplied guest](native-kernel-build.md): its path quoting and
+child-failure detection were corrected, and four x86 kernels linked. A zero command
 exit code is not evidence of a linked kernel or bootable OS: inspect build errors,
 output PE files and their dependencies before progressing to boot experiments.
 
-Further native compilation needs a prepared Windows build guest or suitable
-installation media. A complete OS rebuild also needs a concrete plan for the
+The prepared 32-bit guest now supplies the native command/compiler environment.
+A complete OS rebuild still needs a concrete plan for the
 absent components; the current harness does not reconstruct them or supply
 replacement binaries.

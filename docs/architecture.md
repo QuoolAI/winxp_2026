@@ -65,8 +65,9 @@ remain material obstacles to a complete original-system rebuild.
 
 The inventory found a preexisting `ntldr`, but no kernel, HAL, Winlogon or cmd
 binary under the scanned exact names. The sole source disk-image candidate is
-an EFI SDK utility image, not a validated XP OS image. No installation ISO or
-installed XP guest has been supplied. Proprietary component completeness and
+an EFI SDK utility image, not a validated XP OS image. A subsequently supplied
+SP3 ISO has now been installed in a [private KVM guest](xp-sp3-guest.md), separate
+from the source inventory. Proprietary component completeness and
 redistribution authorization have not been established; artifacts stay local.
 
 ## Reconstructed build path
@@ -77,27 +78,33 @@ internal network/depot dependencies. `ntenv.cmd` supplies `NTMAKEENV`, build
 defaults and NMAKE settings; `tools/makefile.def` drives component `sources`
 and `dirs` files.
 
-The existing wrapper invokes the original `tools/x86/build.exe -Z` after Razzle
+The wrapper invokes the original `tools/x86/build.exe -Z` after Razzle
 initialization. `kernel` scope selects `base/ntos`; `base` scope also reaches
 HAL, boot and other base components. Kernel linking is described by
 `base/ntos/init/up/sources.cmn`: it combines executive libraries with HAL imports,
 bootvid, kdcom, sdbapint, lsakrnlp and libcntpr. Presence of these declarations
-and libraries does not prove that they match or link successfully.
+and libraries did not establish a successful link at the original checkpoint.
+The supplied SP3 guest has since linked and statically inspected four checked
+x86 kernel variants, plus boot-video/debugger dependencies. Matching original
+NTFS and checked ACPI APIC HAL targets have also built. [Native execution record](native-kernel-build.md)
 
 Available tools include x86 `build`, NMAKE, CL, LINK, LIB, ML, RC, MC, MIDL,
 BINPLACE, compiler backends, PDB support and Perl, plus x86-hosted AMD64 CL,
 LINK and ML64. Embedded CL version metadata reads 13.00.9176 for the x86 driver
-and 13.00.9269.1 for the AMD64 driver. These are inspected resources, not executed
-compiler-version output. CL imports MSVCR70, USER32 and KERNEL32; MSVCR70 is
+and 13.00.9269.1 for the AMD64 driver. The x86 compiler has since executed in the
+SP3 guest, reported 13.00.9176, and compiled a 465-byte smoke-test object. The
+AMD64 version remains a resource inspection only. CL imports MSVCR70, USER32 and KERNEL32; MSVCR70 is
 present alongside the tools, but Windows host services are still required.
 
 The current host is Ubuntu 24.04 x86-64 with Python 3, native GCC, QEMU 8.2.2,
-SeaBIOS and privately extracted MinGW tools. It has no `cmd.exe`, Wine,
-PowerShell or native Windows build guest. PowerShell is not a prerequisite for
+SeaBIOS and privately extracted MinGW tools. The Linux host has no `cmd.exe`, Wine
+or PowerShell; the separate supplied XP SP3 guest now provides a native Windows
+command/compiler environment. PowerShell is not a prerequisite for
 the legacy Razzle path. The wrapper conservatively requires a 32-bit Windows
 host: the original Razzle script warns that full-tree 16-bit tools cannot run
 on Win64. A clean CMD environment and short paths are required by the original
-unquoted batch scripts. The Windows path remains unverified on this host.
+unquoted batch scripts. See the guest record for actual native build results;
+compiler execution alone does not establish a kernel link.
 
 `build/stage.py` creates a disposable copy and compares complete hashed manifests.
 `build/attempt.py` protects the reference and records launch failures.
@@ -119,9 +126,14 @@ patch is ready for deployment before a native boot baseline. Keep original
 timing, DirectX/DirectDraw behavior, installers, input, audio and graphics paths
 available for XP games; validate changes against recorded game workloads.
 
-QEMU BIOS/i440fx/IDE/Cirrus profiles are diagnostic starting points. Firmware
-execution is verified; an XP boot is not. `/dev/kvm` and `/dev/vfio/vfio` exist
-on this host, but no acceleration or GPU-passthrough experiment has been run.
+The BIOS/i440fx/IDE/Cirrus profiles remain diagnostic starting points. A separate
+KVM/qemu32/i440fx/IDE/standard-VGA configuration now boots the supplied XP SP3
+guest and passes recorded runtime checks. Cirrus failed its first desktop
+resolution transition. Source-kernel experiments recorded incompatible SP3
+NTFS imports, then a checked/free HAL mismatch, then a checked HAL APIC
+priority readback assertion under KVM. Matching original NTFS and HAL builds
+resolve the first two dependencies; completed source-kernel login remains
+unverified. No GPU-passthrough experiment was run.
 Host device nodes do not establish an XP display driver, GPU reset behavior,
 IOMMU isolation or legacy-game compatibility. Do not unbind a host GPU as part
 of baseline automation.

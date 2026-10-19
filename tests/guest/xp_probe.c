@@ -167,24 +167,33 @@ static void driver_probe(void)
 {
     SC_HANDLE manager = OpenSCManagerA(NULL, NULL, SC_MANAGER_ENUMERATE_SERVICE);
     ENUM_SERVICE_STATUSA *entries;
-    DWORD bytes = 0, count = 0, resume = 0, error, i;
-    BOOL found = FALSE;
+    const DWORD capacity = 4096;
+    DWORD bytes, count, resume = 0, error = ERROR_MORE_DATA, i, previous;
+    DWORD pages = 0, active = 0;
+    char line[128];
     if (!manager) { report("driver_enumeration", FALSE, GetLastError()); return; }
-    if (EnumServicesStatusA(manager, SERVICE_DRIVER, SERVICE_ACTIVE, NULL, 0, &bytes, &count, &resume)) {
-        CloseServiceHandle(manager); report("driver_enumeration", FALSE, ERROR_NOT_FOUND); return;
-    }
-    error = GetLastError();
-    if (error != ERROR_MORE_DATA || !bytes || bytes > 16 * 1024 * 1024) {
-        CloseServiceHandle(manager); report("driver_enumeration", FALSE, error); return;
-    }
-    entries = HeapAlloc(GetProcessHeap(), 0, bytes);
+    entries = HeapAlloc(GetProcessHeap(), 0, capacity);
     if (!entries) { CloseServiceHandle(manager); report("driver_enumeration", FALSE, ERROR_NOT_ENOUGH_MEMORY); return; }
-    resume = 0;
-    if (EnumServicesStatusA(manager, SERVICE_DRIVER, SERVICE_ACTIVE, entries, bytes, &bytes, &count, &resume)) {
+    /* ERROR_MORE_DATA may include valid entries. Consume each page and resume;
+     * a sizing query followed by one exact allocation is not sufficient on XP.
+     * Bound both memory and continuation, including a non-progressing server.
+     */
+    while (pages < 256) {
+        BOOL complete;
+        previous = resume; bytes = 0; count = 0;
+        complete = EnumServicesStatusA(manager, SERVICE_DRIVER, SERVICE_ACTIVE,
+                                       entries, capacity, &bytes, &count, &resume);
+        error = complete ? ERROR_SUCCESS : GetLastError();
+        ++pages;
+        if (error != ERROR_SUCCESS && error != ERROR_MORE_DATA) break;
         for (i = 0; i < count; ++i)
-            if (entries[i].ServiceStatus.dwCurrentState == SERVICE_RUNNING) found = TRUE;
-        error = found ? ERROR_SUCCESS : ERROR_NOT_FOUND;
-    } else error = GetLastError();
+            if (entries[i].ServiceStatus.dwCurrentState == SERVICE_RUNNING) ++active;
+        if (complete) break;
+        if (!count || resume == previous) { error = ERROR_INVALID_DATA; break; }
+    }
+    if (error == ERROR_SUCCESS && !active) error = ERROR_NOT_FOUND;
+    wsprintfA(line, "{\"event\":\"driver_services\",\"active\":%lu,\"pages\":%lu}\r\n", active, pages);
+    emit(line);
     HeapFree(GetProcessHeap(), 0, entries);
     CloseServiceHandle(manager);
     report("driver_enumeration", error == ERROR_SUCCESS, error);
