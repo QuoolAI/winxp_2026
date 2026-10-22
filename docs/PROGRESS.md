@@ -51,7 +51,16 @@ instructions; a fresh boot records successful Kernel32 and User32 process
 attachment. Relinking WinSrv removes its remaining 22 old stubs and advances
 to Winlogon, which terminates with status `0x80` before login. The display log
 also identifies SP3 Framebuf's absent `EngBugCheckEx` import; the matching native
-Framebuf driver has compiled for the next experiment. No source-kernel login or
+Framebuf driver compiled and removed that import error, although its hardware
+pointer initialization fails and VGA fallback remains unverified.
+
+The Winlogon exception is `0xc0000139`: SP3 ntdll dynamically requests
+`Kernel32!BaseQueryModuleData`, absent from the SP1 source. Matching original
+ntdll then built successfully, including its native ETW prerequisite. A fresh
+boot passes that lookup stage and identifies a newer SP3 Winsock dependency,
+`RtlIpv6StringToAddressExW`. Matching original Winsock is now being built.
+The private import checker was corrected to include bound import rows; revised
+checks supersede its earlier incomplete scans. No source-kernel login or
 desktop has been established, and no assertion was ignored.
 [Investigation and exact limitations](boot-investigation.md)
 

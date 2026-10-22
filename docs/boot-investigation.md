@@ -145,9 +145,37 @@ then stops with `0xc000021a`: the Windows Logon Process terminates with status
 The display log also records `EngBugCheckEx` missing from native Win32k.
 Inspection identifies SP3 `framebuf.dll` as its importer; the inspected VGA
 display DLLs have no missing Win32k imports. `build-15` compiles the matching
-original Framebuf (eight files, one executable, exit zero). Its runtime effect
-is the next experiment; a display-driver error alone does not prove the cause
-of Winlogon's termination.
+original Framebuf (eight files, one executable, exit zero). It loads and removes
+the import failure, but `DrvEnablePDEV` reports `bInitPointer` failure. VGA
+fallback and display operation remain unverified.
+
+The termination trace shows CSRSS terminating a client with `STATUS_ABANDONED`
+(`0x80`), matching its `LPC_EXCEPTION` path. `winlogon-first-exception` captures
+Winlogon's actual loader exception, `0xc0000139`. The dynamic lookup trace in
+`winlogon-export-lookup` identifies the missing export exactly:
+`Kernel32!BaseQueryModuleData`. SP3 ntdll requests it before Winlogon's normal
+imports are loaded. It is absent from the supplied SP1 source. No stub was added.
+
+`build-16` compiles the matching original ntdll instead. Forty-one files compile
+before the first missing ETW library stop; the subsequent native ETW build and
+ntdll link succeed. The first generated `ntstatus` header used MC's decimal
+option, which conflicts textually with the identical hexadecimal severity
+constants in `netevent.h` under `/WX`. Regenerating it without that option fixes
+the build without changing source headers or disabling compiler warnings.
+Native ntdll has 1,411 exports, a valid checksum and no imports. Its RTL user
+library was compiled during `build-03`; supplied libraries remain link inputs.
+
+`native-ntdll-kvm` passes the dynamic Kernel32 lookup stage, then the checked
+loader reports `RtlIpv6StringToAddressExW` missing. The SP3 Winsock DLL imports
+that newer interface. Matching original Winsock is the next build experiment.
+
+The initial private import parser missed rows containing an additional bound
+address column. `check_logon_closure.py` now includes those rows;
+`logon-closure-bound/report.json` supersedes the earlier report. The corrected
+25-module scan finds no missing direct imports against SP3 ntdll and the native
+Kernel32/User32/GDI32 set. Substituting native ntdll identifies the one missing
+Winsock import above. This name-based scan does not validate ordinal imports,
+forwarded exports, dynamic lookups or runtime ABI compatibility.
 
 The private debugger harness previously decoded a string pointer from the
 hard-error parameter vector as the status. The status is instead parameter 1
@@ -178,6 +206,8 @@ variant are not established.
 | User32 with INT 2E stubs | `a51976ddc3ae7e12a81b188587ef39cdc0810f89d585569219908acd7dab8a58` |
 | GDI32 with INT 2E stubs | `09698075402cbeaab42247124829d580a4e9535b21f443bf822c715c19c95258` |
 | WinSrv with INT 2E stubs | `84df7d61bfc49c4c1c15ea7bef424f79abc03df7394fa9c7e9e875f509567f99` |
+| Matching source Framebuf | `2054ab5d568bdb5cc3abf5f1b8e8259c41f6e6954776e88023a43f48b0ad998c` |
+| Matching source ntdll | `f4ede1ec8f6878fc4a95f4a35010a6c85483a6ca58e34c6075becea89dcb3b20` |
 
 Build commands are preserved in each `build-*/build-*.cmd`, guest native logs and
 serial markers. Exit zero alone was insufficient: two initial incremental

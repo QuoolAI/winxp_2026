@@ -83,8 +83,13 @@ use the original INT 2E dispatcher directly. A fresh guest records successful
 Kernel32 and User32 process attachment. Relinking WinSrv removes its remaining
 old stubs and advances to Winlogon, which exits with status `0x80` before login.
 SP3 Framebuf imports the missing Win32k `EngBugCheckEx`; matching native Framebuf
-has compiled but has not yet been boot-tested. Authentication and Explorer
-under the custom kernel remain unverified.
+loads and removes that error, but hardware pointer initialization fails. VGA
+fallback remains unverified. The actual Winlogon loader exception is
+`0xc0000139`: SP3 ntdll requests the absent `Kernel32!BaseQueryModuleData`.
+Matching native ntdll built and passes this stage in a new clone, then fails on
+SP3 Winsock's `RtlIpv6StringToAddressExW` dependency. The revised import checker
+includes bound import rows; the earlier scans omitted those symbols.
+Authentication and Explorer under the custom kernel remain unverified.
 [Detailed boot investigation](boot-investigation.md)
 
 Clean rebuilding also exposes absent executive files `exinit.c` and `systime.c`.
