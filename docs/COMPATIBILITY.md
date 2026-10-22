@@ -1,6 +1,7 @@
 # Compatibility matrix
 
-No custom XP image has booted. `Not tested` means no installation, execution or
+The source kernel reaches graphical login; its desktop milestone is incomplete.
+`Not tested` means no installation, execution or
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
@@ -15,7 +16,7 @@ establish a custom source build or other hardware configurations.
 
 | Requirement | Implemented observation | Current execution status |
 | --- | --- | --- |
-| Kernel boot | QEMU screenshots and guest identity | Supplied XP Professional 5.1.2600 SP3 boots; custom XP boot blocked |
+| Kernel boot | QEMU screenshots and guest identity | Supplied XP SP3 boots; source kernel reaches login, with desktop still blocked |
 | User login | Manual logoff, account chooser, XP25 logon and post-logon probe | Observed once; automated transition test not implemented |
 | Explorer | Check shell PID resolves to `explorer.exe` | Pass under Administrator and XP25, including overlay reboot |
 | Registry | Volatile HKCU DWORD roundtrip with cleanup | Pass in recorded guest runs |
@@ -91,6 +92,23 @@ SP3 Winsock's `RtlIpv6StringToAddressExW` dependency. The revised import checker
 includes bound import rows; the earlier scans omitted those symbols.
 Authentication and Explorer under the custom kernel remain unverified.
 [Detailed boot investigation](boot-investigation.md)
+
+Matching native Winsock and its helper subsequently compiled. Matching IMM32
+then removes another embedded SP3 GUI syscall mismatch. Fresh KVM and TCG clones
+reach the graphical XP login screen. The loaded kernel is
+`\\WINDOWS\\system32\\XP25KRNL.EXE`, checksum `0x33f857`, matching the compiled
+input. Authentication fails: LSASS sets unsupported token information class 16
+and `LsaLogonUser` returns `0xc0000003`. Matching original LSA is being built.
+
+| Source-kernel milestone gate | Recorded status |
+| --- | --- |
+| Source kernel loads | Verified path/checksum at login |
+| Graphical login screen | Observed in fresh KVM and TCG clones |
+| Authentication | Fails at unsupported token audit-policy class |
+| Explorer and Luna desktop | Not observed |
+| Filesystem and basic applications after login | Not tested |
+| Normal source-guest shutdown from desktop | Not tested |
+| Ubuntu reproduction | Login reproduced; complete desktop workflow unverified |
 
 Clean rebuilding also exposes absent executive files `exinit.c` and `systime.c`.
 Native kernel links use the four supplied i386 prebuilt objects, whose hashes

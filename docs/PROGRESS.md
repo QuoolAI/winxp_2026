@@ -58,10 +58,21 @@ The Winlogon exception is `0xc0000139`: SP3 ntdll dynamically requests
 `Kernel32!BaseQueryModuleData`, absent from the SP1 source. Matching original
 ntdll then built successfully, including its native ETW prerequisite. A fresh
 boot passes that lookup stage and identifies a newer SP3 Winsock dependency,
-`RtlIpv6StringToAddressExW`. Matching original Winsock is now being built.
+`RtlIpv6StringToAddressExW`. Matching original Winsock and its helper then built.
+Using matching IMM32 removes a subsequent embedded SP3 GUI syscall mismatch.
+Fresh KVM and TCG clones reach the graphical XP login screen. At login, the
+loaded kernel path is `\\WINDOWS\\system32\\XP25KRNL.EXE` and checksum `0x33f857`,
+matching the compiled input. Snapshot `source-kernel-login-error` preserves the
+KVM state; frozen disk SHA-256 is
+`caafd03bda607791ffb3d1fd63c201c30c9b879dc0919502a2bd468dc6f3d4a7`.
+
+Authentication fails: `LsaLogonUser` returns `0xc0000003` after LSASS attempts
+`NtSetInformationToken` class 16 (`TokenAuditPolicy`), absent from the SP1
+kernel. The captured request is 12 zero bytes. Matching original LSA compilation
+is in progress. No token audit-policy failure has been bypassed.
 The private import checker was corrected to include bound import rows; revised
-checks supersede its earlier incomplete scans. No source-kernel login or
-desktop has been established, and no assertion was ignored.
+checks supersede its earlier incomplete scans. No source-kernel authentication
+or desktop has been established, and no assertion was ignored.
 [Investigation and exact limitations](boot-investigation.md)
 
 The resumption supervisor detected an actual usage limit, waited until the
@@ -76,7 +87,7 @@ Four checked x86 kernels have been compiled, linked and inspected in the
 supplied Windows guest, using the supplied executive objects for two missing
 source files. Matching source NTFS, MountMgr, Win32k and checked HALs now build.
 The APIC failure is corrected for the recorded virtual hardware; current boot
-work stops in CSRSS initialization before login. Earlier failures remain
+work stops during authentication after graphical login appears. Earlier failures remain
 preserved. A complete custom OS image has not been established.
 [Native build record](native-kernel-build.md), [current boot investigation](boot-investigation.md).
 The supplied XP SP3 installation now boots in a local KVM guest. The corrected

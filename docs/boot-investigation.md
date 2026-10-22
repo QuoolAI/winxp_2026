@@ -1,7 +1,8 @@
 # Source-kernel boot investigation
 
 This investigation uses the installed SP3 guest as a runtime/build host for the
-NT 5.1.2600.1106 x86 reference. It has not established a source-kernel desktop.
+NT 5.1.2600.1106 x86 reference. The source kernel reaches graphical login under
+KVM and TCG; authentication and the desktop remain incomplete.
 Private media, binaries, dumps and logs remain in
 `.work/boot-debug-20261022/`; no proprietary artifacts were published.
 
@@ -184,6 +185,41 @@ value and record the corrected decode. Diagnostic routine-return stops are not
 classified as kernel bugchecks. Process presence and Win32k initialization do
 not establish login.
 
+## Graphical login and authentication blocker
+
+`build-17` compiles 50 Winsock files, then stops on its missing helper library.
+Building original `ws2help/ws2help/nt` compiles seven files and produces that DLL
+and library; Winsock links successfully. Both DLL checksums and their checked
+native ntdll dependencies pass inspection.
+
+The next trace captures Winlogon executing `0x340fd48b`, returning to SP3 IMM32
+at `0x763a45d8`. Its embedded GUI stub expects the shared pointer ABI. Matching
+IMM32 already compiled in the native GUI build; its checksum and native imports
+pass inspection. `native-imm-kvm` and `native-imm-tcg` then reach graphical login.
+
+`native-imm-kvm/login-kernel-verification.json` records canonical kernel name
+`ntoskrnl.exe`, full path `\\WINDOWS\\system32\\XP25KRNL.EXE`, base `0x80a02000`
+and checksum `0x33f857`, matching the compiled input. Winlogon, SCM, LSASS,
+service hosts and LogonUI run. Explorer has not been observed. Full disk/RAM
+snapshot `source-kernel-login-error` is frozen at disk SHA-256
+`caafd03bda607791ffb3d1fd63c201c30c9b879dc0919502a2bd468dc6f3d4a7`.
+QMP stop/quit used for preservation is not a normal guest shutdown.
+
+Sign-in displays “The parameter is incorrect.” The TCG trace captures
+`LsaLogonUser` returning `STATUS_INVALID_INFO_CLASS` (`0xc0000003`), substatus
+zero, before profile loading. `lsa-information-trace/lsa-information.jsonl`
+correlates that return with LSASS `NtSetInformationToken` class 16, length 12,
+returning the same status. `lsa-audit-policy-capture/audit-policy.json` captures
+three zero DWORDs. This newer token audit-policy class is absent from the
+baseline enumeration, which ends at `TokenSandBoxInert` (15). No auditing check
+was bypassed or replaced with a success stub. Original LSA compilation is the
+next experiment.
+
+Other recorded limits remain: native Framebuf reports hardware-pointer
+initialization failure, advanced IME windows report creation warnings, and SP3
+`wshtcpip.dll` requires absent `RtlIpv4StringToAddressExW`. Their full functional
+effects remain unverified. The authentication return has its own exact trace.
+
 ## Native build limits and hashes
 
 A clean kernel build compiled 1,859 files but could not rebuild executive
@@ -208,6 +244,9 @@ variant are not established.
 | WinSrv with INT 2E stubs | `84df7d61bfc49c4c1c15ea7bef424f79abc03df7394fa9c7e9e875f509567f99` |
 | Matching source Framebuf | `2054ab5d568bdb5cc3abf5f1b8e8259c41f6e6954776e88023a43f48b0ad998c` |
 | Matching source ntdll | `f4ede1ec8f6878fc4a95f4a35010a6c85483a6ca58e34c6075becea89dcb3b20` |
+| Matching source Winsock | `bd554545384e717d5b2e60b04c5f17849898d60bc1785a27b2f90fde61a02c2f` |
+| Matching source Winsock helper | `9d46fea7ab72d0354d89277acc30e9543a373ee9167e007ae29067093f4dc489` |
+| Matching source IMM32 | `5cf2b4a93ba13d7563653d12619750175832c940286c9c7aca964486d4328839` |
 
 Build commands are preserved in each `build-*/build-*.cmd`, guest native logs and
 serial markers. Exit zero alone was insufficient: two initial incremental
