@@ -10,6 +10,8 @@ NTFS import and free/checked HAL mismatch failures are retained. [Native build a
 The supplied XP SP3 installation now boots in a local KVM guest. The corrected
 native probe passes all six implemented checks; manual login and ACPI shutdown
 have also been observed. [Guest baseline and evidence](xp-sp3-guest.md)
+The guest is registered as `xp25-sp3` in system libvirt and its VMM console
+was verified on the same development overlay.
 The original source remains unchanged. No cloud deployment, GPU unbinding,
 proprietary upload or public CI execution has occurred.
 

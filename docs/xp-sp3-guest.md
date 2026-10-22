@@ -166,37 +166,44 @@ downloaded or substituted. The media's SATA driver packs were not exercised by
 the IDE configuration. No NIC, external networking, sound or passthrough was
 tested.
 
-## Resume the private guest
+## Use the XP guest in Virtual Machine Manager
 
-From the repository root, with the guest stopped:
+The persistent system libvirt domain `xp25-sp3` is registered and currently
+running from `dev-session.qcow2`. It uses the same one-CPU `qemu32`, 512 MiB,
+i440fx 8.2, IDE, standard VGA and no-network profile. VMM's VNC display is
+bound to loopback; the VMM console can show and control it. It is not configured
+to autostart.
 
-```bash
-python3 .work/xp-sp3-install-20261018/control.py start dev-session.qcow2 --vga std
-remote-viewer vnc://127.0.0.1:5905
-```
-
-VNC listens only on loopback. The helper retains each launch and uses a separate
-serial log per boot. QMP remains local to the session directory. Use `XP25`
-with an empty password; cancel the hardware-driver wizard if it appears.
-Do not start another process against the same writable overlay.
-
-Both `xp-sp3.qcow2` and `native-build.qcow2` are frozen read-only backing files.
-`dev-session.qcow2` is the writable development child of the native build disk;
-retain the entire backing chain. The SP3 boot entry remains the default. The
-source-kernel entry is experimental; consult the boot results before selecting
-it. Separate boot-test children preserve the failed experiments. Matching source
-NTFS and checked HAL files are confined to those test chains; the stable
-development child inherits the recorded SP3 drivers. Source startup remains
-unverified: KVM stops at a checked HAL APIC assertion, and TCG retries have
-not established a login or loaded-kernel identity.
-
-Capture the display or request an observed ACPI shutdown:
+Start it from VMM or the shell:
 
 ```bash
-python3 .work/xp-sp3-install-20261018/control.py screen manual-check
-python3 .work/xp-sp3-install-20261018/control.py powerdown
+virsh start xp25-sp3
+virt-manager --connect qemu:///system
 ```
 
-The `powerdown` action records guest events and waits up to 45 seconds; a timeout
-is a failed observation, not permission to assume the guest shut down. The
-separate `quit` action stops QEMU and must not be recorded as a Windows shutdown.
+VMM lists `xp25-sp3` under the system connection. `virsh domdisplay xp25-sp3`
+reports the current loopback VNC display. The domain boots to the XP desktop;
+the Found New Hardware Wizard may appear and can be dismissed.
+Log on as `XP25` with the blank password. The source-kernel boot entry remains
+experimental: KVM stops at the checked HAL APIC assertion, and TCG retries did
+not establish a loaded-kernel identity or login. See the native build record.
+
+Stop Windows through VMM or request a guest shutdown:
+
+```bash
+virsh shutdown xp25-sp3
+virsh domstate xp25-sp3 --reason
+```
+
+Wait for `shut off` before starting it again through VMM. This disk is the same
+writable development child used by the direct QEMU helper. Never start the
+libvirt domain and `control.py start dev-session.qcow2` at the same time; both
+would try to write that one qcow2 overlay. If using the helper instead, first
+stop the libvirt domain. The helper's `quit` action is a host stop, not a
+Windows shutdown.
+
+The domain is persistent, but its autostart setting is off. The registration
+XML, UUID, access permissions and console verification are recorded in
+`.work/xp-sp3-install-20261018/libvirt-registration.json` and
+`xp25-sp3.libvirt.xml`. The read-only `native-build.qcow2` and `xp-sp3.qcow2`
+backing files must stay at their recorded paths with the writable overlay.

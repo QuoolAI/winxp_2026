@@ -66,7 +66,7 @@ family does not imply all releases or architectures are feasible.
 
 | Target | Verified evidence | Guest support status |
 | --- | --- | --- |
-| QEMU i440fx, BIOS, IDE, standard VGA, KVM | Supplied XP installation, repeated desktop/probe observations and ACPI shutdown | Basic 640×480 guest baseline observed; accelerated graphics unverified |
+| QEMU i440fx 8.2, BIOS, IDE, standard VGA, KVM via libvirt | Supplied XP guest registered in VMM; console screenshot at 640×480; no network interface | Basic desktop observed; accelerated graphics unverified |
 | QEMU Cirrus | Text/GUI Setup works; first-boot resolution transition repeatedly blacks out | Desktop transition failed; checkpoint retained |
 | Multicore/SMP/modern CPU instructions | Existing source paths only | No new support claim |
 | UEFI/GPT/NVMe/AHCI/USB 3.x | No guest experiments | Unverified |
