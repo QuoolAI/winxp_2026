@@ -1,0 +1,140 @@
+# Source-kernel boot investigation
+
+This investigation uses the installed SP3 guest as a runtime/build host for the
+NT 5.1.2600.1106 x86 reference. It has not established a source-kernel desktop.
+Private media, binaries, dumps and logs remain in
+`.work/boot-debug-20261022/`; no proprietary artifacts were published.
+
+## Preserved reference and isolated execution
+
+System libvirt domain `xp25-sp3` has the disk-and-memory snapshot
+`xp25-before-apic-debug-20261022`. Experiments use new qcow2 overlays of the frozen
+`matched-hal-preboot.qcow2` checkpoint. The boot menu in each test clone selects
+the experimental entry automatically. The working reference installation is not
+used for test writes.
+
+Per-run `qemu-command.json`, `journal.jsonl`, `checkpoint.json`, debugger logs,
+screenshots and input hashes record execution. `matrix.py` uses an exclusive
+lock and refuses to relaunch a run with an existing QEMU PID. Interrupted live
+experiments require reconciliation. Every test result explicitly leaves the
+desktop milestone unverified.
+
+## APIC failure and correction
+
+The original live failure is `KfLowerIrql`, HAL RVA `0x23b1`, corresponding to
+`base/hals/halmps/i386/mpirql.asm:347`. It writes TPR `0x3d`, reads `0x30`, then
+executes `int 3`. This produces `0x8e`, exception `0x80000003`. The captured stack
+is `KfLowerIrql` → `KiInitializeKernel+0x199` → `KiSystemStartup+0x2c4`.
+The requested Windows IRQL is APC_LEVEL (1); the APIC priority class is 3.
+CPU registers, the trap/stack and APIC state are retained in
+`kvm-capture/gdb.log` and the earlier native-build evidence.
+
+The host is an AMD Ryzen 5 5600X with Linux KVM/SVM. Its priority synchronization
+uses the four-bit virtual TPR/CR8 class. The observed truncation is consistent
+with this implementation path.
+QEMU VAPIC also rewrites TPR accesses, but disabling VAPIC still reproduces the
+failure. Split IRQ chip does not resolve it; this host rejects userspace APIC.
+Primary implementation references:
+[KVM SVM synchronization](https://github.com/torvalds/linux/blob/v6.8/arch/x86/kvm/svm/svm.c),
+[KVM APIC/CR8 conversion](https://github.com/torvalds/linux/blob/v6.8/arch/x86/kvm/lapic.c),
+[QEMU VAPIC patching](https://github.com/qemu/qemu/blob/v8.2.2/hw/i386/kvmvapic.c).
+
+The correction verifies all TPR bits except the low priority sub-class nibble.
+It retains the APIC read used for serialization. Fast-mutex APC_LEVEL guards
+compare the same priority class. The shared `CHECKTPR` macro preserves its input
+registers. Ownership checks, invalid IRQL checks and assertion traps remain.
+This is a compatibility experiment for the recorded virtual hardware, not a
+claim of validation on physical APIC hardware.
+
+`build/apply_boot_compat.py` emits patched copies and before/after hashes under
+`.work/`; it refuses other output locations. The five affected reference paths
+are `base/hals/halmps/i386/mpirql.asm`, `mpspin.asm`,
+`base/hals/inc/ntapic.inc`, `base/ntos/ke/i386/misc.c` and
+`base/ntos/ps/psinit.c`. Original notices remain in the copies.
+
+The final HAL revision passes early initialization in all seven recorded
+configurations: KVM qemu32 UP, KVM host UP, KVM qemu32 two CPUs with MP HAL/kernel,
+TCG qemu32 UP, TCG Pentium III UP, TCG qemu32 two CPUs with MP HAL/kernel, and
+TCG without CPU APIC using the ACPI PIC HAL. All subsequently stop at the SP3
+GUI dependency failure. This does not establish SMP application compatibility.
+See each `matrix2-*/result.json` and `gdb.log`.
+
+A separate negative test deliberately supplies class `0x40` to the checked
+fast-mutex guard. It still raises `IRQL_NOT_GREATER_OR_EQUAL` (`0x9`). Evidence:
+`regression-wrong-irql/`, including `irql_guard_rejected_bad_class: true`.
+An earlier MP experiment used the UP map before the MP map was available; its
+result is marked `debugger_breakpoint_mismatch` and is not boot evidence.
+
+## SP1/SP3 component compatibility
+
+The previous NTFS and checked/free HAL mismatch failures remain preserved.
+Matching native NTFS removes the SP3 NTFS import mismatch. A checked kernel must
+use a matching checked HAL; the free SP3 HAL produced bugcheck `0x79`.
+
+TCG exposed the next failure, `SESSION5_INITIALIZATION_FAILED` (`0x71`). SP1 puts
+syscall instructions at shared-data offset `0x300`; SP3 ntdll expects a function
+pointer there and calls instruction bytes as address `0x340fd48b`. All 284 source
+native syscall numbers checked against this SP3 ntdll match. The kernel detects
+the pointer ABI through ntdll exports and selects ntdll's original INT 2E entry.
+It preserves the inline ABI for ntdll versions lacking those exports. It does
+not alter the SYSENTER trap frame or bypass privilege checks. Direct SYSENTER,
+single stepping and suspend/hibernate remain unverified for this mixed runtime.
+
+The next Session Manager error was `0xc000003a`: `\??\C:\WINDOWS` did not exist.
+SP3 MountMgr imports the absent `ObIsDosDeviceLocallyMapped`. Building and using
+the matching original MountMgr restores progress past that failure.
+
+SP3 Win32k imports absent `SeTokenIsWriteRestricted` and
+`MmCommitSessionMappedView`. No security API was stubbed. A native build of
+`windows/core` compiled 2,036 files and produced Win32k, although the overall
+command failed at language-pack DLL debug-symbol links. Win32k's PE checksum and
+all kernel/HAL imports pass inspection. It loads alongside the custom kernel;
+USER/GDI initialization executes and CSRSS appears. No Winlogon or desktop has
+been observed.
+
+The live module list identifies `\WINDOWS\system32\XP25KRNL.EXE` at `0x80a02000`.
+Its PE checksum `0x33f857` matches the rebuilt kernel. The loaded header has six
+runtime byte differences; it is not reported as byte-identical.
+Module and process evidence is in `matrix3-kvm-up/`.
+
+CSRSS later terminates with `STATUS_INVALID_INFO_CLASS` (`0xc0000003`). The
+recorded process-information trace shows set class `0x22` and query class `0x25`
+returning that status. Native matching CSR components are the next integration
+experiment. Process presence and Win32k initialization do not establish login.
+
+## Native build limits and hashes
+
+A clean kernel build compiled 1,859 files but could not rebuild executive
+`exinit.c` and `systime.c`, which are absent. Four supplied i386 objects are
+required. Their exact hashes are in `build-04/prebuilt-inputs.json`. The final
+kernel is a mixed source/prebuilt link. A complete rebuild from C/ASM and a free
+variant are not established.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Rebuilt checked kernel | `fcf981e59b357d789a2be8850978657e9880c23fa3cb974157bbdb7cdf70cc4d` |
+| Corrected checked UP APIC HAL | `d1678e392b1331b0c7d597052471fd8649c264b325ac2b5387d984a5d3e37be3` |
+| Corrected checked MP APIC HAL | `fc9df833e9d988091bce119e39f2cbb9eeb322749c46ec2aaf954a26798d920b` |
+| Matching source MountMgr | `338776e980cfa36977bdc84dd159acf342d0002948ac57c5395519f1f4c939ca` |
+| Matching source Win32k | `b28afb2fa1d7be5d5aa0867b17b775afdca7d24ff98f268b73f5b9dd5c4ef994` |
+
+Build commands are preserved in each `build-*/build-*.cmd`, guest native logs and
+serial markers. Exit zero alone was insufficient: two initial incremental
+attempts did not recompile patched files. Those outputs remain recorded, and
+only the later compile/link logs and changed binary hashes establish rebuilding.
+
+## Checkpoint and usage-limit resumption
+
+`build/resume_after_limit.py` watches an explicit existing session, locks one
+supervisor per UUID, checkpoints atomically and waits for a server-provided reset
+time. It stops on other errors, absent reset information, repeated stale resets,
+or user-aborted turns. Six focused tests cover observed reset messages and
+retry classification.
+
+The actual reset attempt invoked `codex exec resume` at the recorded time, but
+the open TUI retained its active thread writer and Codex rejected the resume.
+The supervisor stopped. Automatic continuation of this open TUI is therefore
+blocked by session ownership; the script does not remove or override that lock.
+[Supported CLI session resumption](https://developers.openai.com/codex/noninteractive)
+does not guarantee takeover of an open writer. See `.work/resumption/` for the
+actual command and error. No successful unattended continuation is claimed.

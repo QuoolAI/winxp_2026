@@ -2,11 +2,59 @@
 
 ## Current checkpoint
 
-Four checked x86 source kernels have now been compiled, linked and inspected in
-the supplied Windows guest. A complete custom OS image has not been established.
-Matching source NTFS and checked HAL dependencies now build. The KVM source
-boot stops before login at a checked HAL APIC readback assertion; the earlier
-NTFS import and free/checked HAL mismatch failures are retained. [Native build and boot record](native-kernel-build.md)
+Active boot investigation (2026-10-22): the running `xp25-sp3` reference now has
+the libvirt disk-and-RAM snapshot `xp25-before-apic-debug-20261022`. New experiments
+are isolated overlays in `.work/boot-debug-20261022/`, with per-run QEMU commands,
+QMP journals and atomic checkpoint files. No reference guest files were changed.
+Live GDB reproduces `KfLowerIrql`'s readback assertion at HAL RVA `0x23b1`:
+requested TPR `0x3d`, observed `0x30`, IRQL APC_LEVEL (1). Disabling QEMU's VAPIC
+optimization still fails; userspace APIC is rejected by this host KVM. TCG passes
+this stage and reaches `KeBugCheck(0x71)` (`SESSION5_INITIALIZATION_FAILED`). Its
+trace shows SP3 ntdll interpreting the SP1 inline syscall bytes at shared-data
+offset `0x300` as pointer `0x340fd48b`. ABI correction experiments are ongoing;
+no source-kernel login or desktop has been established. Later results below
+supersede the initial APIC blocker.
+
+The object-operation trace identifies the missing drive path as
+`\??\C:\WINDOWS`. SP3 `mountmgr.sys` imports `ObIsDosDeviceLocallyMapped`,
+absent from the source kernel; matching source MountMgr compiled successfully
+in `build-03` (SHA-256
+`338776e980cfa36977bdc84dd159acf342d0002948ac57c5395519f1f4c939ca`).
+SP3 Win32k also requires absent `MmCommitSessionMappedView` and
+`SeTokenIsWriteRestricted`; no substitute security implementations were added.
+
+A clean kernel attempt compiled 1,859 files, including both patched kernel
+files, then failed because `base/ntos/ex/exinit.c` and `systime.c` are missing.
+Earlier successful kernel links depended on the four supplied i386 executive
+objects. `build-04/prebuilt-inputs.json` records their hashes; restoring those
+exact inputs allowed another native kernel link and corrected HAL build.
+This is a mixed source/prebuilt kernel build, not a complete rebuild from C/ASM.
+Fresh-clone boot verification is ongoing.
+
+The completed HAL correction passes early initialization in the seven recorded
+`matrix2-*` configurations (KVM/TCG, UP/MP, qemu32/host/Pentium III and ACPI PIC).
+A deliberately wrong TPR class still triggers bugcheck `0x9`; the retained IRQL
+guard is verified in `regression-wrong-irql/`. Matching source Win32k then built
+and loaded. Live inspection identifies `XP25KRNL.EXE`, matching its compiled PE
+checksum, and records SMSS and CSRSS, but no Winlogon. CSRSS exits with
+`0xc0000003` after unsupported process-information calls. Matching native CSR
+components are now being built. [Investigation and exact limitations](boot-investigation.md)
+
+The resumption supervisor detected an actual usage limit, waited until the
+recorded reset, and invoked `codex exec resume` with the existing session UUID.
+Codex rejected it because the still-open TUI held an active thread writer. The
+supervisor stopped on that non-usage error. Automatic CLI resumption requires
+the existing writer to release the session; it cannot currently continue this
+open TUI unattended. Evidence: `.work/resumption/` and
+`boot-debug-20261022/resumption-tests.log` (six focused tests pass).
+
+Four checked x86 kernels have been compiled, linked and inspected in the
+supplied Windows guest, using the supplied executive objects for two missing
+source files. Matching source NTFS, MountMgr, Win32k and checked HALs now build.
+The APIC failure is corrected for the recorded virtual hardware; current boot
+work stops in CSRSS initialization before login. Earlier failures remain
+preserved. A complete custom OS image has not been established.
+[Native build record](native-kernel-build.md), [current boot investigation](boot-investigation.md).
 The supplied XP SP3 installation now boots in a local KVM guest. The corrected
 native probe passes all six implemented checks; manual login and ACPI shutdown
 have also been observed. [Guest baseline and evidence](xp-sp3-guest.md)

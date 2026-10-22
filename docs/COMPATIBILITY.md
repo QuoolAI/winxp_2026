@@ -41,6 +41,44 @@ before login. These failed experiments are separate from the verified SP3
 runtime. The original UP/MP/PAE target filenames all use MP-enabled checked
 configuration here (`NT_UP=0`); no multicore runtime was tested. [Native build and boot evidence](native-kernel-build.md)
 
+## Source boot investigation, 2026-10-22
+
+The reference `xp25-sp3` VM has the libvirt disk/RAM snapshot
+`xp25-before-apic-debug-20261022`. All following experiments use disposable
+overlays under `.work/boot-debug-20261022/`.
+
+| Configuration | Recorded result |
+| --- | --- |
+| Original checked kernel/HAL, KVM, qemu32, one CPU | HAL `KfLowerIrql` reads TPR `0x30` after writing `0x3d`; assertion, no login |
+| Same, VAPIC disabled | Same readback failure |
+| Same, split IRQ chip | Same early failure |
+| Userspace APIC with KVM | Host rejects configuration: `KVM does not support userspace APIC` |
+| Original checked kernel/HAL, TCG, qemu32, one CPU | `SESSION5_INITIALIZATION_FAILED` (0x71); SP3 ntdll calls SP1 inline syscall bytes as pointer `0x340fd48b` |
+| Rebuilt kernel with ntdll pointer ABI, corrected HAL, matching source NTFS/MountMgr, TCG | Syscall pointer is `0x7c90e520`; advances to Session Manager error `0xc0000263` (missing driver entry point); no login |
+| Same corrected set, KVM | Passes original readback assertions; stops at checked fast-mutex APC_LEVEL equality check because its TPR comparison also includes the discarded nibble |
+
+The completed HAL revision compares TPR priority classes while retaining
+serialization, IRQL validation and mutex ownership checks. All seven recorded
+`matrix2-*` configurations pass the earlier APIC stops and reach the SP3 GUI
+dependency failure. A negative test supplying the wrong priority class still
+raises bugcheck `0x9`. No source-kernel desktop is claimed.
+
+SP3 Win32k imports `MmCommitSessionMappedView` and `SeTokenIsWriteRestricted`,
+which the supplied source kernel lacks. SP3 FltMgr also imports the unexported
+`RtlAddAccessAllowedAceEx`. These remain incompatible until a matching native
+component or a complete, tested implementation is available. Security APIs have
+not been stubbed out.
+
+Matching source Win32k subsequently compiled and loaded; USER/GDI initialization
+runs and CSRSS appears. CSRSS later exits with `STATUS_INVALID_INFO_CLASS`
+(`0xc0000003`). Winlogon, authentication and Explorer under the custom kernel
+remain unverified. [Detailed boot investigation](boot-investigation.md)
+
+Clean rebuilding also exposes absent executive files `exinit.c` and `systime.c`.
+Native kernel links use the four supplied i386 prebuilt objects, whose hashes
+are recorded in `build-04/prebuilt-inputs.json`; a full rebuild from C/ASM and a
+free-build variant are not established.
+
 ## Software targets
 
 No specific modern application release has been selected or installed. A target
