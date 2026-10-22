@@ -47,10 +47,11 @@ This is a compatibility experiment for the recorded virtual hardware, not a
 claim of validation on physical APIC hardware.
 
 `build/apply_boot_compat.py` emits patched copies and before/after hashes under
-`.work/`; it refuses other output locations. The five affected reference paths
+`.work/`; it refuses other output locations. The six affected reference paths
 are `base/hals/halmps/i386/mpirql.asm`, `mpspin.asm`,
 `base/hals/inc/ntapic.inc`, `base/ntos/ke/i386/misc.c` and
-`base/ntos/ps/psinit.c`. Original notices remain in the copies.
+`base/ntos/ps/psinit.c` and `windows/core/kmode/i386/services.stb`. Original
+notices remain in the copies.
 
 The final HAL revision passes early initialization in all seven recorded
 configurations: KVM qemu32 UP, KVM host UP, KVM qemu32 two CPUs with MP HAL/kernel,
@@ -99,8 +100,61 @@ Module and process evidence is in `matrix3-kvm-up/`.
 
 CSRSS later terminates with `STATUS_INVALID_INFO_CLASS` (`0xc0000003`). The
 recorded process-information trace shows set class `0x22` and query class `0x25`
-returning that status. Native matching CSR components are the next integration
-experiment. Process presence and Win32k initialization do not establish login.
+returning that status. Matching native CSRSS and CSRSRV then built successfully
+in `build-08`. A fresh clone with those components and matching native WinSrv,
+User32 and GDI32 reports failure initializing SP3 BaseSrv (`0xc0000003`) at
+`base/subsys/csr/server/srvinit.c:194`. That assertion was not ignored.
+
+The original BaseSrv built successfully in `build-09`. Installing it in another
+fresh clone reaches bugcheck `0x4c`, parameter 1 `0xc0000135`, with a hard-error
+message naming WinSrv. This message comes from CSR's generic load-failure path;
+it does not prove the WinSrv file is absent. `native-basesrv-loader-trace/`
+records the actual `LdrLoadDll` return: `0xc0000142` (`STATUS_DLL_INIT_FAILED`).
+The direct imports checked across the native GUI/CSR components, SP3 Kernel32
+and SP3 ntdll resolve. `native-gui-init-trace/init-routines.log` then records SP3
+Kernel32 returning FALSE for `DLL_PROCESS_ATTACH` before User32's entry routine
+runs.
+
+Native Kernel32 built successfully in `build-12`: 67 files, three libraries and
+one executable, exit zero. The preceding failures preserve a missing generated
+message resource and an absent output directory. The successful command creates
+that directory, invokes the supplied MC on `winerror.mc`, and builds the native
+NLS and LZ libraries. Kernel32's checksum and ntdll imports pass inspection.
+The checked imports of the installed Winlogon, SCM, LSA, MSGINA and LogonUI
+against this Kernel32 resolve; this is static evidence only.
+
+`native-gui-access-violation/` captures the next first-chance CSRSS exception:
+`0xc0000005`, EIP `0x7ffe0309`. The source GUI stub generator still calls shared
+offset `0x300` as inline code, while the corrected kernel exposes SP3 ntdll's
+function-pointer ABI there. Patch revision 05 changes only the two syscall
+instructions in `services.stb`: `lea edx,[esp+4]`, then `int 2e`. The original
+kernel service dispatcher retains its argument probing and privilege checks;
+service numbers and return cleanup are unchanged.
+
+`build-13` compiles the generated stubs and relinks User32/GDI32 successfully.
+Disassembly records 270 and 366 INT 2E instructions respectively, with no old
+shared-address loads. `native-int2e-init-trace/init-routines.log` records both
+Kernel32 and User32 returning TRUE for process attachment. The guest then stops
+with a Windows Subsystem access violation at the same shared-page location;
+WinSrv still contains 22 old stubs linked from `w32umode.lib`. `build-14` relinks
+WinSrv successfully, replacing all 22 with INT 2E and leaving no old shared-page
+loads. `native-int2e-full-kvm` advances through USER/display initialization and
+then stops with `0xc000021a`: the Windows Logon Process terminates with status
+`0x80`. No login screen, authentication or Explorer is established.
+
+The display log also records `EngBugCheckEx` missing from native Win32k.
+Inspection identifies SP3 `framebuf.dll` as its importer; the inspected VGA
+display DLLs have no missing Win32k imports. `build-15` compiles the matching
+original Framebuf (eight files, one executable, exit zero). Its runtime effect
+is the next experiment; a display-driver error alone does not prove the cause
+of Winlogon's termination.
+
+The private debugger harness previously decoded a string pointer from the
+hard-error parameter vector as the status. The status is instead parameter 1
+of `KeBugCheckEx`, at `ESP+8`; affected private result files now preserve the old
+value and record the corrected decode. Diagnostic routine-return stops are not
+classified as kernel bugchecks. Process presence and Win32k initialization do
+not establish login.
 
 ## Native build limits and hashes
 
@@ -117,6 +171,13 @@ variant are not established.
 | Corrected checked MP APIC HAL | `fc9df833e9d988091bce119e39f2cbb9eeb322749c46ec2aaf954a26798d920b` |
 | Matching source MountMgr | `338776e980cfa36977bdc84dd159acf342d0002948ac57c5395519f1f4c939ca` |
 | Matching source Win32k | `b28afb2fa1d7be5d5aa0867b17b775afdca7d24ff98f268b73f5b9dd5c4ef994` |
+| Matching source CSRSS | `be8a5b9f3aa0f54fd6f5acf60e05cb7a58aa111afdfdeeae35512a39fc7fa1bf` |
+| Matching source CSRSRV | `5186ac1f25b75f6ece0f91f1352874cc439c59f00c6cf818a82ec6d94372b892` |
+| Matching source BaseSrv | `659ea2e7c0abe6ac1ec722acfbdf88b8efc27f1a6d73e200cc220b62610f1248` |
+| Matching source Kernel32 | `d7bf3b8fae291f15e82b94a799120722125c3f6f4f21effadd6ad1255d1eec3e` |
+| User32 with INT 2E stubs | `a51976ddc3ae7e12a81b188587ef39cdc0810f89d585569219908acd7dab8a58` |
+| GDI32 with INT 2E stubs | `09698075402cbeaab42247124829d580a4e9535b21f443bf822c715c19c95258` |
+| WinSrv with INT 2E stubs | `84df7d61bfc49c4c1c15ea7bef424f79abc03df7394fa9c7e9e875f509567f99` |
 
 Build commands are preserved in each `build-*/build-*.cmd`, guest native logs and
 serial markers. Exit zero alone was insufficient: two initial incremental

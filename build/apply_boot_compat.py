@@ -120,6 +120,16 @@ def prepare(output):
            '    }\n'
            '#endif\n\n'
            '    st = PspLookupKernelUserEntryPoints();')
+    # Source GUI stubs otherwise execute the shared-data pointer bytes as code
+    # when paired with SP2/SP3 ntdll. INT 2E uses the original NT x86 service
+    # dispatcher and remains independent of the shared inline/pointer ABI.
+    # At this stub's entry, ESP+4 points to the first caller argument.
+    change('windows/core/kmode/i386/services.stb',
+           '#define USRSTUBS_ENTRY4( ServiceNumber, Name, NumArgs )      __asm   mov     edx, call_func\n'
+           '#define USRSTUBS_ENTRY5( ServiceNumber, Name, NumArgs )      __asm   call    edx\n',
+           '// XP25: keep the original INT 2E argument and privilege checks.\n'
+           '#define USRSTUBS_ENTRY4( ServiceNumber, Name, NumArgs )      __asm   lea     edx, [esp+4]\n'
+           '#define USRSTUBS_ENTRY5( ServiceNumber, Name, NumArgs )      __asm   int     2eh\n')
     (output / 'patch-manifest.json').write_text(json.dumps(files, indent=2) + '\n')
     return files
 

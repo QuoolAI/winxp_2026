@@ -37,8 +37,23 @@ A deliberately wrong TPR class still triggers bugcheck `0x9`; the retained IRQL
 guard is verified in `regression-wrong-irql/`. Matching source Win32k then built
 and loaded. Live inspection identifies `XP25KRNL.EXE`, matching its compiled PE
 checksum, and records SMSS and CSRSS, but no Winlogon. CSRSS exits with
-`0xc0000003` after unsupported process-information calls. Matching native CSR
-components are now being built. [Investigation and exact limitations](boot-investigation.md)
+`0xc0000003` after unsupported process-information calls. Matching native CSRSS,
+CSRSRV and BaseSrv have since compiled successfully. The checked CSR output
+identifies SP3 BaseSrv initialization as a failure; replacing it with the
+matching native build advances to DLL initialization failure during WinSrv
+loading. A loader-return trace records `0xc0000142`, and an entry-routine trace
+shows SP3 Kernel32 returning FALSE on process attachment before User32 starts.
+Original Kernel32 then compiled successfully (67 files). The next trace exposed
+source GUI stubs executing the shared syscall pointer as inline code, faulting
+at `0x7ffe0309`. The small `services.stb` correction selects the original INT 2E
+entry with the caller arguments at `ESP+4`. Rebuilt User32/GDI32 contain the new
+instructions; a fresh boot records successful Kernel32 and User32 process
+attachment. Relinking WinSrv removes its remaining 22 old stubs and advances
+to Winlogon, which terminates with status `0x80` before login. The display log
+also identifies SP3 Framebuf's absent `EngBugCheckEx` import; the matching native
+Framebuf driver has compiled for the next experiment. No source-kernel login or
+desktop has been established, and no assertion was ignored.
+[Investigation and exact limitations](boot-investigation.md)
 
 The resumption supervisor detected an actual usage limit, waited until the
 recorded reset, and invoked `codex exec resume` with the existing session UUID.

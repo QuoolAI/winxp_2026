@@ -71,8 +71,21 @@ not been stubbed out.
 
 Matching source Win32k subsequently compiled and loaded; USER/GDI initialization
 runs and CSRSS appears. CSRSS later exits with `STATUS_INVALID_INFO_CLASS`
-(`0xc0000003`). Winlogon, authentication and Explorer under the custom kernel
-remain unverified. [Detailed boot investigation](boot-investigation.md)
+(`0xc0000003`). Matching native CSRSS/CSRSRV and BaseSrv builds then succeeded.
+With native WinSrv, User32 and GDI32 installed in a fresh clone, the loader
+returns `STATUS_DLL_INIT_FAILED` (`0xc0000142`) while loading WinSrv. The direct
+imports checked for this component set resolve. An entry-routine trace shows
+SP3 Kernel32 returning FALSE on process attachment before User32 starts.
+Native Kernel32 builds successfully. Source GUI syscall stubs also need the
+shared-page ABI correction: the original stubs execute pointer bytes at
+`0x7ffe0300`, causing an access violation at `0x7ffe0309`. Rebuilt User32/GDI32
+use the original INT 2E dispatcher directly. A fresh guest records successful
+Kernel32 and User32 process attachment. Relinking WinSrv removes its remaining
+old stubs and advances to Winlogon, which exits with status `0x80` before login.
+SP3 Framebuf imports the missing Win32k `EngBugCheckEx`; matching native Framebuf
+has compiled but has not yet been boot-tested. Authentication and Explorer
+under the custom kernel remain unverified.
+[Detailed boot investigation](boot-investigation.md)
 
 Clean rebuilding also exposes absent executive files `exinit.c` and `systime.c`.
 Native kernel links use the four supplied i386 prebuilt objects, whose hashes
