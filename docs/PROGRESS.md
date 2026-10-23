@@ -2,6 +2,23 @@
 
 ## Current checkpoint
 
+2026-10-23, Milestone 3: **original SCM reconstruction passes.** Native
+`services.exe` replaces SP3 SCM in disposable KVM, two-vCPU KVM and TCG guests.
+All established probes, fourteen real service-management observations, live SCM
+image identification, interactive logoff/login, Notepad and guest shutdown pass.
+A running fixture receives `SERVICE_CONTROL_SHUTDOWN`; the original SCM remains
+in host and guest recovery copies. Independent native rebuilds succeed without
+an SCM implementation patch. [Evidence and reproduction](native-components-milestone.md)
+
+Original SMSS was then integrated alone on the frozen SCM checkpoints and passes
+the same three configurations. Regsvc, Msgina and UserEnv compile but remain
+unintegrated candidates. UserEnv lacks SP3 exports including `CheckXForestLogon`;
+Explorer's private generated/library prerequisites remain under investigation.
+The new full source inventory retains the original 277,863-file SHA-256 manifest.
+Winlogon and two executive C sources remain absent; full OS reconstruction and
+source completeness are not established. `XP25-Desktop` and existing guests are
+preserved. Generated component manifests and all artifacts remain private.
+
 2026-10-23: **`XP25-Desktop` is registered in system libvirt for interactive
 virt-manager use.** Its independent disposable disk is sector-identical before
 boot to the newest verified desktop checkpoint, `network-native-kvm-mp-02`
@@ -329,13 +346,14 @@ ReactOS core is not substituted for Microsoft's kernel, Winlogon or services.
 
 1. Windows guest/media, native compiler execution and x86 kernel linking are now
    established. The APIC readback failure and subsequent version mismatches are
-   resolved for the recorded desktop configuration. UDP loopback still fails
-   at a newer SP3 Winsock-helper dependency.
+   resolved for the recorded desktop configuration. Native Winsock helper
+   integration resolves the historical UDP failure; the recorded isolated
+   networking matrix passes.
 2. Original Winlogon and two executive C files are missing, with additional
    licensing/font-driver references and literal gaps. The earlier SCM absence
    finding checked the wrong path: `base/screg/sc/server` contains the original
-   services target. Its native build is not yet verified. No substitute OS core
-   was adopted.
+   services target. Its native build and runtime matrix now pass, followed by
+   original SMSS. No substitute OS core was adopted.
 3. Four source kernels are linked, with boot-video/debugger dependencies built.
    The checked ACPI APIC HAL and matching NTFS build and boot to a verified user
    desktop. A complete custom OS rebuild remains blocked by missing original
@@ -348,8 +366,9 @@ ReactOS core is not substituted for Microsoft's kernel, Winlogon or services.
    April 1, 2026. EC2 remains a platform/driver feasibility blocker.
    [AWS requirements](https://docs.aws.amazon.com/vm-import/latest/userguide/prerequisites.html)
 
-Next native milestone: validate the reproducible build pipeline and integrate
-additional matching original components using the staged plan in the desktop record.
+Next native work: assess the compiled Regsvc/Msgina/UserEnv candidates with
+component-specific compatibility tests, account for UserEnv's SP3 export gaps,
+and build Explorer's remaining original private library dependencies.
 Game fixtures, accelerated graphics, hardware and security validation remain
 outstanding. The supplied SP3 guest and linked source kernels have separate
 evidence; a full custom OS rebuild is still incomplete.

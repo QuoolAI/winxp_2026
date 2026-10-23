@@ -6,6 +6,33 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Milestone 3 original SCM and SMSS, 2026-10-23
+
+The [component reconstruction record](native-components-milestone.md) establishes
+these results on separate disposable children of the Milestone 2 images.
+Only SCM was first replaced. SMSS was subsequently replaced alone on each frozen,
+verified SCM guest. Regsvc, Msgina and UserEnv were compiled but not installed.
+
+| Gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
+| --- | --- | --- | --- |
+| Native SCM: source-kernel identity / Explorer-Luna | Pass | Pass | Pass |
+| Native SCM: standard / pointer / session / networking probes | Pass | Pass | Pass |
+| Native SCM: service creation, dependency startup, stop rejection, stop/restart, deletion | Pass | Pass | Pass |
+| Native SCM: live mapped checksum / retained binary / original recovery copy | Pass | Pass | Pass |
+| Native SCM: logoff/login and Notepad save | Pass | Pass | Pass |
+| Native SCM: service shutdown notification / normal guest shutdown | Pass | Pass | Pass |
+| Subsequent native SMSS: full regression and service suite | Pass | Pass | Pass |
+| Subsequent native SMSS: logoff/login, Notepad, service and guest shutdown | Pass | Pass | Pass |
+
+An installed-SP3-SCM control guest passes the same fourteen service observations
+and shutdown fixture. All SCM direct and delay imports resolve by export presence
+against the extracted guest modules; both SCM executables have no exports.
+This does not establish complete SP3 behavior/security equivalence, remote RPC,
+domain-account services, all recovery policies, driver-service transitions or
+sustained-load stability. Compiled UserEnv omits `CheckXForestLogon` and SP3
+ordinal exports 207–209; it has not been promoted to runtime compatibility.
+Games, accelerated graphics, TLS, IPv6 and additional hardware remain unverified.
+
 ## Interactive libvirt desktop, 2026-10-23
 
 `XP25-Desktop` is a persistent `qemu:///system` domain with a loopback VNC

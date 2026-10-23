@@ -52,8 +52,8 @@ def import_symbols(text, expected_dlls=ALLOWED_DLLS):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
-    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network"), default="xp",
-                        help="standard, pointer, session, or isolated-network checks")
+    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service"), default="xp",
+                        help="standard, pointer, session, network or service-management checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
                         help="local XP SDK import libraries; read only, never copied to output")
@@ -75,7 +75,7 @@ def main():
     source = REPO / ("tests/guest/" + stem + ".c")
     executable = output / (stem + ".exe")
     expected_dlls = ALLOWED_DLLS if args.probe == "xp" else {"kernel32.dll", "user32.dll"}
-    if args.probe == "session":
+    if args.probe in ("session", "service"):
         expected_dlls = expected_dlls | {"advapi32.dll"}
     elif args.probe == "network":
         expected_dlls |= {"advapi32.dll", "ws2_32.dll", "iphlpapi.dll"}
@@ -87,7 +87,7 @@ def main():
                "-lkernel32", "-luser32"]
     if args.probe == "xp":
         command += ["-ladvapi32", "-lws2_32"]
-    elif args.probe == "session":
+    elif args.probe in ("session", "service"):
         command += ["-ladvapi32"]
     elif args.probe == "network":
         command += ["-ladvapi32", "-lws2_32", "-liphlpapi"]

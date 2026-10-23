@@ -57,6 +57,9 @@ The following literal manifest references are absent:
 | `windows/core/ntgdi/fondrv/dirs` | `otfd` |
 
 `ds/netapi/svcctrl/client` is present; `ds/netapi/svcctrl/server` is absent.
+That absent path is not the original SCM implementation. The original target at
+`base/screg/sc/server` has since compiled and passed guest regressions; see
+[Milestone 3](native-components-milestone.md).
 The earlier `base/win32/services` component probe used the wrong path. The
 inventory now distinguishes the service-control client from the server.
 

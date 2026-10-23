@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('xp', 'network', 'pointer', 'session'):
         parser.add_argument('--' + name, type=Path, required=True, help='probe build output directory')
+    parser.add_argument('--service', type=Path, help='optional statically verified SCM fixture probe')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     output = args.output.resolve()
@@ -25,7 +26,7 @@ def main():
         parser.error('private media must remain under .work/')
     # Check provenance before creating output. Never repackage a stale probe.
     probes = {}
-    for name in ('xp', 'network', 'pointer', 'session'):
+    for name in ('xp', 'network', 'pointer', 'session') + (('service',) if args.service else ()):
         directory = getattr(args, name).resolve()
         result = json.loads((directory / 'result.json').read_text())
         executable = directory / (name + '_probe.exe')
@@ -42,6 +43,10 @@ def main():
     for source, target in [('network-regression.cmd', 'regress.cmd'),
                            ('network-stability.cmd', 'stability.cmd')]:
         (media / target).write_bytes((ROOT / 'tests/guest' / source).read_text().replace('\n', '\r\n').encode('ascii'))
+    if args.service:
+        with (media / 'regress.cmd').open('ab') as script:
+            script.write(b'"%~dp0service_probe.exe"\r\necho SERVICE_PROBE_EXIT=%ERRORLEVEL% > COM1\r\necho COMPONENT_REGRESSION_FINISHED > COM1\r\n')
+        (media / 'arm-shutdown.cmd').write_bytes(b'@echo off\r\nif exist C:\\xp25\\service-shutdown.txt del /q C:\\xp25\\service-shutdown.txt\r\nif exist C:\\xp25\\service-shutdown.txt exit /b 1\r\necho SHUTDOWN_PROOF_CLEARED > COM1\r\n"%~dp0service_probe.exe" --shutdown-arm\r\necho SHUTDOWN_PROBE_EXIT=%ERRORLEVEL% > COM1\r\n')
     command = ['genisoimage', '-quiet', '-J', '-r', '-o', str(output / 'network-tests.iso'), str(media)]
     subprocess.run(command, check=True)
     manifest = {'command': command, 'iso_sha256': sha(output / 'network-tests.iso'),

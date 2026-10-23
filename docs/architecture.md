@@ -50,7 +50,7 @@ metadata was found; it does not imply that a complete component builds.
 | GDI and USER | `windows/core/{ntgdi,ntuser}` | Original graphics/windowing architecture |
 | Explorer, shell, Luna | `shell/explorer`, `shell`, `shell/themes` | Preserve native desktop and identity |
 | Security/logon | `ds/security`, `ds/security/gina` | `gina/winlogon` is absent |
-| Service controller | `ds/netapi/svcctrl` | Client present; server source directory absent |
+| Service controller | `base/screg/sc/server` | Original SCM compiled and runtime verified; see native component milestone |
 | Filesystems and storage | `base/fs`, `base/busdrv`, `drivers` | New controller support requires specific driver work |
 | Network stack | `net`, including `net/tcpip` | Original networking baseline |
 | Setup and hive generation | `base/ntsetup`, `mergedcomponents/setupinfs` | Complete bootable payload not established |

@@ -89,7 +89,10 @@ def main():
     p.add_argument('directory',type=Path)
     p.add_argument('action',choices=['qmp','hmp','screen','run','key','type','restart','finish'])
     p.add_argument('value',nargs='?')
+    p.add_argument('--settle-seconds', type=float, default=1,
+                   help='Run-dialog settling delay (use 3 for a slow TCG guest)')
     a=p.parse_args();directory=a.directory.resolve()
+    if not .1 <= a.settle_seconds <= 10:p.error('settle delay must be between 0.1 and 10 seconds')
     if not directory.is_relative_to(ROOT/'.work'):p.error('private .work/ directory required')
     os.chdir(directory)
     with Path('operation.lock').open('a') as lock:
@@ -101,10 +104,10 @@ def main():
             elif a.action=='key':key(q,a.value)
             elif a.action=='type':type_text(q,a.value)
             elif a.action=='run':
-                key(q,'shift');key(q,'meta_l-r');time.sleep(1);key(q,'ctrl-a');type_text(q,a.value);key(q,'ret')
+                key(q,'shift');key(q,'meta_l-r');time.sleep(a.settle_seconds);key(q,'ctrl-a');type_text(q,a.value);key(q,'ret')
             elif a.action=='restart':
                 q.call('set-action',{'reboot':'reset','shutdown':'pause'})
-                key(q,'shift');key(q,'meta_l-r');time.sleep(1);key(q,'ctrl-a')
+                key(q,'shift');key(q,'meta_l-r');time.sleep(a.settle_seconds);key(q,'ctrl-a')
                 type_text(q,'shutdown.exe -r -t 0');key(q,'ret')
                 q.s.settimeout(60)
                 while True:
