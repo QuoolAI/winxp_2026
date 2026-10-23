@@ -29,8 +29,8 @@ COMPONENTS = {
     "session_manager": "base/subsys/sm", "csr": "base/subsys/csr",
     "gui": "windows/core", "explorer": "shell/explorer",
     "themes": "shell/themes", "registry": "base/ntos/config",
-    "services": "ds/netapi/svcctrl/server",
-    "service_control_client": "ds/netapi/svcctrl/client", "filesystems": "base/fs",
+    "services": "base/screg/sc/server",
+    "service_control_client": "base/screg/sc/client", "filesystems": "base/fs",
     "drivers": "drivers", "networking": "net", "security": "ds/security",
     "winlogon": "ds/security/gina/winlogon", "setup": "base/ntsetup",
 }

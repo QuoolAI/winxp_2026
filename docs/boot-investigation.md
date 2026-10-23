@@ -253,6 +253,56 @@ serial markers. Exit zero alone was insufficient: two initial incremental
 attempts did not recompile patched files. Those outputs remain recorded, and
 only the later compile/link logs and changed binary hashes establish rebuilding.
 
+## Native LSA and next shell dependency, 2026-10-23
+
+Build-18 successfully compiles original LSA server C files, policy/common
+libraries and RPC/DPAPI/Netlogon prerequisites, then links LSASRV and Secur32.
+Nine staged native build scripts retain each prerequisite failure and recovery;
+logs are in `build-18-extracted/xpout/lsa-01` through `lsa-09`. LSASRV SHA-256 is
+`7682645776dbaf741a12e3346c3cf2c2542cfe86a98d808c44625f91d57d7731`;
+Secur32 is `5975dd33df460c3a89ae35e2e09efe6e060724e70d805b8acec87e585204e6ed`.
+No token-audit success stub or auditing bypass was introduced.
+
+`matrix26.py` installs those original libraries in a fresh clone. Live kernel
+inspection again verifies XP25KRNL.EXE and checksum `0x33f857`; Explorer and
+user-session processes appear. Dismissing the screen saver reveals Bliss
+wallpaper and repeated missing `Kernel32!DecodePointer` dialogs. Task Manager
+opens with Luna styling; entering its Run field triggers the same missing API
+through shell autocomplete. A single character reaches the edit field before
+the modal dialog steals focus. Earlier attempted probe commands therefore did
+not execute; the empty serial file is not a passing probe.
+
+Microsoft documents EncodePointer as an XP SP2 addition with a per-process
+secret, and describes XP's kernel-held state:
+[API contract](https://learn.microsoft.com/en-us/previous-versions/bb432254(v=vs.85)),
+[XP implementation history](https://devblogs.microsoft.com/oldnewthing/20201113-00/?p=104447).
+Inspection of the user-supplied SP3 x86 ntdll shows both operations querying
+process information class **36**, length four, pseudo handle -1, then XORing
+the input with the returned cookie. The installed SP3 kernel requires exactly
+that pseudo handle, lazily mixes system time with PRCB system-call/interrupt
+counters and publishes the cookie with compare-exchange. This observation is
+local binary evidence, not a claim of cryptographic entropy or a portable
+undocumented API contract.
+
+`build/apply_pointer_compat.py` generates the corresponding small x86 extension,
+retains argument probing and existing EPROCESS field offsets, and checks the
+new size at compile time. The cookie is not cached in user-mode globals; query
+failure raises a status rather than silently returning the input pointer.
+`tests/guest/pointer_probe.c` covers boundary values, concurrent round trips,
+per-process separation and rejected query handles/buffers/lengths. Build-19
+links successfully but omits process-allocation recompilation, so it is not a
+valid boot input. A full kernel rebuild is required before runtime testing.
+
+That full rebuild subsequently completed in build-20, including process
+allocation and the four documented supplied objects. The native pointer and
+session probes pass under KVM, TCG and two-vCPU KVM. A fresh KVM guest completes
+interactive XP25 authentication, Explorer/Luna startup, file/registry checks,
+Notepad save/reopen and normal shutdown. Its LsaLogonUser status/substatus are
+zero and its logon ID matches the subsequent Explorer/user tokens. All 18
+staged inputs remain after shutdown. The tracked build-21 pipeline independently
+rebuilds the kernels/HALs/DLLs and boots another verified desktop.
+[Final milestone evidence, hashes and reproduction](source-desktop-milestone.md)
+
 ## Checkpoint and usage-limit resumption
 
 `build/resume_after_limit.py` watches an explicit existing session, locks one

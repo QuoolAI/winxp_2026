@@ -2,6 +2,38 @@
 
 ## Current checkpoint
 
+2026-10-23: **the source-kernel desktop milestone succeeds under KVM.** A fresh
+clone loads XP25KRNL.EXE with compiled checksum `0x33bcdb`, reaches graphical
+login, authenticates XP25, loads Explorer/Luna, passes registry and filesystem
+round trips, saves/reopens a Notepad file and shuts down through the guest's
+`shutdown.exe`. Live LsaLogonUser returns status/substatus zero; its logon ID
+131677 matches the subsequent user and Explorer tokens. All 18 staged files
+remain intact after normal shutdown. Snapshot `source-desktop-verified` and
+frozen disk SHA-256
+`655b3a363040e99160ab9ac595e2c2e232355dce8fe332ec8b4663384d6b3ca0`
+preserve this result. [Full evidence and reproduction](source-desktop-milestone.md)
+
+Matching original LSASRV/Secur32 resolves the TokenAuditPolicy mismatch without
+an auditing bypass. The next shell failure, absent DecodePointer, is resolved
+by `build/apply_pointer_compat.py`: a kernel-held per-process cookie with the
+SP3 x86 self-only query (class **36**) and real encode/decode exports. Build-19
+was rejected because incremental compilation skipped process allocation;
+build-20 performs a clean rebuild and restores only the four documented supplied
+executive objects. Eleven pointer checks and six session checks pass in fresh
+KVM, TCG and two-vCPU KVM guests. Wrong TPR-class injection still bugchecks `0x9`.
+
+The tracked `build/prepare_native_boot.py` and `build/native-boot-build.cmd`
+pipeline has executed in build-21: four checked kernels, three HALs, ntdll and
+Kernel32 compile/link using the supplied native tools. Its independent fresh
+boot also reaches Explorer/Luna and passes the pointer/session probes and
+normal shutdown. This pipeline requires the prepared native build
+copy and four supplied executive objects; it is not a complete C/ASM OS rebuild.
+The source-guest UDP probe still fails (10022) because SP3 wshtcpip needs
+`RtlIpv4StringToAddressExW`. Networking, games, accelerated graphics and sustained
+stability remain unverified. The protected SP3 reference installation is intact.
+
+### Earlier investigation checkpoints
+
 Active boot investigation (2026-10-22): the running `xp25-sp3` reference now has
 the libvirt disk-and-RAM snapshot `xp25-before-apic-debug-20261022`. New experiments
 are isolated overlays in `.work/boot-debug-20261022/`, with per-run QEMU commands,
@@ -261,16 +293,18 @@ ReactOS core is not substituted for Microsoft's kernel, Winlogon or services.
 ## Verified blockers and remaining work
 
 1. Windows guest/media, native compiler execution and x86 kernel linking are now
-   established. Original NTFS and checked HAL builds resolved the first two
-   source-boot dependencies. The live KVM stop is the checked HAL APIC readback
-   assertion. Earlier Linux launch failures remain historical.
-2. Missing original Winlogon and SCM server source directories, licensing and
-   font-driver references, plus other literal gaps. Full rebuild completeness is
-   unresolved; no substitute OS core was adopted.
+   established. The APIC readback failure and subsequent version mismatches are
+   resolved for the recorded desktop configuration. UDP loopback still fails
+   at a newer SP3 Winsock-helper dependency.
+2. Original Winlogon and two executive C files are missing, with additional
+   licensing/font-driver references and literal gaps. The earlier SCM absence
+   finding checked the wrong path: `base/screg/sc/server` contains the original
+   services target. Its native build is not yet verified. No substitute OS core
+   was adopted.
 3. Four source kernels are linked, with boot-video/debugger dependencies built.
-   The checked ACPI APIC HAL and matching NTFS now build. A complete custom OS
-   rebuild remains unverified. The
-   recorded source-kernel boot attempt has not established a completed startup.
+   The checked ACPI APIC HAL and matching NTFS build and boot to a verified user
+   desktop. A complete custom OS rebuild remains blocked by missing original
+   source files and depends on the installed Microsoft user-mode components.
 4. No identified NT 5.2 XP Professional x64 product baseline. AMD64 code and
    standalone PE32+ aliases are not evidence of a supported x64 XP build.
 5. No physical hardware/passthrough or modern-driver tests. Host device nodes
@@ -279,8 +313,8 @@ ReactOS core is not substituted for Microsoft's kernel, Winlogon or services.
    April 1, 2026. EC2 remains a platform/driver feasibility blocker.
    [AWS requirements](https://docs.aws.amazon.com/vm-import/latest/userguide/prerequisites.html)
 
-Next native milestone: resolve the recorded source-kernel boot dependencies and
-observe startup with loaded-kernel identity, login, probe and shutdown records.
+Next native milestone: validate the reproducible build pipeline and integrate
+additional matching original components using the staged plan in the desktop record.
 Game fixtures, accelerated graphics, hardware and security validation remain
 outstanding. The supplied SP3 guest and linked source kernels have separate
 evidence; a full custom OS rebuild is still incomplete.

@@ -1,6 +1,7 @@
 # Compatibility matrix
 
-The source kernel reaches graphical login; its desktop milestone is incomplete.
+The source-kernel desktop milestone passes in the recorded KVM clone, including
+authentication, Explorer/Luna, file/application checks and normal shutdown.
 `Not tested` means no installation, execution or
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
@@ -12,11 +13,11 @@ Results below apply to that guest and its recorded build overlay, with QEMU
 8.2.2, i440fx, qemu32, one CPU, 512 MiB RAM, IDE and standard VGA. They do not
 establish a custom source build or other hardware configurations.
 
-## Runtime regression coverage
+## Supplied SP3 runtime regression coverage
 
 | Requirement | Implemented observation | Current execution status |
 | --- | --- | --- |
-| Kernel boot | QEMU screenshots and guest identity | Supplied XP SP3 boots; source kernel reaches login, with desktop still blocked |
+| Kernel boot | QEMU screenshots and guest identity | Supplied XP SP3 boots; source-kernel results are recorded separately below |
 | User login | Manual logoff, account chooser, XP25 logon and post-logon probe | Observed once; automated transition test not implemented |
 | Explorer | Check shell PID resolves to `explorer.exe` | Pass under Administrator and XP25, including overlay reboot |
 | Registry | Volatile HKCU DWORD roundtrip with cleanup | Pass in recorded guest runs |
@@ -40,9 +41,19 @@ A matching original NTFS driver then reached a checked/free HAL mismatch
 priority readback assertion (0x8e, STATUS_BREAKPOINT; written 0x3d, read 0x30),
 before login. These failed experiments are separate from the verified SP3
 runtime. The original UP/MP/PAE target filenames all use MP-enabled checked
-configuration here (`NT_UP=0`); no multicore runtime was tested. [Native build and boot evidence](native-kernel-build.md)
+configuration here (`NT_UP=0`); multicore runtime had not yet been tested at that
+initial checkpoint. The later two-vCPU result is recorded below.
+[Native build and boot evidence](native-kernel-build.md)
 
 ## Source boot investigation, 2026-10-22
+
+Latest result, 2026-10-23: native LSASRV/Secur32 resolves authentication, and the
+tested kernel-held pointer-cookie extension resolves the missing DecodePointer
+shell dependency. XP25 authentication, Explorer/Luna, filesystem/registry tests,
+Notepad save/reopen and guest-requested shutdown pass under KVM. Fresh TCG and
+two-vCPU KVM guests also pass pointer and interactive-session regressions.
+[Exact environment, hashes and limitations](source-desktop-milestone.md)
+The following paragraphs retain earlier failure evidence.
 
 The reference `xp25-sp3` VM has the libvirt disk/RAM snapshot
 `xp25-before-apic-debug-20261022`. All following experiments use disposable
@@ -102,13 +113,15 @@ and `LsaLogonUser` returns `0xc0000003`. Matching original LSA is being built.
 
 | Source-kernel milestone gate | Recorded status |
 | --- | --- |
-| Source kernel loads | Verified path/checksum at login |
+| Source kernel loads | XP25KRNL.EXE path and compiled checksum `0x33bcdb` verified live under KVM/TCG; matching MP kernel also verified |
 | Graphical login screen | Observed in fresh KVM and TCG clones |
-| Authentication | Fails at unsupported token audit-policy class |
-| Explorer and Luna desktop | Not observed |
-| Filesystem and basic applications after login | Not tested |
-| Normal source-guest shutdown from desktop | Not tested |
-| Ubuntu reproduction | Login reproduced; complete desktop workflow unverified |
+| Authentication | Native LsaLogonUser status/substatus 0; logon ID matches XP25 and Explorer tokens |
+| Explorer and Luna desktop | Observed under KVM, TCG and two-vCPU KVM; session probe passes |
+| Filesystem and basic applications after login | KVM temporary-file and HKCU round trips pass; Notepad save/reopen verified offline |
+| Normal source-guest shutdown from desktop | Guest `shutdown.exe -s -t 0` reaches QMP shutdown state |
+| Ubuntu reproduction | Fresh clones launched from Ubuntu; native build-media pipeline executes independently |
+| Pointer compatibility/security contract | Eleven checks pass, including 262,144 concurrent round trips and rejected remote/invalid queries; not a general security audit |
+| Networking | Fails UDP loopback with 10022; SP3 wshtcpip missing RtlIpv4StringToAddressExW |
 
 Clean rebuilding also exposes absent executive files `exinit.c` and `systime.c`.
 Native kernel links use the four supplied i386 prebuilt objects, whose hashes

@@ -18,9 +18,9 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify(text):
+def verify(text, expected_dlls=ALLOWED_DLLS):
     imports = {name.lower() for name in re.findall(r"DLL Name:\s+(\S+)", text)}
-    if imports != ALLOWED_DLLS:
+    if imports != expected_dlls:
         raise ValueError("unexpected guest runtime dependency set: " + str(sorted(imports)))
     if "file format pei-i386" not in text:
         raise ValueError("probe is not an i386 PE executable")
@@ -31,7 +31,7 @@ def verify(text):
     return sorted(imports)
 
 
-def import_symbols(text):
+def import_symbols(text, expected_dlls=ALLOWED_DLLS):
     result, current = {}, None
     for line in text.splitlines():
         module = re.search(r"DLL Name:\s+(\S+)", line)
@@ -44,7 +44,7 @@ def import_symbols(text):
             entry = re.fullmatch(r"\s*[0-9a-fA-F]+\s+\d+\s+([A-Za-z_]\w*)\s*", line)
             if entry:
                 result[current].add(entry[1])
-    if set(result) != ALLOWED_DLLS or any(not names for names in result.values()):
+    if set(result) != expected_dlls or any(not names for names in result.values()):
         raise ValueError("incomplete named import inspection")
     return result
 
@@ -52,6 +52,8 @@ def import_symbols(text):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
+    parser.add_argument("--probe", choices=("xp", "pointer", "session"), default="xp",
+                        help="standard, pointer compatibility, or interactive-session checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
                         help="local XP SDK import libraries; read only, never copied to output")
@@ -69,14 +71,22 @@ def main():
             parser.error("missing tool: " + name)
         tools[key] = str(value)
     output.mkdir(parents=True, exist_ok=False)
-    source = REPO / "tests/guest/xp_probe.c"
-    executable = output / "xp_probe.exe"
+    stem = args.probe + "_probe"
+    source = REPO / ("tests/guest/" + stem + ".c")
+    executable = output / (stem + ".exe")
+    expected_dlls = ALLOWED_DLLS if args.probe == "xp" else {"kernel32.dll", "user32.dll"}
+    if args.probe == "session":
+        expected_dlls = expected_dlls | {"advapi32.dll"}
     command = [tools["cc"], "-Os", "-Wall", "-Wextra", "-Werror", "-ffreestanding",
                "-fno-builtin", "-fno-stack-protector", "-nostdlib",
                "-Wl,--entry,_ProbeMain@0", "-Wl,--subsystem,console:5.1",
                "-Wl,--major-os-version,5,--minor-os-version,1", "-Wl,--no-insert-timestamp",
                "-Wl,--disable-dynamicbase", str(source), "-o", str(executable),
-               "-lkernel32", "-luser32", "-ladvapi32", "-lws2_32"]
+               "-lkernel32", "-luser32"]
+    if args.probe == "xp":
+        command += ["-ladvapi32", "-lws2_32"]
+    elif args.probe == "session":
+        command += ["-ladvapi32"]
     result = {"schema": 1, "started_utc": datetime.now(timezone.utc).isoformat(),
               "status": "failed", "guest_execution": "not_attempted",
               "source_sha256": digest(source), "command": command, "tools": {}}
@@ -92,9 +102,9 @@ def main():
         inspection = subprocess.check_output([tools["objdump"], "-p", str(executable)],
                                              text=True, env=environment)
         (output / "inspection.txt").write_text(inspection)
-        result["imports"] = verify(inspection)
+        result["imports"] = verify(inspection, expected_dlls)
         result["xp_sdk_imports"] = {}
-        for module, symbols in import_symbols(inspection).items():
+        for module, symbols in import_symbols(inspection, expected_dlls).items():
             library = args.sdk.resolve() / (module[:-4] + ".lib")
             listing = subprocess.check_output([tools["nm"], "-g", "--defined-only", str(library)],
                                                text=True, env=environment)

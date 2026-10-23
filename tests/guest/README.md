@@ -48,3 +48,14 @@ pages. The original failure, serial records, executable hash and installed-disk
 hash are retained. Manual login and shutdown observations are separate from the
 probe's four `not_tested` cases. No bootable custom XP image or game baseline has
 been established.
+# Additional boot-compatibility probes
+
+`build/guest.py --probe pointer` builds `pointer_probe.exe`; it checks real
+EncodePointer/DecodePointer exports, concurrent round trips, process separation
+and rejected cookie-query arguments without logging cookie values.
+`--probe session` builds `session_probe.exe`; it verifies XP25's primary token,
+Explorer's matching user/logon session and the visible Default desktop.
+Both write JSON observations to COM1. Run each separately and wait for its
+completion marker. Neither replaces the standard filesystem/application tests
+or independently proves a login transition. See
+[the source-desktop record](../../docs/source-desktop-milestone.md).

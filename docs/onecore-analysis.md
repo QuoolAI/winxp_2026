@@ -23,7 +23,7 @@ and isolated API-set aliases, without a ReactOS or Wine guest runtime dependency
 | `oca/extensions/kernelex`, `ntext` | Implements additional kernel32/NTDLL APIs, including synchronization extensions | Candidate follow-up; substantial implementation dependencies |
 | `oca/wrappers`, `oca/new-dlls` | Wraps existing libraries and provides additional DLL implementations | Retained for future import-driven compatibility work |
 | `base/system/winlogon` | ReactOS logon implementation corresponding to one missing XP component | Source candidate; binary compatibility untested |
-| `base/system/services` | ReactOS service control manager corresponding to the absent XP server | Source candidate; binary compatibility untested |
+| `base/system/services` | ReactOS service control manager; original XP target later located at `base/screg/sc/server` | Excluded as a core replacement; binary compatibility untested |
 | `ntoskrnl`, `hal`, `boot` | ReactOS system foundation | A separate OS implementation, not an established XP kernel replacement |
 
 The project documents XP SP3, Server 2003 SP2 and XP x64 SP2 as runtime targets.
@@ -96,6 +96,12 @@ including targets in `kernelex`. Its definitions alone cannot provide working
 SRW locks, condition variables or address waits. The implementations span
 `kernelex/synch.c` and `ntext/rtl/synch.c`, making this a separate implementation
 and runtime-testing task. [Synchronization contract](https://github.com/shorthorn-project/One-Core-API-Source/blob/9eb3c31de9460c1ccce3f6a10c9c4a704f032514/oca/api-sets/api-ms-win-core-synch-l1-2-0.spec)
+
+Inventory correction, 2026-10-23: the original XP SCM target exists at
+`base/screg/sc/server`; the earlier absence finding used a different path.
+Its native build is still unverified. The project rules exclude replacing
+Microsoft Winlogon/SCM with ReactOS or Wine implementations. The following
+dependency findings explain why these upstream implementations are not used.
 
 Winlogon requires ReactOS headers, Wine support, generated WinReg RPC server code,
 GINA callbacks and logon/session behavior. Services requires generated SVCCTL RPC
