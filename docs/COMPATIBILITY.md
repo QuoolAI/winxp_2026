@@ -6,6 +6,21 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Interactive libvirt desktop, 2026-10-23
+
+`XP25-Desktop` is a persistent `qemu:///system` domain with a loopback VNC
+console. Its independent disposable disk was verified sector-identical to
+`network-native-kvm-mp-02`, SHA-256
+`96ae34bf4c66cb79a1211c6c29e4cf2e48dde99697ed00efe8ce4588657b1940`,
+before boot. No reference backing disks are attached. The retained two-vCPU KVM,
+qemu32, 512 MiB, i440fx 8.2, IDE, standard VGA and RTL8139 configuration reaches
+Explorer/Luna. Six standard, eleven pointer, six session and seventeen network
+observations pass; DHCP/DNS and a temporary isolated HTTP fixture were exercised.
+A guest-requested shutdown is recorded. This VM is left shut off for interactive
+startup; its registration does not broaden the existing hardware, application,
+graphics or Internet support claims.
+[Exact settings, image hashes and evidence](virt-manager-xp25-desktop.md)
+
 ## Milestone 2 networking, 2026-10-23
 
 The [native networking record](native-networking-milestone.md) establishes these

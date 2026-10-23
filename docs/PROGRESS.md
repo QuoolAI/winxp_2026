@@ -2,6 +2,17 @@
 
 ## Current checkpoint
 
+2026-10-23: **`XP25-Desktop` is registered in system libvirt for interactive
+virt-manager use.** Its independent disposable disk is sector-identical before
+boot to the newest verified desktop checkpoint, `network-native-kvm-mp-02`
+(18:35:27 UTC), and has no reference backing chain. The original two-vCPU
+qemu32/512 MiB/i440fx/IDE/standard-VGA/RTL8139 profile is retained, with a
+loopback VNC console and the isolated libvirt DHCP/DNS network. Explorer/Luna
+and all four regression probes pass in the registered VM. Guest-requested
+shutdown is recorded; the VM is left shut off with autostart disabled, ready
+for the user to start. Existing guests and reference images are preserved.
+[Configuration, commands and verification](virt-manager-xp25-desktop.md)
+
 2026-10-23, Milestone 2: **native networking passes.** The original NT 5.1
 `net/tcpip/winsock` helper builds with the native Microsoft toolchain and fixes
 the SP3 helper's missing ntdll imports without a kernel/parser extension.
