@@ -1,5 +1,9 @@
 # Source-kernel desktop milestone — 2026-10-23
 
+The later [Milestone 2 networking record](native-networking-milestone.md)
+resolves the networking failure preserved below using the original native
+Winsock helper. This page retains the original desktop checkpoint.
+
 The original NT 5.1 x86 kernel reaches an authenticated XP25 Explorer/Luna
 desktop under QEMU/KVM. The recorded guest passes file/registry checks, saves
 and reopens a Notepad document, and shuts down normally. This is a source-kernel

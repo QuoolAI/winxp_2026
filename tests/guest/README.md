@@ -59,3 +59,20 @@ Both write JSON observations to COM1. Run each separately and wait for its
 completion marker. Neither replaces the standard filesystem/application tests
 or independently proves a login transition. See
 [the source-desktop record](../../docs/source-desktop-milestone.md).
+
+`build/guest.py --probe network` builds `network_probe.exe`. It verifies IPv4
+conversion, TCP/UDP payload loopback, required running services, an RTL8139
+adapter's controlled DHCP address, DNS for `xp25.test`, and TCP/HTTP to
+`10.25.0.1:8080`. Use it only with the private namespace harness in
+[`vm/network_lab.py`](../../vm/network_lab.py). It writes 17 observations to
+COM1 and exits nonzero on a failure. Its guest dependencies are XP's Kernel32,
+User32, Advapi32, Ws2_32 and Iphlpapi; it has no C runtime dependency.
+
+`build/prepare_network_tests.py` packages all four probes only after checking
+their successful build results, current source hashes and executable hashes.
+The CD's `regress.cmd` runs each probe in sequence and records its exit status;
+`stability.cmd` repeats the network probe ten times and records the number of
+failed runs. These commands do not infer login transitions or shut down the
+guest. Check the full suite's completion marker before the next UI/debugger
+operation. See the [networking milestone](../../docs/native-networking-milestone.md)
+for guest restart, authentication, Notepad, shutdown and packet evidence.

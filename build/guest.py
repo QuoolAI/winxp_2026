@@ -52,8 +52,8 @@ def import_symbols(text, expected_dlls=ALLOWED_DLLS):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
-    parser.add_argument("--probe", choices=("xp", "pointer", "session"), default="xp",
-                        help="standard, pointer compatibility, or interactive-session checks")
+    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network"), default="xp",
+                        help="standard, pointer, session, or isolated-network checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
                         help="local XP SDK import libraries; read only, never copied to output")
@@ -77,6 +77,8 @@ def main():
     expected_dlls = ALLOWED_DLLS if args.probe == "xp" else {"kernel32.dll", "user32.dll"}
     if args.probe == "session":
         expected_dlls = expected_dlls | {"advapi32.dll"}
+    elif args.probe == "network":
+        expected_dlls |= {"advapi32.dll", "ws2_32.dll", "iphlpapi.dll"}
     command = [tools["cc"], "-Os", "-Wall", "-Wextra", "-Werror", "-ffreestanding",
                "-fno-builtin", "-fno-stack-protector", "-nostdlib",
                "-Wl,--entry,_ProbeMain@0", "-Wl,--subsystem,console:5.1",
@@ -87,6 +89,8 @@ def main():
         command += ["-ladvapi32", "-lws2_32"]
     elif args.probe == "session":
         command += ["-ladvapi32"]
+    elif args.probe == "network":
+        command += ["-ladvapi32", "-lws2_32", "-liphlpapi"]
     result = {"schema": 1, "started_utc": datetime.now(timezone.utc).isoformat(),
               "status": "failed", "guest_execution": "not_attempted",
               "source_sha256": digest(source), "command": command, "tools": {}}

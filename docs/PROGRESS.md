@@ -2,6 +2,29 @@
 
 ## Current checkpoint
 
+2026-10-23, Milestone 2: **native networking passes.** The original NT 5.1
+`net/tcpip/winsock` helper builds with the native Microsoft toolchain and fixes
+the SP3 helper's missing ntdll imports without a kernel/parser extension.
+Fresh KVM, two-vCPU KVM and TCG clones pass IPv4 parsing, TCP/UDP loopback,
+RTL8139 initialization, DHCP, controlled DNS and isolated HTTP. Desktop,
+file/registry, pointer, session, Notepad and normal-shutdown regressions pass.
+An independently rebuilt helper passes ten consecutive network runs, a real
+guest-requested warm reboot and the full suite again; a separate cold-boot
+child also passes. Public Internet access remains disabled by a private network
+namespace with no uplink or default route. Source and frozen reference images
+are intact. [Commands, hashes, failures and runtime evidence](native-networking-milestone.md)
+
+Tracked launchers, source-pinned native build media, fresh-probe test media and
+packet/server logs make the networking process repeatable on the prepared
+Ubuntu host. Native SCM/Winreg RPC stubs and headers were generated in build
+copies for Milestone 3. The installed SCM was not replaced. Eight extended SP3
+ntdll IPv4/IPv6 conversion exports remain absent; the matching original helper
+does not require them. Native Ws2_32 also lacks the SP3 Unicode resolver exports
+GetAddrInfoW, FreeAddrInfoW and GetNameInfoW. Other virtual NICs, IPv6, TLS,
+games and sustained network/security testing remain unverified.
+
+### Preserved Milestone 1 checkpoint
+
 2026-10-23: **the source-kernel desktop milestone succeeds under KVM.** A fresh
 clone loads XP25KRNL.EXE with compiled checksum `0x33bcdb`, reaches graphical
 login, authenticates XP25, loads Explorer/Luna, passes registry and filesystem
@@ -28,9 +51,10 @@ Kernel32 compile/link using the supplied native tools. Its independent fresh
 boot also reaches Explorer/Luna and passes the pointer/session probes and
 normal shutdown. This pipeline requires the prepared native build
 copy and four supplied executive objects; it is not a complete C/ASM OS rebuild.
-The source-guest UDP probe still fails (10022) because SP3 wshtcpip needs
-`RtlIpv4StringToAddressExW`. Networking, games, accelerated graphics and sustained
-stability remain unverified. The protected SP3 reference installation is intact.
+At this earlier checkpoint the source-guest UDP probe failed (10022) because
+SP3 wshtcpip needed `RtlIpv4StringToAddressExW`; Milestone 2 above resolves that
+specific failure with the original helper. Games, accelerated graphics and
+sustained stability remain unverified. The protected SP3 reference is intact.
 
 ### Earlier investigation checkpoints
 

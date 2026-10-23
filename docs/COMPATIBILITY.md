@@ -6,6 +6,41 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Milestone 2 networking, 2026-10-23
+
+The [native networking record](native-networking-milestone.md) establishes these
+results on fresh source-kernel clones, separately from the historical SP3
+installation tests below. Evidence is under `.work/boot-debug-20261022/`.
+
+| Gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
+| --- | --- | --- | --- |
+| Source-kernel boot / Explorer-Luna session | Pass | Pass, source MP kernel/HAL | Pass |
+| File / registry / pointer regressions | Pass | Pass | Pass |
+| Notepad save/reopen | Pass | Pass | Pass |
+| IPv4 address/port parsing and invalid-octet rejection | Pass | Pass | Pass |
+| TCP and UDP loopback payloads | Pass | Pass | Pass |
+| QEMU RTL8139 / original installed NDIS driver | Pass | Pass | Pass |
+| DHCP lease `10.25.0.10/24` from `10.25.0.1` | Pass | Pass | Pass |
+| Controlled DNS `xp25.test` | Pass | Pass | Pass |
+| Isolated TCP/HTTP server | Pass | Pass | Pass |
+| Normal guest shutdown / disk check | Pass | Pass | Pass |
+
+KVM also passes explicit interactive authentication (LsaLogonUser zero status /
+substatus, matching Explorer/user logon ID), a cold-boot child, and an independent
+native-helper build followed by ten network runs, a guest warm reboot and full
+probe suite. These are short regression checks. TLS, Internet access, IPv6,
+VirtIO, VMware, EC2 and sustained-load/security testing remain unverified.
+
+Only source-built `wshtcpip.dll` was added to the established guest component
+set. The original installed Microsoft AFD/TCPIP/NDIS, DHCP/DNS and SCM remain.
+The SP3 helper's `RtlIpv4StringToAddressExW` and `RtlIpv4AddressToStringExW`
+imports remain incompatible with native ntdll; eight extended IPv4/IPv6 A/W
+exports remain absent. The tested original helper uses existing native APIs.
+Native Ws2_32 lacks GetAddrInfoW, FreeAddrInfoW and GetNameInfoW; applications
+requiring those Unicode resolver APIs remain unverified.
+The preserved Milestone 2 image hashes and all per-run commands/results are
+linked in the networking record.
+
 The [supplied XP SP3 guest](xp-sp3-guest.md) has booted in KVM. Its stopped
 backing-disk SHA-256 is
 `e64190c0c2314945d56cb78efa08bcda4551cb4247d6dde848c076a4cc0d776c`.
@@ -121,7 +156,7 @@ and `LsaLogonUser` returns `0xc0000003`. Matching original LSA is being built.
 | Normal source-guest shutdown from desktop | Guest `shutdown.exe -s -t 0` reaches QMP shutdown state |
 | Ubuntu reproduction | Fresh clones launched from Ubuntu; native build-media pipeline executes independently |
 | Pointer compatibility/security contract | Eleven checks pass, including 262,144 concurrent round trips and rejected remote/invalid queries; not a general security audit |
-| Networking | Fails UDP loopback with 10022; SP3 wshtcpip missing RtlIpv4StringToAddressExW |
+| Networking | Historical SP3-helper failure 10022; resolved by the original source-built helper in Milestone 2 above |
 
 Clean rebuilding also exposes absent executive files `exinit.c` and `systime.c`.
 Native kernel links use the four supplied i386 prebuilt objects, whose hashes
@@ -159,7 +194,8 @@ family does not imply all releases or architectures are feasible.
 | UEFI/GPT/NVMe/AHCI/USB 3.x | No guest experiments | Unverified |
 | Modern ACPI/interrupt controllers | Existing ACPI/HAL code only | Unverified |
 | Modern GPU/multiple displays/passthrough | Host VFIO node exists | No device or driver validated |
-| Ethernet/Wi-Fi/IPv6/Bluetooth | No network-adapter tests | Unverified |
+| QEMU RTL8139 Ethernet | Source-kernel KVM UP/MP and TCG: DHCP, DNS, TCP/UDP, isolated HTTP | Verified only in the recorded configurations; see Milestone 2 |
+| Other Ethernet/Wi-Fi/IPv6/Bluetooth | No corresponding device/runtime tests | Unverified |
 | EC2 | XP omitted from supported import list; i386 imports discontinued | Blocked, no deployment |
 
 EC2 constraints were checked against [AWS import requirements](https://docs.aws.amazon.com/vm-import/latest/userguide/prerequisites.html).
