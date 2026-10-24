@@ -2,6 +2,18 @@
 
 ## Current checkpoint
 
+2026-10-23: **`XP25-Anniversary` is registered for interactive virt-manager use.**
+Its independent, sector-verified disk copies the newest frozen branded desktop,
+`brand-final-tcg-01` (2026-10-24 00:00:23 UTC). KVM uses its original one-vCPU
+qemu32/512 MiB/i440fx/IDE/VGA/RTL8139 profile and original UP kernel/HAL. A unique
+MAC and `.11` DHCP reservation avoid sharing `XP25-Desktop`'s MAC/IP; guest
+files and registry/boot settings are not patched. Desktop, native-kernel live
+checksum, all established probes, branding/installer fixtures, networking and
+normal shutdown pass. Sixteen critical files, captured identity values, source
+chain hashes and existing guests are preserved. The VM is shut off with
+autostart disabled; its loopback VNC console is ready for the user to start.
+[Configuration and evidence](virt-manager-xp25-anniversary.md)
+
 2026-10-23: **XP25 visible branding passes the recorded guest matrix.** System
 Properties, About Windows, graphical login and the Start menu carry XP25 names
 on separate disposable overlays. Display strings are configurable and en-US

@@ -6,6 +6,24 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Interactive anniversary VM, 2026-10-23
+
+`XP25-Anniversary` is a separate persistent `qemu:///system` domain, using a
+flattened, preboot sector-identical copy of the newest branded desktop,
+`brand-final-tcg-01` (reference SHA-256
+`d4fa9505a725fcc670ddfd443d4179e5871ef32d27d8073e6e7e04f6b4774f85`).
+The original one-vCPU qemu32/512 MiB/i440fx/IDE/VGA/RTL8139 profile boots under
+KVM with the same original UP kernel/HAL, SCM/SMSS and native networking helper.
+The loopback VNC console opens through virt-manager. All 54 established and 17
+branding observations pass, alongside Win32/MSI fixtures and service/guest
+shutdown. Sixteen critical files and captured compatibility identity values
+match the reference after shutdown. Clone MAC `52:54:00:25:00:03` receives
+`10.25.0.11` from the existing isolated libvirt network; DNS, TCP/UDP and isolated
+HTTP pass. Only this additional DHCP reservation changes shared configuration.
+Reference images and pre-existing guests remain preserved. The VM is left shut
+off, ready for interactive startup; no broader compatibility claim is made.
+[Exact commands, evidence and limitations](virt-manager-xp25-anniversary.md)
+
 ## XP25 resource branding, 2026-10-23
 
 The [branding record](branding.md) covers separate disposable children of the
