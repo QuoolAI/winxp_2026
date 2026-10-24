@@ -2,6 +2,24 @@
 
 ## Current checkpoint
 
+2026-10-24, Milestone 5 continuation: **native Winlogon now prepares and cleans
+up an authenticated local user's profile.** New code loads UserEnv's profile,
+checks its actual hive against the token SID, builds and validates the user
+environment and releases both resources before token closure on rejected
+startup. Fresh-account profile creation is demonstrated in one-vCPU KVM,
+two-vCPU KVM and TCG disposable boot replacements. The actual SP3 NONAME profile
+manager ordinal is corrected after recording a genuine error-127 failure.
+Thirty-eight host checks pass, including thirteen environment parsing cases.
+
+The guest still stops at `activation_policy_contract_unresolved`, error 120,
+before GINA shell activation, userinit or Explorer. Activation enforcement has
+not been removed or made to return fabricated success. Licensing-preserving
+orchestration, GPO/GINA environment integration and the full desktop/session
+lifecycle remain incomplete. There is no accepted replacement desktop or new
+engineering image. The original-host fixture control passes two full suites
+and normal shutdown; reference sources/images and user VMs are preserved.
+[Profile-stage implementation and evidence](native-winlogon.md)
+
 2026-10-24, Milestone 5: **independent Winlogon initialization and console
 authentication implemented; replacement desktop not accepted.** New native C
 builds successfully with the existing NT toolchain. Disposable single-vCPU KVM,

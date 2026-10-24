@@ -152,6 +152,7 @@ void wl_attention(DWORD type)
             if(!wl_state_step(&wl.machine,WlAuthenticated,WL_TOKEN_CHECKED))wl_fail("auth_state_rejected",ERROR_INVALID_DATA);
             if(!wl_session_start()){
                 error=GetLastError();wl_free_gina_result();wl.gina.logoff(wl.gina_context);
+                if(!wl_session_end())wl_fail("session_cleanup_failed",GetLastError());
                 if(wl.token){CloseHandle(wl.token);wl.token=NULL;}
                 if(!wl.profile&&!wl.environment)wl_state_step(&wl.machine,WlRollbackCompleted,WL_RESOURCES_GONE|WL_SECURE_ACTIVE);
                 wl_fail("session_start_failed",error);

@@ -5,6 +5,86 @@
 The accepted engineering image still requires the original Microsoft Winlogon.
 No reference image or interactive libvirt VM is an integration target.
 
+## Profile preparation continuation, 2026-10-24
+
+Continued directly from `46d081035`; the existing initialization, LSASS, GINA
+and authentication implementation remains in place. `session.c` now implements
+local-account profile preparation and failure cleanup. It verifies the token's
+resolved account against GINA's identity, invokes the existing UserEnv profile
+manager, forwards the GINA profile metadata, calls `LoadUserProfileW` and checks
+the actual registry-handle name against `\\REGISTRY\\USER\\<token SID>`.
+It creates a separate user environment, sets its console-session name and checks
+USERNAME, USERDOMAIN and USERPROFILE against the authenticated account and
+UserEnv's actual profile directory. It does not change the SYSTEM process's
+environment or launch a SYSTEM shell.
+
+The [profile API contract](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-loaduserprofilew)
+requires the returned hive handle to be released through `UnloadUserProfile`;
+the new cleanup follows that ownership rule. GINA releases its references first,
+then the host destroys its environment and unloads the profile before closing
+the token. Cleanup failures retain ownership and stop on the secure desktop.
+The [environment API](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-createenvironmentblock)
+is called after loading the profile, with inheritance disabled. Bounded UTF-16
+inspection rejects missing terminators, malformed entries and duplicate target
+variables while preserving Unicode values and drive-directory entries.
+
+`W2=.work/winlogon-session-20261024` retains this continuation's inputs, build
+media, logs, manifests and experiments. Native build 01 rejected a potentially
+uninitialized SID-use variable under `/W4 /WX`. Build 02 compiled, but actual
+boot testing returned error 127: `InitializeUserProfile` is a **NONAME** export,
+not a named API. The verified SP3 adapter maps ordinal **117** to original SP1
+ordinal **118**. Build 03 uses that established contract; no guessed ordinal
+fallback or swallowed failure was added.
+
+Build 03 is 26,624 bytes, i386, GUI subsystem, PE checksum `0x135fb`, SHA-256
+`8a90fca41f1d21454ddb224276b33afdeab60f1b39d3f5deb6bd5057a4e8d7a7`.
+The following are actual boot-replacement observations, with the existing native
+kernel/GINA/UserEnv retained:
+
+| Profile-stage observation | KVM, one vCPU | KVM, two vCPUs | TCG |
+| --- | --- | --- | --- |
+| GINA authentication and token/account matching | Observed | Observed | Observed |
+| Fresh profile created; loaded hive matches authenticated token SID | Observed | Observed | Observed |
+| User environment and console-session variables verified | Observed | Observed | Observed |
+| Environment release and successful profile-unload API after rejection | Observed | Observed | Observed |
+| Rollback reaches signed-out with token closed | Observed | Observed | Observed |
+| Shell activation and completed Explorer/Luna login | Not reached | Not reached | Not reached |
+| Normal logoff, shutdown/restart and full replacement regression | Not reached | Not reached | Not reached |
+
+The runs are `L/winlogon-session-native-kvm-01`,
+`L/winlogon-session-native-kvm-mp-01` and
+`L/winlogon-session-native-tcg-01`. Their common frozen parent,
+`L/winlogon-session-fixture-kvm-01/disk.qcow2` (SHA-256
+`f1ed3d30cbb7269d0e6c43990359223db794eb67d9f277d614fd8984943e1e3c`),
+adds only a disposable local test account to the previously verified stack and
+retains original Winlogon. Two full existing suites and real service/guest
+shutdown pass in that control. The account's profile hive is absent there and
+is present in offline readback from each replacement child. Original and
+replacement Winlogon bytes, serial/on-disk logs and matching UP/MP kernel
+identities are retained. This verifies preparation and cleanup API results;
+it does not establish hostile-user security equivalence or complete logoff.
+
+Reproduce with the existing native build driver and frozen prepared build VM,
+using `W2/build-media-03`. The fixture recipe and exact UI commands are in
+`W2/prepare-session-fixture.cmd`, `W2/submit-fixture.py` and the guest journals.
+The fixture's `net user` command prompted about its long test password; the
+recorded `Y` input completed creation. No existing XP25 password changed.
+The replacement matrix uses the normal `network_lab.py` one-component option
+with the fixture parent and build-03 binary, adding `--cpus 2` or `--accel tcg`.
+There is no activation override or shell-enabling test switch.
+
+**The remaining startup error is `activation_policy_contract_unresolved`, 120,
+after profile/environment preparation and before shell activation.** Original
+activation enforcement has not been retired, patched or replaced with success
+results. A verified licensing-preserving orchestration interface remains
+unavailable. GPO/GINA volatile-environment integration, network-provider scripts,
+GINA shell activation, userinit/Explorer and the subsequent session lifecycle
+remain unfinished. Their [shell callback contract](https://learn.microsoft.com/en-us/windows/win32/api/winwlx/nf-winwlx-wlxactivateusershell)
+is documented, but compilation or profile preparation cannot stand in for its
+runtime acceptance. No new standalone engineering image is produced. The
+portable environment test adds thirteen cases; all **38** host checks pass.
+The prior engineering image, Source and user VMs remain unchanged.
+
 ## Implemented source
 
 `components/winlogon/` contains independently authored native C, an NT build
@@ -34,12 +114,12 @@ examined; this is not a claim of a formally separated clean-room process.
   asynchronous worker ownership, token duplication, optional impersonation
   and explicit callback failures. Startup callbacks are exercised; other
   lifecycle notifications have no accepted runtime coverage.
-* `session.c`: an explicit failure boundary. Profile activation, policy,
-  environment, userinit/Explorer, session cleanup and power operations are
-  **not implemented**. It returns an error, never successful authentication or
-  permission to launch an unauthenticated shell.
+* `session.c`: local profile/hive/environment preparation and failure cleanup,
+  as described above. The remaining activation-policy boundary rejects shell
+  startup. Policy, userinit/Explorer and the full session/power lifecycle remain
+  unimplemented; no unauthenticated shell is permitted.
 
-The native compiler runs with `/W4 /WX`. Build 09 compiles ten files, links one
+The native compiler runs with `/W4 /WX`. The initial core build 09 compiles ten files, links one
 executable and binplaces it successfully. Its i386 PE is 23,552 bytes, subsystem
 Windows GUI, image version 5.1, checksum `0xb103`, SHA-256
 `9d3dc1b87b79c3121bafbfced1bcc9395169106fe3bece0531abcc0d08181be9`.
@@ -127,8 +207,9 @@ JSON escaping, preserves last-error and serializes concurrent writers.
 The portable C89 state test executes **320,991 assertions** over behavioral
 sequences and all enumerated phase/event/evidence combinations. Seven synthetic
 startup-key decoder cases cover valid placement and malformed input; no real
-registry key is a fixture. `python3 -m unittest discover -s tests -v` passes
-37 host checks. These tests do not establish native authentication security.
+registry key is a fixture. The initial core checkpoint passed 37 host checks;
+the profile continuation above raises that count to 38. These tests do not
+establish native authentication security.
 
 `L/winlogon-core-control-kvm-01` runs build-03 `--self-test` and `--probe` in
 ordinary processes while retaining original Winlogon. Two complete existing
@@ -165,7 +246,8 @@ restart, full application/network regression or standalone engineering image.
 Failed experimental guests are stopped through host QMP and explicitly marked
 `normal_shutdown=false`; that stop is never counted as a guest shutdown test.
 
-Unsupported features include session/profile/GPO/environment/shell operations;
+Unsupported features include complete interactive session/GPO/shell operations,
+GINA volatile-environment and network-provider integration;
 complete licensing/activation preservation; logoff/power/service coordination;
 shell recovery; secure screensaver/idle policy; password/network-provider change
 notifications; custom desktops/return-desktop and legacy shell-protection
@@ -181,7 +263,8 @@ WPA policy, OEMBIOS handling, the WPA global mutex and
 `NtLockProductActivationKeys`. The Winlogon source providing this orchestration
 is missing. Its complete semantics have not been independently established.
 The replacement must not omit that policy and call the omission permission to
-start Explorer. `session.c` therefore stops before profile/shell startup. An
+start Explorer. `session.c` now prepares the local profile, then stops before
+shell startup and releases its profile/environment resources. An
 accepted licensing-preserving implementation is required along with the actual
 Stage C lifecycle code and positive/negative security/regression tests. No
 activation registry state, activation result or licensing check is patched.

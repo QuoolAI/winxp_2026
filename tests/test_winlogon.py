@@ -34,6 +34,9 @@ class WinlogonCoreTests(unittest.TestCase):
     def test_stored_key_decoder_rejects_malformed_synthetic_input(self):
         self.assertIn('cases=7', self.compile_and_run('winlogon_bootkey', 'bootkey_codec.c'))
 
+    def test_environment_bounds_duplicates_and_unicode_values(self):
+        self.assertIn('cases=13', self.compile_and_run('winlogon_environment', 'environment.c'))
+
 
 if __name__ == '__main__':
     unittest.main()

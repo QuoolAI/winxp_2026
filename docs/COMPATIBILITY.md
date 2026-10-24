@@ -8,6 +8,17 @@ and hardware support must cite an image hash, exact version, environment and log
 
 ## Independent Winlogon prototype, 2026-10-24
 
+The [profile-stage continuation](native-winlogon.md) supersedes build 09's
+pre-profile boundary below. Build 03 of that continuation, SHA-256
+`8a90fca41f1d21454ddb224276b33afdeab60f1b39d3f5deb6bd5057a4e8d7a7`,
+loads a fresh local profile, verifies the actual SID hive and user environment,
+and successfully releases environment/profile resources under KVM, MP KVM and
+TCG. It then rejects startup at the unresolved activation-policy boundary,
+error 120. GINA shell activation, Explorer/Luna login and the session/power
+lifecycle remain unverified and unfinished. No fabricated activation results
+or new accepted engineering image are introduced. Original-host controls pass
+two complete suites and shutdown separately; all 38 host checks pass.
+
 This [experimental host](native-winlogon.md) is not the Winlogon used by the
 accepted engineering image or the user's interactive VMs. All boot replacements
 are isolated disposable overlays. Build 09's SHA-256 is
@@ -25,7 +36,7 @@ are isolated disposable overlays. Build 09's SHA-256 is
 | Independent standalone engineering image | Not produced | Not produced | Not produced |
 
 The missing licensing/activation orchestration is an explicit session boundary;
-native profile/shell/lifecycle code also remains unimplemented. The prototype
+full shell/lifecycle code also remains unimplemented. The prototype
 does not fake security success or suppress exceptions. Stored SYSKEY mode only,
 classic MSGINA UI and local console authentication are covered so far.
 Host state-machine/decoder tests pass; original-host process-only controls and

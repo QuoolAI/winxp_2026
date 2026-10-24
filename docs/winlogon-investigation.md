@@ -4,8 +4,9 @@ The original `ds/security/gina/winlogon` implementation is absent. Its parent
 `dirs` file still requires it. Microsoft Winlogon remains active in the accepted
 engineering images and user VMs. Milestone 5 now supplies an independently
 authored native prototype tested only as a boot replacement in disposable
-overlays. Initialization and console authentication reach a deliberate error
-before profile/shell startup; no replacement has been accepted. MSGINA alone
+overlays. Initialization, console authentication and local profile/environment
+preparation now run, with resource cleanup after a deliberate error before
+shell startup; no replacement has been accepted. MSGINA alone
 does not implement Winlogon, and no ReactOS/Wine/Linux core is substituted.
 [Current implementation and exact remaining boundary](native-winlogon.md)
 
