@@ -31,11 +31,13 @@ def main():
     parser.add_argument('--pointer-probe', type=Path, default=LAB / 'pointer-probe-build-01/pointer_probe.exe')
     parser.add_argument('--session-probe', type=Path, default=LAB / 'session-probe-build-01/session_probe.exe')
     parser.add_argument('--component', nargs=2, metavar=('GUEST_PATH', 'BINARY'),
-                        help='replace exactly one system32 EXE/DLL and preserve its original')
+                        help='replace one system32 EXE/DLL or Windows Explorer and preserve its original')
+    parser.add_argument('--userenv-package', type=Path, help='reviewed UserEnv package with unchanged SP3 forwarder dependency')
     parser.add_argument('--test-media', type=Path, help='private read-only regression CD attached before boot')
     parser.add_argument('--startup-script', type=Path, help='private self-removing XP25 startup regression fixture')
     parser.add_argument('--cpus', type=int, choices=[1, 2], default=1)
     parser.add_argument('--accel', choices=['kvm', 'tcg'], default='kvm')
+    parser.add_argument('--pause-for-debugger', action='store_true', help='leave the new guest paused before firmware execution')
     args = parser.parse_args()
     if '/' in args.name or args.name in ('.', '..'):
         parser.error('a new simple experiment name is required')
@@ -64,8 +66,8 @@ def main():
     if args.component:
         import re
         target, binary = args.component
-        if not re.fullmatch(r'/WINDOWS/system32/[A-Za-z0-9_]+\.(exe|dll)', target):
-            parser.error('one explicit system32 EXE/DLL path is required')
+        if not re.fullmatch(r'/WINDOWS/(system32/[A-Za-z0-9_]+\.(exe|dll)|explorer\.exe)', target):
+            parser.error('one explicit system32 EXE/DLL or Windows Explorer path is required')
         component = Path(binary).resolve()
         if not component.is_file() or not component.is_relative_to(ROOT / '.work'):
             parser.error('compiled component must be a private .work/ file')
@@ -74,6 +76,18 @@ def main():
         if target.casefold() in reserved:
             parser.error('component must not replace an existing baseline staging entry')
         files[target] = component
+    support = None
+    if args.userenv_package:
+        package = args.userenv_package.resolve()
+        if not component or target != '/WINDOWS/system32/userenv.dll' or not package.is_relative_to(ROOT / '.work'):
+            parser.error('UserEnv support requires one explicit UserEnv replacement and private package')
+        info = json.loads((package / 'manifest.json').read_text())
+        original = package / 'ue51sp3.dll'
+        if sha(component) != info['components']['userenv.dll'] or sha(original) != info['original_sp3_sha256']:
+            parser.error('UserEnv package artifacts changed')
+        files['/WINDOWS/system32/ue51sp3.dll'] = original
+        support = {'target': '/WINDOWS/system32/ue51sp3.dll', 'package': str(package),
+                   'sha256': sha(original), 'scope': 'Unchanged original SP3 dependency for three unavailable implementations.'}
     if args.cpus == 2:
         files.update({'/WINDOWS/system32/xp25krnl.exe':
                       LAB / 'build-21-final/nt/base/ntos/init/mp/obj/i386/ntkrnlmp.exe',
@@ -85,6 +99,12 @@ def main():
     staged = {}
     recovery = None
     with lab.partition(output / 'disk.qcow2', True) as device:
+        if support:
+            names = lab.run(['ntfsls', '-p', '/WINDOWS/system32', device]).decode().splitlines()
+            matches = [name for name in names if name.casefold() == 'ue51sp3.dll']
+            if matches and (matches != ['ue51sp3.dll'] or
+                    lab.run(['ntfscat', device, support['target']]) != original.read_bytes()):
+                raise ValueError('existing UserEnv companion name/content must not be overwritten')
         if component:
             original = lab.run(['ntfscat', device, target])
             backup = output / ('recovery-' + Path(target).name)
@@ -104,7 +124,8 @@ def main():
                 staged[target]['transient_self_removing_fixture'] = True
     assert sha(base) == base_hash
     Path('inputs.json').write_text(json.dumps({'base': str(base), 'base_sha256': base_hash,
-                                             'staged': staged, 'recovery': recovery}, indent=2) + '\n')
+                                             'staged': staged, 'recovery': recovery,
+                                             'support_dependency': support}, indent=2) + '\n')
     machine = 'pc-i440fx-8.2' + (',kernel-irqchip=on' if args.accel == 'kvm' else '')
     command = ['qemu-system-i386', '-name', args.name, '-machine', machine,
                '-accel', args.accel, '-cpu', 'qemu32', '-m', '512', '-smp', str(args.cpus),
@@ -129,14 +150,15 @@ def main():
         if Path('qmp.sock').exists():
             try:
                 with lab.QMP() as q:
-                    q.call('cont')
+                    if not args.pause_for_debugger:
+                        q.call('cont')
                 break
             except (ConnectionRefusedError, FileNotFoundError, EOFError):
                 pass
         time.sleep(.1)
     else:
         raise TimeoutError('QMP startup')
-    lab.checkpoint(stage='isolated_network_guest_booting', namespace_pid=process.pid,
+    lab.checkpoint(stage='isolated_network_guest_paused' if args.pause_for_debugger else 'isolated_network_guest_booting', namespace_pid=process.pid,
                    qemu_pid=int(Path('qemu.pid').read_text()), base_sha256=base_hash)
     print(output)
 

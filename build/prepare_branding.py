@@ -55,6 +55,7 @@ def main():
     parser.add_argument('--inputs', type=Path, required=True, help='private extracted baseline Windows directory')
     parser.add_argument('--config', type=Path, default=ROOT / 'branding/en-US.json')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--only-explorer', action='store_true', help='prepare only the reviewed Explorer resources on a source-built candidate')
     args = parser.parse_args()
     source, output = args.inputs.resolve(), args.output.resolve()
     if not source.is_relative_to(ROOT / '.work') or not output.is_relative_to(ROOT / '.work'):
@@ -63,8 +64,9 @@ def main():
     validate(config)
     output.mkdir(parents=True, exist_ok=False)
     manifests = {}
-    for relative in ('system32/sysdm.cpl', 'system32/xpsp1res.dll', 'system32/winver.exe',
-                     'explorer.exe', 'system32/shell32.dll', 'system32/logonui.exe'):
+    components = ('explorer.exe',) if args.only_explorer else ('system32/sysdm.cpl', 'system32/xpsp1res.dll', 'system32/winver.exe',
+                     'explorer.exe', 'system32/shell32.dll', 'system32/logonui.exe')
+    for relative in components:
         path = source / relative
         resources = Resources(path)
         original = copy.deepcopy(resources.entries)

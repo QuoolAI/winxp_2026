@@ -11,6 +11,12 @@ This remains a mixed original-source/installed-Microsoft system. It is not a
 complete OS rebuild, a complete source inventory of every binary input, or a
 claim of general SP3 security and application equivalence.
 
+The later [Regsvc/MSGINA extension checkpoint](native-component-extensions.md)
+supersedes the candidate statuses below: both pass individual integration,
+Explorer compiles but crashes as a shell, and the exact UserEnv export adapter
+passes process-only checks but fails Winlogon boot. The earlier ordinal-only
+gap statement about UserEnv 207–209 below is corrected by that full ABI audit.
+
 ## Native SCM build
 
 The implementation is `Source/XPSP1/NT/base/screg/sc/server`, target `services`.

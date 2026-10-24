@@ -2,6 +2,29 @@
 
 ## Current checkpoint
 
+2026-10-23: **original Regsvc and MSGINA pass individual integration.** Each is
+added alone on a frozen verified parent and passes KVM, two-vCPU KVM and TCG,
+including live module identity, real Winreg RPC lifecycle/negative checks,
+authentication failure/success, lock/unlock, Explorer/Luna, legacy/installer
+fixtures, networking and fresh service/guest shutdown. Original recovery copies
+and captured NT 5.1/x86/2600/SP3/product/licensing identity are preserved.
+
+Original Explorer now compiles after generating original BrowseUI/Shdocvw import
+libraries and building its original support libraries. Shell startup crashes in
+its disposable integration test; it is not promoted. A deterministic UserEnv
+adapter pins the full SP3 ordinal map and delegates three unavailable bodies to
+unchanged original SP3 UserEnv. All fifteen process-only export/profile checks
+pass, but Winlogon boot integration fails with `c0000005`/STOP `c000021a` in the
+three configurations. The working installed UserEnv and Explorer remain active.
+No Winlogon/security/licensing workaround is introduced. The Winlogon investigation
+documents missing source, host contracts and implementation acceptance stages.
+
+A reproducible private preinstalled engineering disk packages the accepted
+SCM/SMSS/Regsvc/MSGINA desktop with its prior kernel, networking and branding.
+It is not a clean Windows Setup ISO; authorized media/license provenance remains
+pending, and no licensed-distribution or source-completeness claim is made.
+Thirty-three host checks pass. [Evidence, failures, recovery and reproduction](native-component-extensions.md)
+
 2026-10-23: **`XP25-Anniversary` is registered for interactive virt-manager use.**
 Its independent, sector-verified disk copies the newest frozen branded desktop,
 `brand-final-tcg-01` (2026-10-24 00:00:23 UTC). KVM uses its original one-vCPU
@@ -36,9 +59,9 @@ in host and guest recovery copies. Independent native rebuilds succeed without
 an SCM implementation patch. [Evidence and reproduction](native-components-milestone.md)
 
 Original SMSS was then integrated alone on the frozen SCM checkpoints and passes
-the same three configurations. Regsvc, Msgina and UserEnv compile but remain
-unintegrated candidates. UserEnv lacks SP3 exports including `CheckXForestLogon`;
-Explorer's private generated/library prerequisites remain under investigation.
+the same three configurations. At that checkpoint Regsvc, Msgina and UserEnv
+were unintegrated candidates, and Explorer's private libraries were unresolved;
+the extension checkpoint above supersedes those statuses.
 The new full source inventory retains the original 277,863-file SHA-256 manifest.
 Winlogon and two executive C sources remain absent; full OS reconstruction and
 source completeness are not established. `XP25-Desktop` and existing guests are

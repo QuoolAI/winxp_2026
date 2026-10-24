@@ -31,8 +31,8 @@ def main():
     directory = args.directory.resolve()
     if not directory.is_relative_to(ROOT / '.work'):
         parser.error('runtime evidence must remain under private .work/')
-    if args.guest_target and not re.fullmatch(r'/WINDOWS/system32/[A-Za-z0-9_]+\.(exe|dll)', args.guest_target):
-        parser.error('an explicit system32 EXE/DLL guest target is required')
+    if args.guest_target and not re.fullmatch(r'/WINDOWS/(system32/[A-Za-z0-9_]+\.(exe|dll)|explorer\.exe)', args.guest_target):
+        parser.error('an explicit system32 EXE/DLL or Explorer guest target is required')
     result_path = directory / 'component-results.json'
     if result_path.exists():
         previous = result_path.read_bytes()

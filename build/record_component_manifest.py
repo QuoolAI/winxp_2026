@@ -33,6 +33,7 @@ def main():
     parser.add_argument('--component', nargs=3, action='append', required=True,
                         metavar=('NAME', 'SOURCE_DIRECTORY', 'BINARY'))
     parser.add_argument('--runtime', type=Path, action='append', default=[])
+    parser.add_argument('--failed-runtime', type=Path, action='append', default=[])
     parser.add_argument('--source-inventory', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
@@ -51,11 +52,30 @@ def main():
         target = (inputs.get('recovery') or {}).get('target')
         if not report['passed'] or checkpoint['stage'] != 'normal_shutdown_frozen':
             parser.error('runtime must have passed and shut down normally: ' + str(path))
+        extensions = None
+        if (path / 'extension-results.json').exists():
+            extensions = json.loads((path / 'extension-results.json').read_text())
+            if not extensions['passed'] or any(sha(path / name) != digest for name, digest in extensions['evidence_sha256'].items()):
+                parser.error('extension evidence must be passing and fresh: ' + str(path))
         runtimes.append({'experiment': path.name, 'directory': str(path),
                          'replaced_component': target,
                          'component_sha256': inputs['staged'].get(target, {}).get('sha256'),
                          'base': inputs['base'], 'disk_sha256': checkpoint['disk_sha256'],
-                         'checks': report['checks'], 'recovery': inputs.get('recovery')})
+                         'checks': report['checks'], 'extension_checks': extensions['checks'] if extensions else None,
+                         'recovery': inputs.get('recovery')})
+    failures = []
+    for path in args.failed_runtime:
+        path = path.resolve()
+        if not path.is_relative_to(ROOT / '.work') or (path / 'disk.qcow2').stat().st_mode & 0o222:
+            parser.error('failed experiments must be frozen private images')
+        failure = json.loads((path / 'failure.json').read_text())
+        if failure.get('accepted') is not False:
+            parser.error('failed runtime needs explicit rejected evidence')
+        inputs = json.loads((path / 'inputs.json').read_text())
+        target = (inputs.get('recovery') or {}).get('target')
+        failures.append({'experiment': path.name, 'directory': str(path), 'replaced_component': target,
+                         'component_sha256': inputs['staged'].get(target, {}).get('sha256'),
+                         'failure': failure, 'failure_sha256': sha(path / 'failure.json')})
     components = []
     for name, source, filename in args.component:
         binary = Path(filename).resolve()
@@ -69,12 +89,15 @@ def main():
             parser.error('invalid compiled PE checksum')
         relevant = [r for r in runtimes if r['replaced_component'] and
                     Path(r['replaced_component']).name.lower() == binary.name.lower()]
+        rejected = [r for r in failures if r['component_sha256'] == pe['sha256']]
+        accepted = [r for r in relevant if r['component_sha256'] == pe['sha256']]
         components.append({'name': name, 'source_path': source,
                            'source_recipe_sha256': sha(directory / 'sources'),
                            'binary': str(binary), 'sha256': pe['sha256'], 'pe': pe,
-                           'runtime_status': 'verified_in_recorded_guests' if relevant else 'compiled_not_integrated',
+                           'runtime_status': 'verified_in_recorded_guests' if accepted else ('runtime_rejected' if rejected else 'compiled_not_integrated'),
                            'tested_artifact_variants': sorted({r['component_sha256'] for r in relevant if r['component_sha256']}),
                            'runtime_results': relevant,
+                           'rejected_runtime_results': rejected,
                            'remaining_installed_microsoft_dependencies': sorted(
                                (set(pe['imports']) | set(pe['delay_imports'])) - BASELINE_NATIVE)})
     missing = [name for name in ('base/ntos/ex/exinit.c', 'base/ntos/ex/systime.c',
@@ -92,6 +115,8 @@ def main():
                   'services.exe': 'Build original checked sclib/wrlib, local Winreg/svcslib and PnP import library; no SCM implementation patch.',
                   'smss.exe': 'No implementation patch.',
                   'userenv.dll': 'Missing closing parenthesis in SDK comdef.h corrected in disposable build media; original IDL and RSOP prerequisites built.',
+                  'userenv-sp3-adapter': 'Post-link exact SP3 name/ordinal map; three PE forwarders to unchanged original ue51sp3.dll. Process-only tests pass; boot integration rejected.',
+                  'explorer.exe': 'Original BrowseUI/Shdocvw .src import libraries; seven explicit x86 NONAME stdcall decorations; original shfusion/stockthk/stock/dv2host built. Compiles; shell integration rejected.',
               },
               'remaining_boot_dependencies': ['installed Microsoft Winlogon and LogonUI',
                   'four supplied executive objects for absent exinit.c/systime.c',

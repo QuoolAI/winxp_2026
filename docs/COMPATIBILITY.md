@@ -6,6 +6,42 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Original Regsvc and MSGINA extensions, 2026-10-23
+
+The [extension record](native-component-extensions.md) covers individual changes
+on the branded original-kernel/SCM/SMSS desktop. Working reference images and user
+VMs are not integration targets.
+
+| Gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
+| --- | --- | --- | --- |
+| Original Regsvc: existing 54 regressions, 21 RPC/lifecycle cases, branding and installer fixtures | Pass | Pass | Pass |
+| Original Regsvc: actual mapped checksum, exact retained DLL and original recovery | Pass | Pass | Pass |
+| Original Regsvc: logoff/re-entry, Explorer/Luna, Notepad and fresh service/guest shutdown | Pass | Pass | Pass |
+| Subsequent original MSGINA: same full suite and four GINA/host cases | Pass | Pass | Pass |
+| Original MSGINA: incorrect password rejected, existing local login succeeds, lock/unlock | Pass | Pass | Pass |
+| Original MSGINA: live Winlogon-mapped DLL, secure-desktop write denial, Notepad, normal shutdown | Pass | Pass | Pass |
+| UserEnv SP3 export adapter as boot replacement | Fail: Winlogon AV | Fail: Winlogon AV | Fail: Winlogon AV |
+| Original Explorer shell integration | Fail: Explorer crash | Not attempted | Not attempted |
+
+Regsvc testing uses real local named-pipe RPC with stopped-server negative
+controls. SMB/remote network RPC is unverified; the first installed-SP3 control
+returned error 53 for the SMB path. GINA evidence covers the existing local XP25
+account, not domain, smart-card, FUS, RDP or broad security equivalence.
+
+Original Explorer compiles successfully with original import/support libraries;
+static direct/delay import presence passes but does not establish runtime private
+shell ABI compatibility. The UserEnv adapter preserves original native code and
+pins all SP3 ordinals, forwarding CheckXForestLogon and two unknown private bodies
+to unchanged SP3 UserEnv. Fifteen ABI/profile checks pass when loaded from a
+readonly CD in an own user process, separate from Winlogon. This is neither
+independent implementation of those three functions nor boot compatibility.
+Both rejected candidates remain excluded from the accepted engineering disk.
+
+The packaged disk retains installed UserEnv, Explorer, Winlogon and other original
+Microsoft dependencies. It is a private preinstalled engineering image containing
+source/build payload, not a clean licensed installation or Windows Setup ISO.
+Media/license entitlement and complete source/binary accounting remain pending.
+
 ## Interactive anniversary VM, 2026-10-23
 
 `XP25-Anniversary` is a separate persistent `qemu:///system` domain, using a
@@ -57,7 +93,8 @@ general compatibility. The existing `XP25-Desktop` remains unmodified.
 The [component reconstruction record](native-components-milestone.md) establishes
 these results on separate disposable children of the Milestone 2 images.
 Only SCM was first replaced. SMSS was subsequently replaced alone on each frozen,
-verified SCM guest. Regsvc, Msgina and UserEnv were compiled but not installed.
+verified SCM guest. Regsvc, Msgina and UserEnv were then only compiled candidates;
+the later extension results above supersede that status.
 
 | Gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
 | --- | --- | --- | --- |
@@ -75,8 +112,10 @@ and shutdown fixture. All SCM direct and delay imports resolve by export presenc
 against the extracted guest modules; both SCM executables have no exports.
 This does not establish complete SP3 behavior/security equivalence, remote RPC,
 domain-account services, all recovery policies, driver-service transitions or
-sustained-load stability. Compiled UserEnv omits `CheckXForestLogon` and SP3
-ordinal exports 207–209; it has not been promoted to runtime compatibility.
+sustained-load stability. UserEnv was not promoted. The later exact export audit
+corrects the ordinal-only interpretation: 207–209 are existing named bodies at
+shifted ordinals; missing implementations are CheckXForestLogon and private
+200/201. The subsequent adapter still fails boot integration.
 Games, accelerated graphics, TLS, IPv6 and additional hardware remain unverified.
 
 ## Interactive libvirt desktop, 2026-10-23
