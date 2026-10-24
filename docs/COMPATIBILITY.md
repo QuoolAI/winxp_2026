@@ -6,6 +6,34 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## XP25 resource branding, 2026-10-23
+
+The [branding record](branding.md) covers separate disposable children of the
+native SCM/SMSS checkpoint. System/About resources, Explorer, Shell32 and
+LogonUI are integrated in separate stages; boot-critical components are not
+replaced together. No kernel code, VERSIONINFO, ABI, licensing mechanism or OS
+ProductName changes are made. One reviewed per-profile localized-name cache
+entry is backed up and refreshed for the modern Start menu.
+
+| Gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
+| --- | --- | --- | --- |
+| Source-kernel boot, native SCM/SMSS, Explorer/Luna | Pass | Pass | Pass |
+| Existing 54 standard/pointer/session/network/service observations | Pass | Pass | Pass |
+| NT 5.1/x86/2600/SP3/product type/API reporting and captured identity match control | Pass | Pass | Pass |
+| Branding resources and original recovery files retained | Pass | Pass | Pass |
+| Logoff, branded chooser and successful reauthentication | Pass | Pass | Pass |
+| Calculator arithmetic and unique Notepad save/readback | Pass | Pass | Pass |
+| Own Win32 install/run/uninstall and registry-only MSI install/uninstall fixtures | Pass | Pass | Pass |
+| DHCP, DNS, TCP/UDP, isolated HTTP and normal shutdown | Pass | Pass | Pass |
+
+System Properties/About layouts and login header are visually reviewed at the
+recorded 640x480/default-font layout; simulated 96/120/144-DPI font measurements
+pass. Actual high-DPI desktops, other languages, classic-menu rendering, broad
+third-party installer/application coverage and original signature/catalog trust
+are not established. Modified UI hashes invalidate any original signed-file
+identity; no trust or WFP bypass is introduced. The test fixtures do not establish
+general compatibility. The existing `XP25-Desktop` remains unmodified.
+
 ## Milestone 3 original SCM and SMSS, 2026-10-23
 
 The [component reconstruction record](native-components-milestone.md) establishes

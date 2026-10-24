@@ -2,6 +2,19 @@
 
 ## Current checkpoint
 
+2026-10-23: **XP25 visible branding passes the recorded guest matrix.** System
+Properties, About Windows, graphical login and the Start menu carry XP25 names
+on separate disposable overlays. Display strings are configurable and en-US
+only; NT 5.1/x86/build 2600/SP3, product type, API reporting, registry ProductName
+and captured licensing identity remain unchanged. Luna, original SCM/SMSS and
+all established regressions pass under one-vCPU KVM, two-vCPU KVM and TCG, with
+Calculator, Notepad, Win32/MSI fixture installers, reauthentication, networking
+and normal shutdown. Original UI recovery copies and offline restore evidence
+are retained. Source/reference hashes and existing libvirt guests are preserved.
+Twenty-eight host checks pass. This is resource branding of installed UI
+binaries, not additional original-source component reconstruction or a general
+compatibility claim. [Audit, limitations, evidence and recovery](branding.md)
+
 2026-10-23, Milestone 3: **original SCM reconstruction passes.** Native
 `services.exe` replaces SP3 SCM in disposable KVM, two-vCPU KVM and TCG guests.
 All established probes, fourteen real service-management observations, live SCM
