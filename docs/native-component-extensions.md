@@ -1,5 +1,13 @@
 # Native Regsvc, MSGINA, UserEnv and Explorer checkpoint
 
+Historical checkpoint: [subsequent Explorer/UserEnv integration](native-explorer-userenv.md)
+resolves both startup failures and corrects the earlier diagnosis below.
+0x0100ced1 is handled in a working SP3 control; the fatal UserEnv failure follows
+four misbound private ordinals. Preserving source private mappings did not
+preserve the SP3 bindings. Exports 200/201 are CreateURLFile/DeleteURLFile, not
+additional security functions. Earlier rejected artifacts and this engineering
+image remain preserved.
+
 This continues `8e575ae1c` and the reconstruction begun at `1f58fed7c`.
 Original Regsvc and MSGINA are integrated **individually** and pass one-vCPU KVM,
 two-vCPU KVM and one-vCPU TCG. The working original-source kernel, SCM, SMSS,

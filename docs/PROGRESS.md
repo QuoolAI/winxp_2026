@@ -2,6 +2,24 @@
 
 ## Current checkpoint
 
+2026-10-24: **original Explorer and UserEnv pass independently and together**
+under one-vCPU KVM, two-vCPU KVM and TCG. Explorer's first exception identifies
+a wrong SP1 private SHLWAPI call; one source call-site fix uses the installed
+SP3 descriptor provider. UserEnv's fatal Winlogon failure is a demonstrated
+stack imbalance from four misbound private ordinals, corrected without changing
+original implementation bytes or Winlogon/security checks. The earlier
+0x0100ced1 exception is also handled in a working SP3 control and is not suppressed.
+Both components are rebuilt in disposable native Windows guests. All nine
+integration runs pass full regression, interactive session, live-component,
+fresh-profile and normal-shutdown gates. Three missing UserEnv implementations
+still forward to unchanged original SP3 code.
+A new standalone 32-GiB engineering QCOW2 passes sector comparison and a separate
+KVM cold boot with both full suites, lock/unlock, Notepad readback and confirmed
+guest shutdown. Previous images, all source files and user VM definitions are
+preserved. Thirty-five host checks pass. A clean installation ISO and complete
+independent reconstruction remain separate milestones.
+[Debugging, hashes, matrix, recovery and reproduction](native-explorer-userenv.md)
+
 2026-10-23: **original Regsvc and MSGINA pass individual integration.** Each is
 added alone on a frozen verified parent and passes KVM, two-vCPU KVM and TCG,
 including live module identity, real Winreg RPC lifecycle/negative checks,

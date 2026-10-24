@@ -23,6 +23,14 @@ USERENV = ('load_userenv', 'all_49_named_sp3_ordinals_match', 'original_59_priva
            'profile_ansi_unicode_agree', 'all_users_profile_path', 'default_user_profile_path',
            'create_user_environment', 'environment_userprofile_matches', 'destroy_user_environment',
            'expand_environment_for_user', 'userenv_probe_complete')
+SHELL = ('desktop_and_taskbar_present', 'live_explorer_image_read', 'start_menu_opens', 'luna_theme_active',
+         'fixture_directory_unused', 'fixture_directory_created', 'fixture_file_created', 'open_folder_request',
+         'folder_window_and_list_view', 'folder_displays_fixture', 'fixture_file_removed',
+         'fixture_directory_removed', 'taskbar_survives_navigation', 'shell_probe_complete')
+PROFILE = ('profile_api_access', 'existing_profile_privileges_enabled', 'fixture_account_unused',
+           'fixture_account_created', 'fixture_authentication', 'fixture_token_sid', 'new_profile_initialized',
+           'new_profile_path', 'new_profile_hive_mounted', 'new_profile_registry_roundtrip',
+           'new_profile_unloaded', 'new_profile_deleted', 'fixture_account_deleted', 'profile_probe_complete')
 
 
 def sha(path):
@@ -50,10 +58,16 @@ def main():
     p.add_argument('--notepad-marker')
     p.add_argument('--userenv-package', type=Path)
     p.add_argument('--userenv-control', action='store_true')
+    p.add_argument('--expected-explorer', type=Path, help='require live shell identity and functional shell/profile tests')
     args = p.parse_args()
     directory, baseline = args.directory.resolve(), args.baseline.resolve()
     if any(not x.is_relative_to(ROOT / '.work') for x in (directory, baseline, args.expected_regsvc.resolve())):
         p.error('private experiment and binary paths required')
+    result_path = directory / 'extension-results.json'
+    if result_path.exists():
+        previous = result_path.read_bytes()
+        (directory / ('extension-results.previous-' + hashlib.sha256(previous).hexdigest()[:12] + '.json')).write_bytes(previous)
+        result_path.unlink()
     core = json.loads((directory / 'component-results.json').read_text())
     text = (directory / 'serial.log').read_text(errors='replace')
     records, exit_ok = group(text, 'REGSVC_PROBE_STARTED', 'REGSVC_PROBE_EXIT=')
@@ -99,6 +113,25 @@ def main():
             manifest = json.loads((package / 'manifest.json').read_text())
             checks['source_userenv_and_original_sp3_dependency_retained'] = all(
                 sha(directory / 'retention/WINDOWS/system32' / name) == digest for name,digest in manifest['components'].items())
+            checks['original_userenv_recovery_retained'] = sha(directory / 'retention/xp25/recovery-userenv.dll') == manifest['original_sp3_sha256']
+    if args.expected_explorer:
+        shell, shell_exit = group(text, 'SHELL_PROBE_STARTED', 'SHELL_PROBE_EXIT=')
+        profile, profile_exit = group(text, 'PROFILE_PROBE_STARTED', 'PROFILE_PROBE_EXIT=')
+        cases = {r['shell_case']:r for r in shell if r.get('shell_case') in SHELL}
+        profiles = {r['profile_case']:r for r in profile if r.get('profile_case') in PROFILE}
+        actual = [r for r in shell if r.get('shell_image_identity')]
+        explorer = PE(args.expected_explorer).inspect()
+        userenv = PE(directory / 'retention/WINDOWS/system32/userenv.dll').inspect()
+        mapped = [r for r in gina_rows if r.get('winlogon_userenv_identity')]
+        checks.update(shell_functional_cases=set(cases)==set(SHELL) and all(r['status']=='pass' for r in cases.values()),
+            shell_exit_zero=shell_exit, fresh_profile_cases=set(profiles)==set(PROFILE) and all(r['status']=='pass' for r in profiles.values()),
+            profile_exit_zero=profile_exit,
+            actual_explorer_loaded=len(actual)==1 and actual[0]['read']==1 and actual[0]['pe_checksum']==int(explorer['checksum_stored'],16),
+            exact_explorer_retained=sha(directory / 'retention/WINDOWS/explorer.exe')==explorer['sha256'],
+            actual_winlogon_userenv=len(mapped)==1 and mapped[0]['read']==1 and mapped[0]['pe_checksum']==int(userenv['checksum_stored'],16))
+        original_explorer = baseline / 'retention/WINDOWS/explorer.exe'
+        if explorer['sha256'] != sha(original_explorer):
+            checks['original_explorer_recovery_retained'] = sha(directory / 'retention/xp25/recovery-explorer.exe') == sha(original_explorer)
     files = [directory / n for n in ('serial.log', 'component-results.json', 'native-stack-verification.json', 'checkpoint.json', 'normal-shutdown.json', 'inputs.json')]
     files += [f for f in (directory / 'retention').rglob('*') if f.is_file()]
     result = {'passed': all(checks.values()), 'checks': checks, 'regsvc': records, 'gina': gina_rows,
@@ -107,7 +140,7 @@ def main():
                              'GUI authentication/locking observations require separate recorded review.',
                              'No domain, cross-forest, smart-card, RDP or sustained/security certification.'],
               'evidence_sha256': {str(f.relative_to(directory)): sha(f) for f in files}}
-    (directory / 'extension-results.json').write_text(json.dumps(result, indent=2) + '\n')
+    result_path.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({'experiment': directory.name, 'passed': result['passed'], 'checks': checks}))
     return 0 if result['passed'] else 2
 

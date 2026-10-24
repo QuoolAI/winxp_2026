@@ -15,6 +15,9 @@ import sys
 from inspect_component import PE
 
 ROOT = Path(__file__).resolve().parents[1]
+# SP3 private bindings verified using its matching public PDB plus OMAPFromSrc.
+# SP3 ordinal -> original source ordinal. All other 100..158 entries agree.
+PRIVATE_ORDINAL_MAP = {117: 118, 118: 140, 131: 117, 140: 131}
 
 
 def exports(pe):
@@ -58,7 +61,7 @@ def prepare(native, reference, destination):
         return rva + offset
     old_at = old.offset(old.directory(0)[0])
     module = string(old.string(old.u32(old_at + 12)))
-    targets = {n: functions[n] for n in range(100, 159)}
+    targets = {n: functions[PRIVATE_ORDINAL_MAP.get(n, n)] for n in range(100, 159)}
     for name, ordinal in b.items():
         if name in a:
             targets[ordinal] = functions[a[name]]
@@ -108,13 +111,14 @@ def prepare(native, reference, destination):
     for name, ordinal in b.items():
         if name in a and actual[ordinal] != functions[a[name]]:
             raise ValueError('native named function RVA changed')
-    if any(actual[n] != functions[n] for n in range(100, 159)):
-        raise ValueError('original private function RVA changed')
+    if any(actual[n] != functions[PRIVATE_ORDINAL_MAP.get(n, n)] for n in range(100, 159)):
+        raise ValueError('verified SP3 private function binding changed')
     for ordinal, target in forwarding.items():
         if new.exports()['#' + str(ordinal)] != target:
             raise ValueError('missing implementation does not forward to its exact SP3 target')
     return {'named_ordinals': b, 'forwarded_implementations': forwarding,
-            'original_sections_preserved': True, 'native_functions_and_private_ordinals_preserved': True,
+            'original_sections_preserved': True, 'native_function_rvas_preserved': True,
+            'private_sp3_to_source_ordinal': PRIVATE_ORDINAL_MAP,
             'imports_and_non_export_directories_preserved': True, 'pe': new.inspect()}
 
 

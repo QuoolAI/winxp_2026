@@ -63,6 +63,44 @@ class ExtensionGuards(unittest.TestCase):
             self.assertEqual(new.exports()['#201'], 'ue51sp3.#201')
             self.assertEqual(new.exports()['CheckXForestLogon'], 'ue51sp3.CheckXForestLogon')
 
+    def test_every_userenv_binding_matches_the_sp3_public_symbols(self):
+        import re
+        from pdb_publics import public_symbols
+        native = ROOT / '.work/native-shell-userenv-20261024/userenv-rebuild-01-extracted/nt/ds/security/gina/userenv/main/obj/i386/userenv.dll'
+        reference = ROOT / '.work/milestone-3-20261023/userenv-installed-inputs/WINDOWS/system32/userenv.dll'
+        pdb = ROOT / '.work/native-shell-userenv-20261024/symbols/userenv-sp3.pdb'
+        if not all(p.is_file() for p in (native, reference, pdb)):
+            self.skipTest('private native/SP3 symbol inputs unavailable')
+        symbols = public_symbols(pdb, reference); by = {}
+        for row in symbols:
+            match = re.match(r'^_(\w+)@\d+$|^\?(\w+)@@', row['name'])
+            if match:
+                by.setdefault(row['rva'], set()).add(match[1] or match[2])
+        source_def = (ROOT / 'Source/XPSP1/NT/ds/security/gina/userenv/main/userenv.def').read_text()
+        source_private = {name:int(ordinal) for name,ordinal in re.findall(r'^\s+(\w+)\s+@(\d+)\s+NONAME', source_def, re.M)}
+        native_names, native_rvas = exports(PE(native)); source = {**source_private, **native_names}
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work') as name:
+            output = Path(name) / 'userenv.dll'; prepare(native, reference, output)
+            actual = exports(PE(output))[1]
+            for ordinal, rva in exports(PE(reference))[1].items():
+                implementations = by[rva] & source.keys()
+                if implementations:
+                    self.assertEqual(len(implementations), 1)
+                    function = next(iter(implementations))
+                    self.assertEqual(actual[ordinal], native_rvas[source[function]], function)
+                else:
+                    self.assertIn(ordinal, (159, 200, 201))
+                    self.assertTrue(PE(output).exports()['#'+str(ordinal)].startswith('ue51sp3.'))
+
+    def test_mismatched_public_pdb_is_rejected(self):
+        from pdb_publics import public_symbols
+        reference = ROOT / '.work/milestone-3-20261023/userenv-installed-inputs/WINDOWS/system32/userenv.dll'
+        wrong = ROOT / '.work/native-shell-userenv-20261024/symbols/winlogon-sp3.pdb'
+        if not reference.is_file() or not wrong.is_file():
+            self.skipTest('private symbol inputs unavailable')
+        with self.assertRaisesRegex(ValueError, 'GUID/age does not match'):
+            public_symbols(wrong, reference)
+
     def test_modified_native_input_is_rejected(self):
         native = ROOT / '.work/milestone-3-20261023/candidates-03-extracted/nt/ds/security/gina/userenv/main/obj/i386/userenv.dll'
         reference = ROOT / '.work/milestone-3-20261023/userenv-installed-inputs/WINDOWS/system32/userenv.dll'

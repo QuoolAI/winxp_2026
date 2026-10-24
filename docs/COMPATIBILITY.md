@@ -6,7 +6,37 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
-## Original Regsvc and MSGINA extensions, 2026-10-23
+## Native Explorer and UserEnv, 2026-10-24
+
+The [integration record](native-explorer-userenv.md) supersedes the earlier
+failed variants below. All tests use disposable isolated guests with the prior
+native kernel, SCM/SMSS/Regsvc/MSGINA, networking and XP25 branding preserved.
+
+| Tested stack / gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
+| --- | --- | --- | --- |
+| Corrected original Explorer alone | Pass | Pass | Pass |
+| Corrected original UserEnv alone | Pass | Pass | Pass |
+| Both components together | Pass | Pass | Pass |
+| Login/logout, lock/unlock, Explorer/Start/Luna, folder/file operations | Pass | Pass | Pass |
+| Fresh profile initialization, hive/registry operations, unload/delete | Pass | Pass | Pass |
+| Prior service, TCP/UDP, DHCP/DNS/isolated HTTP, Win32/MSI and branding fixtures | Pass | Pass | Pass |
+| Actual mapped binaries, original recovery, Notepad readback, normal shutdown | Pass | Pass | Pass |
+| Additional cold boot from standalone engineering QCOW2, two full suites and shutdown | Pass | Not repeated | Not repeated |
+
+Explorer uses one corrected SP3 SHLWAPI provider call. UserEnv rebinds four
+private ordinals; original implementation bytes remain unchanged. Three missing
+implementations (CheckXForestLogon, CreateURLFile, DeleteURLFile) still use the
+retained original SP3 dependency. No Winlogon patch, exception suppression or
+success-returning security stub is introduced. Captured NT 5.1/x86/2600/SP3,
+product/licensing identity remains unchanged. These local-account and fixture
+tests do not establish domain/GPO/cross-forest/roaming-profile, every private
+shell ABI, arbitrary legacy software or sustained security/stability equivalence.
+Source completeness and a clean Windows Setup ISO remain separate work.
+
+## Historical Regsvc and MSGINA extensions, 2026-10-23
+
+The UserEnv/Explorer failures below describe preserved earlier variants; see
+the 2026-10-24 matrix above for the corrected accepted artifacts.
 
 The [extension record](native-component-extensions.md) covers individual changes
 on the branded original-kernel/SCM/SMSS desktop. Working reference images and user

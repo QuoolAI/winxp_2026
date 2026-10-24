@@ -57,6 +57,7 @@ def main():
     p.add_argument('--run', type=Path, required=True, help='accepted one-vCPU source image')
     p.add_argument('--matrix', type=Path, action='append', required=True, help='other accepted regression configurations')
     p.add_argument('--provenance', type=Path, required=True, help='private original-media provenance record; does not establish entitlement')
+    p.add_argument('--components-manifest', type=Path, help='private artifact-specific component/dependency manifest')
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
     output, source = a.output.resolve(), a.run.resolve()
@@ -77,6 +78,17 @@ def main():
     if configs != {('kvm', '1'), ('kvm', '2'), ('tcg', '1')}:
         p.error('one-vCPU KVM, two-vCPU KVM and one-vCPU TCG evidence is required')
     provenance = json.loads(a.provenance.read_text())
+    components = None
+    if a.components_manifest:
+        if not a.components_manifest.resolve().is_relative_to(ROOT / '.work'):
+            p.error('component manifest must remain private')
+        components = json.loads(a.components_manifest.read_text())
+        for component in components['components']:
+            if component['runtime_status'] == 'verified_in_recorded_guests':
+                filename = Path(component['binary']).name
+                guest_path = 'WINDOWS/' + ('explorer.exe' if filename == 'explorer.exe' else 'system32/' + filename)
+                if stack.get(guest_path) != component['sha256']:
+                    raise ValueError('verified component differs from packaged stack: ' + filename)
     # Check every backing file before conversion. No writable/live image is accepted.
     chain = json.loads(subprocess.check_output(['qemu-img', 'info', '--output=json', '--backing-chain', str(source / 'disk.qcow2')]))
     chain_hashes = {}
@@ -116,8 +128,13 @@ def main():
         'limitations': ['Contains the existing private engineering desktop, including its source/build payload and recovery files.',
             'Preserves installed original Windows binaries and activation state; no new media entitlement is inferred.',
             'Use a new writable copy for every boot. Do not attach the frozen artifact writable.',
-            'Native UserEnv and Explorer failed boot/shell integration and are excluded.',
             'A clean licensed installation image still requires identified authorized installation media and license/provenance records.']}
+    result['functional_shell_profile_evidence'] = all(
+        row['extension_checks'].get('shell_functional_cases') and row['extension_checks'].get('fresh_profile_cases')
+        for row in reports)
+    if components:
+        (output / 'components-manifest.json').write_text(json.dumps(components,indent=2)+'\n')
+        result['components_manifest_sha256'] = sha(output / 'components-manifest.json')
     (output / 'manifest.json').write_text(json.dumps(result, indent=2) + '\n')
     (output / 'README.txt').write_text(
         'XP25 private preinstalled engineering disk\n\n'
@@ -127,7 +144,8 @@ def main():
         'private copy before boot. Import that copy using the profile in manifest.json.\n'
         'Use an isolated network and a unique MAC/IP; preserve existing VM disks.\n'
         'The verified original SCM, SMSS, Regsvc and MSGINA stack is included.\n'
-        'The working installed UserEnv, Explorer and Winlogon are retained.\n')
+        'See components-manifest.json for the exact native component stack.\n'
+        'Installed Microsoft Winlogon and other documented dependencies remain.\n')
     print(json.dumps({'image': str(destination), 'sha256': result['image_sha256'],
                       'licensed_installation_complete': False}))
 

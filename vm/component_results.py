@@ -77,9 +77,13 @@ def main():
         retained = retention / args.guest_target.lstrip('/')
         checks['additional_component_retained'] = retained.is_file() and retained.read_bytes() == args.expected_component.read_bytes()
         checks['fresh_shutdown_proof'] = text.rfind('SHUTDOWN_PROOF_CLEARED') > end >= 0
+    if (directory / 'guest-shutdown-event.json').exists():
+        event=json.loads((directory / 'guest-shutdown-event.json').read_text())
+        checks['normal_guest_shutdown_event'] = event.get('event')=='SHUTDOWN' and event.get('data')=={'guest':True,'reason':'guest-shutdown'}
     evidence = [directory / name for name in ('serial.log', 'inputs.json', 'checkpoint.json',
         'normal-shutdown.json', 'native-stack-verification.json', 'network-results.json',
         'network-isolation.json', 'dnsmasq.log', 'http.jsonl')]
+    if (directory / 'guest-shutdown-event.json').exists():evidence.append(directory / 'guest-shutdown-event.json')
     evidence += [scm, proof]
     if recovery:
         evidence.append(backup)

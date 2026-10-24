@@ -43,6 +43,17 @@ void WINAPI ProbeMain(void)
     if(snapshot!=INVALID_HANDLE_VALUE)CloseHandle(snapshot);
     {char s[200];wsprintfA(s,"{\"gina_image_identity\":true,\"pid\":%lu,\"session\":%lu,\"found\":%u,\"read\":%u,\"pe_checksum\":%lu}\r\n",pid,current_session,found,read,checksum);WriteFile(serial,s,lstrlenA(s),&n,NULL);}
     report("msgina_mapped_in_real_winlogon",found&&read,GetLastError());
+    found=FALSE;read=FALSE;checksum=0;
+    snapshot=pid?CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,pid):INVALID_HANDLE_VALUE;module.dwSize=sizeof(module);
+    if(snapshot!=INVALID_HANDLE_VALUE&&Module32First(snapshot,&module))do{
+        if(lstrcmpiA(module.szModule,"userenv.dll")==0){found=TRUE;break;}
+    }while(Module32Next(snapshot,&module));
+    if(found){process=OpenProcess(PROCESS_VM_READ|PROCESS_QUERY_INFORMATION,FALSE,pid);
+        if(process){read=ReadProcessMemory(process,module.modBaseAddr+60,&offset,4,&bytes)&&bytes==4&&
+            ReadProcessMemory(process,module.modBaseAddr+offset+24+64,&checksum,4,&bytes)&&bytes==4;CloseHandle(process);}}
+    if(snapshot!=INVALID_HANDLE_VALUE)CloseHandle(snapshot);
+    {char row[180];wsprintfA(row,"{\"winlogon_userenv_identity\":true,\"pid\":%lu,\"read\":%u,\"pe_checksum\":%lu}\r\n",pid,read,checksum);WriteFile(serial,row,lstrlenA(row),&n,NULL);}
+    report("userenv_mapped_in_real_winlogon",found&&read,GetLastError());
     SetLastError(ERROR_SUCCESS);desktop=OpenDesktopW(L"Winlogon",0,FALSE,DESKTOP_CREATEWINDOW|DESKTOP_WRITEOBJECTS|WRITE_DAC);
     report("user_cannot_write_secure_desktop",desktop==NULL&&GetLastError()==ERROR_ACCESS_DENIED,GetLastError());
     if(desktop)CloseDesktop(desktop);

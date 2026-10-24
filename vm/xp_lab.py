@@ -25,7 +25,7 @@ def run(cmd):
 class QMP:
     def __enter__(self):
         self.s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); self.s.settimeout(10)
-        self.s.connect('qmp.sock'); self.f=self.s.makefile('rwb'); self.f.readline(); self.n=0
+        self.s.connect('qmp.sock'); self.f=self.s.makefile('rwb'); self.f.readline(); self.n=0; self.events=[]
         self.call('qmp_capabilities'); return self
     def call(self,command,args=None):
         self.n+=1; msg={'execute':command,'id':self.n}
@@ -37,6 +37,7 @@ class QMP:
             response=json.loads(line)
             if response.get('id')==self.n: break
             record({'event':response})
+            if 'event' in response:self.events.append(response)
         record({'qmp':msg,'response':response})
         if 'error' in response: raise RuntimeError(response['error'])
         return response.get('return')
@@ -87,7 +88,7 @@ def type_text(q,value):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('directory',type=Path)
-    p.add_argument('action',choices=['qmp','hmp','screen','run','key','type','restart','finish'])
+    p.add_argument('action',choices=['qmp','hmp','screen','run','key','type','restart','shutdown','finish'])
     p.add_argument('value',nargs='?')
     p.add_argument('--settle-seconds', type=float, default=1,
                    help='Run-dialog settling delay (use 3 for a slow TCG guest)')
@@ -105,6 +106,21 @@ def main():
             elif a.action=='type':type_text(q,a.value)
             elif a.action=='run':
                 key(q,'shift');key(q,'meta_l-r');time.sleep(a.settle_seconds);key(q,'ctrl-a');type_text(q,a.value);key(q,'ret')
+            elif a.action=='shutdown':
+                key(q,'shift');key(q,'meta_l-r');time.sleep(a.settle_seconds);key(q,'ctrl-a')
+                type_text(q,'shutdown.exe -s -t 0');key(q,'ret');q.s.settimeout(60)
+                pending=list(q.events)
+                while True:
+                    if pending:event=pending.pop(0)
+                    else:
+                        event=json.loads(q.f.readline());record({'event':event})
+                    if event.get('event') in ('RESET','GUEST_PANICKED'):
+                        raise RuntimeError('reset/panic during requested shutdown: '+str(event))
+                    if event.get('event')=='SHUTDOWN':
+                        if event.get('data')!={'guest':True,'reason':'guest-shutdown'}:
+                            raise RuntimeError('unexpected shutdown cause: '+str(event))
+                        Path('guest-shutdown-event.json').write_text(json.dumps(event,indent=2)+'\n')
+                        print('Guest shutdown event confirmed');break
             elif a.action=='restart':
                 q.call('set-action',{'reboot':'reset','shutdown':'pause'})
                 key(q,'shift');key(q,'meta_l-r');time.sleep(a.settle_seconds);key(q,'ctrl-a')

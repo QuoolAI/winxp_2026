@@ -34,6 +34,7 @@ def main():
                         metavar=('NAME', 'SOURCE_DIRECTORY', 'BINARY'))
     parser.add_argument('--runtime', type=Path, action='append', default=[])
     parser.add_argument('--failed-runtime', type=Path, action='append', default=[])
+    parser.add_argument('--fixes', type=Path, help='artifact-specific private compatibility/provenance record')
     parser.add_argument('--source-inventory', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
@@ -99,7 +100,8 @@ def main():
                            'runtime_results': relevant,
                            'rejected_runtime_results': rejected,
                            'remaining_installed_microsoft_dependencies': sorted(
-                               (set(pe['imports']) | set(pe['delay_imports'])) - BASELINE_NATIVE)})
+                               (set(pe['imports']) | set(pe['delay_imports']) |
+                                {target.rsplit('.',1)[0].lower()+'.dll' for target in pe['exports'].values() if target}) - BASELINE_NATIVE)})
     missing = [name for name in ('base/ntos/ex/exinit.c', 'base/ntos/ex/systime.c',
                                  'ds/security/gina/winlogon') if not (REFERENCE / name).exists()]
     result = {'schema': 1, 'command': sys.argv, 'baseline_commit': '1f58fed7c',
@@ -124,6 +126,13 @@ def main():
               'limitations': ['Import/export presence does not establish full behavioral or security equivalence.',
                   'Compiled candidates without runtime results are not promoted to guest compatibility.',
                   'The provided library list is SCM-specific, not a complete inventory of proprietary inputs to every component.']}
+    if args.fixes:
+        if not args.fixes.resolve().is_relative_to(ROOT / '.work'):
+            parser.error('compatibility provenance record must remain private')
+        result['artifact_compatibility_record'] = json.loads(args.fixes.read_text())
+        result['artifact_compatibility_record_sha256'] = sha(args.fixes)
+        result['compatibility_fixes']['userenv-sp3-adapter'] = 'See artifact_compatibility_record.userenv; exact runtime acceptance is recorded per binary.'
+        result['compatibility_fixes']['explorer.exe'] = 'See artifact_compatibility_record.explorer; exact runtime acceptance is recorded per binary.'
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({'components': len(components), 'verified_experiments': len(runtimes),
