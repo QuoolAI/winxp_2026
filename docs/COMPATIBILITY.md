@@ -6,6 +6,33 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Independent Winlogon prototype, 2026-10-24
+
+This [experimental host](native-winlogon.md) is not the Winlogon used by the
+accepted engineering image or the user's interactive VMs. All boot replacements
+are isolated disposable overlays. Build 09's SHA-256 is
+`9d3dc1b87b79c3121bafbfced1bcc9395169106fe3bece0531abcc0d08181be9`.
+
+| Gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
+| --- | --- | --- | --- |
+| Original kernel, USER registration, secure desktops, real LSASS startup-key validation | Observed | Observed | Observed |
+| SAM ready, trusted LSA, original MSGINA 1.4 and graphical login dialog | Observed | Observed | Observed |
+| Incorrect password rejection and SAS interruption without a shell | Observed | Observed | Observed |
+| Valid GINA result and returned primary-token/LUID/session/logon-SID checks | Observed | Observed | Observed |
+| Debugger capture of actual LSA success status | Captured | Incomplete trace | Captured |
+| Profile, Explorer/Luna and complete login | Blocked at error 120 | Blocked at error 120 | Blocked at error 120 |
+| Lock/unlock, logoff/relogin, secure-user denial, networking/app/service full regression, normal shutdown/restart | Not reached | Not reached | Not reached |
+| Independent standalone engineering image | Not produced | Not produced | Not produced |
+
+The missing licensing/activation orchestration is an explicit session boundary;
+native profile/shell/lifecycle code also remains unimplemented. The prototype
+does not fake security success or suppress exceptions. Stored SYSKEY mode only,
+classic MSGINA UI and local console authentication are covered so far.
+Host state-machine/decoder tests pass; original-host process-only controls and
+offline rollback recovery pass existing suites and real shutdown separately.
+They do not establish replacement compatibility or security equivalence. The
+older verified Explorer/UserEnv matrix below remains the accepted desktop.
+
 ## Native Explorer and UserEnv, 2026-10-24
 
 The [integration record](native-explorer-userenv.md) supersedes the earlier

@@ -2,6 +2,28 @@
 
 ## Current checkpoint
 
+2026-10-24, Milestone 5: **independent Winlogon initialization and console
+authentication implemented; replacement desktop not accepted.** New native C
+builds successfully with the existing NT toolchain. Disposable single-vCPU KVM,
+two-vCPU KVM and TCG guests register the real USER/CSRSS logon process, create
+secure desktops, complete LSASS's actual stored startup-key exchange, wait for
+SAM, register trusted LSA, negotiate original MSGINA 1.4 and invoke Startup
+notifications. Wrong passwords are rejected, SAS interruption returns without
+launching a shell, and valid existing credentials pass GINA and primary-token,
+LUID, session and logon-SID validation. Separate KVM/TCG debugger captures show
+real LSA success. These are authentication-core results, not completed logins.
+
+The precise next boundary is `session.c:wl_session_start`, error 120 before
+profile/shell activation. Original Winlogon's integrated WPA/OEMBIOS/mutex and
+activation-key orchestration remains unaccounted for; no licensing check or
+activation result is bypassed. Profile/policy/environment, Explorer/Luna,
+lock/logoff/power lifecycle, hostile-client security tests and full replacement
+regressions remain incomplete. No replacement standalone image was generated.
+The previous verified engineering image remains current. Recovery to the exact
+original host passes two complete existing suites and normal guest shutdown.
+All 277,863 source files remain hash-identical; 37 host checks pass.
+[Implementation, failures, recovery and reproduction](native-winlogon.md)
+
 2026-10-24: **original Explorer and UserEnv pass independently and together**
 under one-vCPU KVM, two-vCPU KVM and TCG. Explorer's first exception identifies
 a wrong SP1 private SHLWAPI call; one source call-site fix uses the installed

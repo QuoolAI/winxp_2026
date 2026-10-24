@@ -1,10 +1,13 @@
 # Independent NT 5.1 Winlogon investigation
 
 The original `ds/security/gina/winlogon` implementation is absent. Its parent
-`dirs` file still requires it. The installed Microsoft Winlogon remains active;
-the new original MSGINA integration does not replace Winlogon. No independently
-implemented Winlogon has been accepted or installed, and no ReactOS/Wine/Linux
-core is used as a substitute.
+`dirs` file still requires it. Microsoft Winlogon remains active in the accepted
+engineering images and user VMs. Milestone 5 now supplies an independently
+authored native prototype tested only as a boot replacement in disposable
+overlays. Initialization and console authentication reach a deliberate error
+before profile/shell startup; no replacement has been accepted. MSGINA alone
+does not implement Winlogon, and no ReactOS/Wine/Linux core is substituted.
+[Current implementation and exact remaining boundary](native-winlogon.md)
 
 ## Established contracts
 
@@ -55,7 +58,7 @@ public API and each privately observed dependency, with provenance and tests.
 Reading surrounding supplied source is not evidence of a formally separated
 clean-room process or of redistribution rights.
 
-The next implementation stages are:
+The implementation and acceptance stages are:
 
 1. Specify and test the logon state machine without privileged registration or
    boot replacement. Include cancellation, failed authentication, repeated SAS,
