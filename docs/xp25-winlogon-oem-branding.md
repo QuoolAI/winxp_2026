@@ -18,6 +18,8 @@ Model=Windows XP 25th Anniversary Edition
 The file is 76 bytes, ASCII with CRLF line endings, SHA-256
 `7760193a85f4a23f78d61a9367ffc6f2bd21c81b9f593feb02fc6999b3dfe5fc`.
 
+**Update:** the clipping described here was fixed by widening the line in `sysdm.cpl`, and XP25-AI received the same branding ([xp25-vm-configuration.md](xp25-vm-configuration.md)).
+
 **Result:** System Properties shows **QuoolAI** and the new model. The model line
 is too long for its fixed-width field, though, so only "Windows XP 25th
 Anniversary" is visible (see [Display limit](#display-limit-the-model-line-is-clipped)).
@@ -160,6 +162,8 @@ rehearsal's COM1 records `licensing_policy_verified` and `licensing_policy_allow
 on every boot.
 
 ## Display limit: the model line is clipped
+
+**Fixed later on 2026-10-25:** the branded `sysdm.cpl` now widens these lines to 124 DLU, and both VMs show the full model ([xp25-vm-configuration.md](xp25-vm-configuration.md)). The rest of this section describes the state before that fix.
 
 The General page's Computer lines are fixed-width `Link Window` controls,
 165 px at 96 DPI. In Tahoma 8 pt, "Windows XP 25th Anniversary Edition" is 179 px

@@ -54,13 +54,17 @@ def main():
     parser.add_argument('--stage', choices=STAGES, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--restore', action='store_true', help='restore this stage in a new disposable overlay')
+    parser.add_argument('--upgrade-from', type=Path, help='reviewed package whose files the base already carries')
     args = parser.parse_args()
+    if args.restore and args.upgrade_from:
+        parser.error('--restore and --upgrade-from are exclusive')
     base, package, output = args.base.resolve(), args.package.resolve(), args.output.resolve()
     if any(not p.is_relative_to(ROOT / '.work') for p in (base, package, output)):
         parser.error('branding work must remain private under .work/')
     if base.stat().st_mode & 0o222:
         parser.error('baseline must be a frozen read-only image')
     manifest = json.loads((package / 'manifest.json').read_text())
+    previous = json.loads((args.upgrade_from.resolve() / 'manifest.json').read_text())['components'] if args.upgrade_from else None
     originals = Path(manifest['inputs']).resolve()
     if not originals.is_relative_to(ROOT / '.work'):
         parser.error('original extracted backups must remain private under .work/')
@@ -74,14 +78,23 @@ def main():
             row = manifest['components'][name]
             target = '/WINDOWS/' + name
             original = lab.run(['ntfscat', device, target])
-            expected = row['sha256'] if args.restore else row['original_sha256']
+            if previous:
+                # Upgrade: the base carries the previous reviewed package's file.
+                expected = previous[name]['sha256']
+                if previous[name]['original_sha256'] != row['original_sha256']:
+                    raise ValueError('packages were prepared from different originals: ' + name)
+            else:
+                expected = row['sha256'] if args.restore else row['original_sha256']
             if hashlib.sha256(original).hexdigest() != expected or sha(package / name) != row['sha256'] or sha(originals / name) != row['original_sha256']:
                 raise ValueError('unrecognized original or prepared UI binary: ' + name)
-            backup = output / ('original-' + Path(name).name)
+            if previous and expected == row['sha256']:
+                records[target] = {**row, 'unchanged_by_upgrade': True}
+                continue
+            backup = output / (('previous-' if previous else 'original-') + Path(name).name)
             backup.write_bytes(original)
             verify_pair(originals / name, package / name, row['changed_resources'])
             replacement = originals / name if args.restore else package / name
-            guest_backup = '/xp25/brand-original-' + Path(name).name
+            guest_backup = ('/xp25/brand-%s-' % expected[:12] if previous else '/xp25/brand-original-') + Path(name).name
             lab.run(['ntfscp', '-t', device, backup, guest_backup])
             lab.run(['ntfscp', '-t', device, replacement, target])
             if lab.run(['ntfscat', device, target]) != replacement.read_bytes():
@@ -95,6 +108,7 @@ def main():
     (output / 'branding-install.json').write_text(json.dumps({'stage': args.stage, 'base': str(base),
         'base_sha256': before, 'package': str(package), 'components': records, 'restored': args.restore,
         'disk_sha256': sha(output / 'disk.qcow2'), 'guest_execution': 'not_attempted',
+        'upgraded_from': str(args.upgrade_from.resolve()) if args.upgrade_from else None,
         'registry_changes': [], 'identity_changes': [], 'code_changes': []}, indent=2) + '\n')
     print(output / 'disk.qcow2')
 

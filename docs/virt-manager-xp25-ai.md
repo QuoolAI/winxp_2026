@@ -9,6 +9,8 @@ and RoverAI on the accepted engineering image with the original Winlogon
 ([milestone record](xp25-ai-clippyai-roverai.md)). Guest writes go only to the
 overlay, and the image is opened read-only.
 
+(Update, 2026-10-25: see [xp25-vm-configuration.md](xp25-vm-configuration.md) for its name, address and branding.)
+
 It was started with `virsh start` and is left **running**. It logged on to the
 `XP25` desktop by itself and shows the ClippyAI shortcut. The recurring Found New
 Hardware Wizard for the standard VGA controller was cancelled, as on
@@ -63,18 +65,19 @@ overlay refers to image-05 by absolute path, so the VM needs that worktree's
 
 ## Known issues
 
-- **No IP address while another XP25 VM holds a lease.** `XP25-Isolated` has a
-  DHCP range of the single address `10.25.0.10`. dnsmasq offers `10.25.0.13` to
-  this VM, then NAKs its request with `no leases left`; 496 NAKs are logged in
-  `dnsmasq-xp25.log` while XP25-Winlogon holds `10.25.0.12`. The guest shows
-  `0.0.0.0`. `ipconfig /renew` as `XP25` returns "Access is denied". Widening the
-  range would fix this, but it changes the shared network, so it was not done.
-  The guest needs no network for ClippyAI's offline mode or RoverAI.
-- The Windows computer name is `XP25-BASELINE`, inherited from the image and
-  shared with XP25-Winlogon. Windows may report a duplicate network name if both
-  are on the network at once.
-- The image still carries the old third-party `OEMINFO.INI`. Only XP25-Winlogon was rebranded
-  ([xp25-winlogon-oem-branding.md](xp25-winlogon-oem-branding.md)).
+These issues were fixed on 2026-10-25 ([configuration record](xp25-vm-configuration.md)):
+
+- **No IP address while another XP25 VM held a lease.** `XP25-Isolated`'s single-address DHCP range
+  allowed only one concurrent lease, and dnsmasq NAKed this VM with `no leases left`. The guest's
+  "Access is denied" from `ipconfig /renew` came from those NAKs. A second range, `10.25.0.20`–`.29`,
+  was added live; the VM now holds `10.25.0.13` while XP25-Winlogon holds `10.25.0.12`.
+- **Shared computer name.** The name `XP25-BASELINE` was inherited and shared with XP25-Winlogon. It is now `XP25-AI`.
+- **Third-party OEM text.** The overlay now carries the QuoolAI `OEMINFO.INI`, Help and Support copy
+  and widened `sysdm.cpl`, with backups in `C:\xp25\vmconfig-20261025\backup`. Image-05 itself is
+  unchanged and still has the third-party file, so recreating the overlay brings it back.
+
+Still open:
+
 - The first boot took about 4–5 minutes to reach the taskbar, against about
   90 s in the image's proof run. The cause was not investigated.
 

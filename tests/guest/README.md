@@ -94,9 +94,20 @@ four for TCG. See [the milestone record](../../docs/xp25-ai-clippyai-roverai.md)
 `build/guest.py --probe oem` builds `oem_probe.exe` (kernel32, user32, advapi32,
 gdi32). `oem_probe.exe [--expect] --out <file>` records `oeminfo.ini`'s
 `[General]` values, OEM logo files, Help and Support's `HelpSvc\OEMInfo` copy
-and the NT 5.1 identity. It then opens System Properties through `sysdm.cpl` and
-records every General-page control's text, and whether the manufacturer and
-model lines fit their controls. It leaves the dialog open. JSON lines go to the
-file, and to COM1 when that opens. Without `--expect` every case is `observed`
-with a `holds` flag; with it the QuoolAI values are gates and the exit code is
-the number of failures. See [the OEM record](../../docs/xp25-winlogon-oem-branding.md).
+and the NT 5.1 identity. It then opens System Properties and records every
+General-page control's text. It checks:
+- that every single-line text fits its control and no text line overlaps another;
+- that, on all seven tabs, every visible control that shows something lies inside its page;
+- that the sheet's width fits the screen;
+- that the OEM model fits the 124-DLU Computer line at 96, 120 and 144 DPI.
+
+It leaves the dialog open. Without `--expect` every case is `observed`, with a
+`holds` flag; with it, the QuoolAI values are gates and the exit code is the
+number of failures. JSON lines go to the file, and to COM1 when that opens.
+`--rename NAME --out <file>` sets the computer name with `SetComputerNameExA`.
+
+`build/prepare_vm_config_media.py` packs the probe with `vmconfig/vm-before.cmd`,
+`vm-verify.cmd` and `vm-restore.cmd` for the interactive VMs, and
+`vm/vm_config_results.py` gates the results offline. See [the OEM
+record](../../docs/xp25-winlogon-oem-branding.md) and [the VM configuration
+record](../../docs/xp25-vm-configuration.md).

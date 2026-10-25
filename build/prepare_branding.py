@@ -10,6 +10,13 @@ from pe_resources import Resources, strings, string_data, dialog, dialog_data
 
 ROOT = Path(__file__).resolve().parents[1]
 BRAND_CONTROL = 0x7f25
+# IDC_GEN_MACHINE_* lines of the System Properties General page hold the OEM
+# manufacturer and model, processor and memory. At 110 DLU (165 px at 96 DPI)
+# they clip an OEM model such as "Windows XP 25th Anniversary Edition" (179 px
+# in Tahoma 8 pt). 124 DLU fits it with a margin; the page widens by the same
+# 14 DLU so the original right margin is kept and no other control moves.
+MACHINE_LINES = (63, 64, 65, 66, 67, 68, 70, 71, 72)
+MACHINE_LINE_CX = 124
 
 
 def sha(data):
@@ -50,6 +57,18 @@ def add_label(row, text, x, y, cx, cy):
                              cls=0x82, text=text, extra=b''))
 
 
+def brand_system_properties(row, label):
+    if row['title'] != 'General' or (row['cx'], row['cy']) != (256, 218):
+        raise ValueError('unrecognized System Properties layout')
+    lines = [item for item in row['items'] if item['id'] in MACHINE_LINES]
+    if len(lines) != len(MACHINE_LINES) or any((item['cls'], item['x'], item['cx']) != ('Link Window', 141, 110) for item in lines):
+        raise ValueError('unrecognized System Properties computer lines')
+    add_label(row, label, 7, 112, 120, 20)
+    for item in lines:
+        item['cx'] = MACHINE_LINE_CX
+    row['cx'] += MACHINE_LINE_CX - 110
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inputs', type=Path, required=True, help='private extracted baseline Windows directory')
@@ -75,9 +94,7 @@ def main():
         if relative.endswith('sysdm.cpl'):
             key = (5, 101, 1033)
             row = dialog(resources.entries[key]['data'])
-            if row['title'] != 'General' or (row['cx'], row['cy']) != (256, 218):
-                raise ValueError('unrecognized System Properties layout')
-            add_label(row, config['system_properties_label'], 7, 112, 120, 20)
+            brand_system_properties(row, config['system_properties_label'])
             resources.entries[key]['data'] = dialog_data(row)
         elif relative.endswith('xpsp1res.dll'):
             key = (5, 14352, 1033)

@@ -2,6 +2,36 @@
 
 ## Current checkpoint
 
+2026-10-25, interactive VM configuration (branch `xp25-ai`): **XP25-Winlogon and
+XP25-AI run at the same time, each with its own address and name, and System
+Properties shows QuoolAI with the full "Windows XP 25th Anniversary Edition".**
+
+- **System Properties.** The reviewed `sysdm.cpl` branding step widens the
+  General page's Computer lines from 110 to 124 DLU and the page from 256 to
+  270 DLU. No control moves, and the other five branded files are unchanged.
+  - Installed offline on both VMs.
+  - The `oem` probe checks text fit, overlaps, all seven tabs and fit at
+    96/120/144 DPI; all 19 cases pass on both.
+- **XP25-AI branding.** Same OEM file, Help and Support copy and backups as XP25-Winlogon.
+- **DHCP.** The single-address dynamic range let dnsmasq hold only one lease
+  ("no leases left"). A second range, `.20`–`.29`, was added with a live and
+  persistent `net-update`, which restarted only that network's dnsmasq.
+  - The VMs hold `10.25.0.12` and `10.25.0.13`, ping each other, see each
+    other's NetBIOS names, and cannot reach outside addresses.
+- **Computer names.** `XP25-WINLOGON` and `XP25-AI`, set with `SetComputerNameExA`.
+  - WMI rename fails on the Winlogon image (`0x80041004`).
+  - The independent Winlogon does not copy `NV Hostname` to `Hostname` at
+    startup, as the original does. The active value is set directly instead.
+- **Preserved and verified.** Frozen images, other domains, xp25-sp3,
+  activation data, the 22 Winlogon components and the AI binaries are unchanged.
+  Each VM passes 16 offline gates.
+- **Rehearsals.** All of this was rehearsed on disposable overlays. One
+  rehearsal had an unexplained restart that did not recur and is kept with
+  `failure.json`.
+- [Configuration record](xp25-vm-configuration.md)
+
+The previous entry follows.
+
 2026-10-25, interactive VMs (branch `xp25-ai`): **XP25-Winlogon now carries the
 QuoolAI OEM branding, and a disposable XP25-AI VM is running in virt-manager.**
 

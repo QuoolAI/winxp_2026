@@ -6,16 +6,19 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
-## Interactive XP25-Winlogon OEM branding and XP25-AI VM, 2026-10-25
+## Interactive XP25-Winlogon and XP25-AI VMs, 2026-10-25
 
 | Configuration | Result | Evidence |
 | --- | --- | --- |
-| XP25-Winlogon (libvirt KVM, 1 vCPU, 512 MiB, RTL8139 on `XP25-Isolated`), `OEMINFO.INI` set to QuoolAI / Windows XP 25th Anniversary Edition | `oem` probe 15/16; System Properties clips the model to "Windows XP 25th Anniversary" (179 px text, 165 px line) | `.work/oem-branding-20261025/winlogon-vm-01` |
-| Same change and restore script on a disposable overlay of that disk (KVM, no NIC, COM1) | Applied, verified and restored; Winlogon licensing records `licensing_policy_allowed` on each boot | `.work/oem-branding-20261025/rehearsal-01` |
-| XP25-AI (libvirt KVM, overlay on image-05 `ec22f45b…be2a`) | Boots and auto-logs on to the desktop (screenshot only); no DHCP lease while XP25-Winlogon holds one | `.work/XP25-AI-registration-20261025` |
-| System Properties OEM lines at DPI other than 96, or with a different dialog font | Not tested | — |
+| XP25-Winlogon (libvirt KVM, 1 vCPU, 512 MiB, RTL8139 `…:04` on `XP25-Isolated`), independent Winlogon | 16/16 gates; `oem` probe 19/19; `XP25-WINLOGON` at `10.25.0.12` | `.work/vm-config-20261025/together-01/results-XP25-Winlogon` |
+| XP25-AI (libvirt KVM, overlay on image-05 `ec22f45b…be2a`, RTL8139 `…:05`), original Winlogon | 16/16 gates; `oem` probe 19/19; `XP25-AI` at `10.25.0.13` | `.../together-01/results-XP25-AI` |
+| Both running at once on `XP25-Isolated` | Distinct leases, guest-to-guest ping and NetBIOS names, host ping both, no gateway, outside unreachable | `.../together-01` |
+| System Properties with the widened Computer lines (`sysdm.cpl` `98f3c968…`), all seven tabs | Text fits, no overlaps, every page's controls inside, sheet width fits 640×480 | probe records; `rehearsal-ai-01/09-tabs-montage.png` |
+| OEM model at 120 and 144 DPI | Font measurement fits 124 DLU; no guest was run at those DPIs | `model_metrics` records |
+| Rehearsal overlays (KVM, no NIC, COM1) | AI and Winlogon flows pass; rollback restores both files; one unexplained restart in `rehearsal-wl-01` | `.work/oem-sysdm-20261025/rehearsal-*` |
+| WMI computer rename on the Winlogon image | Fails, `0x80041004`; native `SetComputerNameExA` used | `rehearsal-wl-01/failure.json` |
 
-See [the OEM record](xp25-winlogon-oem-branding.md) and [the XP25-AI VM record](virt-manager-xp25-ai.md).
+See [the configuration record](xp25-vm-configuration.md); the first OEM pass is in [the OEM record](xp25-winlogon-oem-branding.md).
 
 ## XP25 AI components (ClippyAI, RoverAI), 2026-10-25
 
