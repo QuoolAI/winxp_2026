@@ -28,7 +28,8 @@ static unsigned long profile(void *p)
 static void policy(void *p,WL_POLICY_RESULT *r)
 {FIXTURE *f=p;++f->policies;*r=f->policy;}
 static unsigned long copy_env(void *p,void **out)
-{FIXTURE *f=p;CHECK(f->host_env);++f->copies;f->copy_alive=1;*out=f->copy;return tick(f,WlOpCopyEnvironment);}
+{FIXTURE *f=p;CHECK(f->host_env);if(f->copy_alive&&f->copy_taken){CHECK(!f->process);f->copy_alive=0;++f->copy_frees;}
+ ++f->copies;f->copy_taken=0;f->copy_alive=1;*out=f->copy;return tick(f,WlOpCopyEnvironment);}
 static unsigned long discard(void *p,void *copy)
 {FIXTURE *f=p;CHECK(copy==f->copy);CHECK(f->copy_alive&&!f->copy_taken);f->copy_alive=0;++f->copy_frees;return 0;}
 static unsigned long secure(void *p)
@@ -65,7 +66,11 @@ static unsigned long release(void *p)
 }
 static unsigned long power(void *p,unsigned mode)
 {FIXTURE *f=p;CHECK(mode<=1);CHECK(!f->token&&!f->profile&&!f->process);return tick(f,WlOpPower);}
-static const WL_SESSION_DRIVER doubles={user,profile,policy,copy_env,discard,secure,protect,activate,identity,desktop,notify,end_processes,release,power};
+static unsigned long exited(void *p)
+{FIXTURE *f=p;return f->process?170:tick(f,WlOpShellExit);}
+static unsigned long restart(void *p,void *copy)
+{FIXTURE *f=p;unsigned long e;CHECK(f->engine.recovery_busy);e=activate(p,copy);return e?e:tick(f,WlOpRestart);}
+static const WL_SESSION_DRIVER doubles={user,profile,policy,copy_env,discard,secure,protect,activate,identity,desktop,notify,end_processes,release,power,exited,restart};
 static void fixture(FIXTURE *f)
 {
     memset(f,0,sizeof(*f));f->token=1;f->secure=1;f->notification_fault=-1;
@@ -149,6 +154,58 @@ int wl_session_tests(void)
     ++cases;memset(&r,0,sizeof(r));CHECK(wl_policy_admission(&r)==13);CHECK(wl_policy_admission(0)==13);
     r.version=1;r.decision=(WL_POLICY_DECISION)99;CHECK(wl_policy_admission(&r)==13);
     r.decision=WlPolicyAllowed;r.verified=WL_POLICY_REQUIRED;r.error=55;CHECK(wl_policy_admission(&r)==55);
+    ++cases;fixture(&f);CHECK(wl_engine_start(&f.engine));before=f.machine;
+    CHECK(!wl_engine_recover(&f.engine,0)&&f.engine.error==170);CHECK(!memcmp(&before,&f.machine,sizeof(before)));
+    f.process=0;CHECK(!wl_engine_recover(&f.engine,1)&&f.engine.error==13);CHECK(!f.engine.restarts);
+    CHECK(wl_engine_recover(&f.engine,0));CHECK(f.machine.phase==WlInteractive&&!f.secure&&f.process);
+    CHECK(f.engine.restarts==1&&f.activations==2&&f.notices[WlNoticeLogon]==1);
+    CHECK(wl_engine_logoff(&f.engine));gone(&f);
+    ++cases;fixture(&f);CHECK(wl_engine_start(&f.engine));CHECK(wl_engine_lock(&f.engine));f.process=0;
+    CHECK(wl_engine_recover(&f.engine,0));CHECK(f.machine.phase==WlLocked&&f.secure&&f.process);
+    CHECK(wl_state_step(&f.machine,WlAttention,WL_SECURE_ACTIVE));CHECK(!wl_engine_unlock(&f.engine,0));
+    CHECK(wl_engine_unlock(&f.engine,1));CHECK(wl_engine_logoff(&f.engine));gone(&f);
+    ++cases;fixture(&f);CHECK(wl_engine_start(&f.engine));
+    for(i=0;i<3;++i){f.process=0;CHECK(wl_engine_recover(&f.engine,0));}
+    f.process=0;CHECK(!wl_engine_recover(&f.engine,0)&&f.engine.error==1237);
+    CHECK(f.machine.phase==WlFailed&&f.secure&&f.token&&f.profile&&f.host_env);
+    ++cases;fixture(&f);CHECK(wl_engine_start(&f.engine));f.process=0;f.policy.decision=WlPolicyDenied;f.policy.error=775;
+    CHECK(!wl_engine_recover(&f.engine,0)&&f.engine.error==775);CHECK(f.machine.phase==WlFailed&&f.secure&&f.activations==1);
+    ++cases;fixture(&f);CHECK(wl_engine_start(&f.engine));f.process=0;f.fault=WlOpRestart;
+    CHECK(!wl_engine_recover(&f.engine,0)&&f.engine.error==1234);CHECK(f.machine.phase==WlFailed&&f.secure&&f.token&&f.profile);
+    ++cases;fixture(&f);CHECK(wl_engine_start(&f.engine));CHECK(wl_state_step(&f.machine,WlAttention,WL_SECURE_ACTIVE));f.process=0;
+    CHECK(!wl_engine_recover(&f.engine,0)&&f.engine.error==13);CHECK(!f.engine.restarts);
+    CHECK(wl_engine_logoff(&f.engine));gone(&f);
+    {
+        /* Licensing-agent outputs, mapped exactly; no input yields a nominal allow. */
+        static const struct {unsigned key;unsigned long agent,init,wpa,eval;WL_POLICY_DECISION d;unsigned long admit;unsigned verified;} t[]={
+            {1,0,0,WL_LICENSE_UNLIMITED,WL_LICENSE_UNLIMITED,WlPolicyAllowed,0,WL_POLICY_REQUIRED},
+            {1,0,0,30,WL_LICENSE_UNLIMITED,WlPolicyAllowed,0,WL_POLICY_REQUIRED},
+            {1,0,0,1,7,WlPolicyAllowed,0,WL_POLICY_REQUIRED},
+            {1,0,0,0,WL_LICENSE_UNLIMITED,WlPolicyDenied,5,WL_POLICY_KEY_PROTECTION|WL_POLICY_INITIALIZATION},
+            {1,0,0,WL_LICENSE_UNLIMITED,0,WlPolicyDenied,5,WL_POLICY_KEY_PROTECTION|WL_POLICY_INITIALIZATION},
+            {1,0,0,0,0,WlPolicyDenied,5,WL_POLICY_KEY_PROTECTION|WL_POLICY_INITIALIZATION},
+            {1,0x80040154UL,0,WL_LICENSE_UNLIMITED,WL_LICENSE_UNLIMITED,WlPolicyUnavailable,0x80040154UL,WL_POLICY_KEY_PROTECTION},
+            {1,5,0,WL_LICENSE_UNLIMITED,WL_LICENSE_UNLIMITED,WlPolicyUnavailable,5,WL_POLICY_KEY_PROTECTION},
+            {1,0,87,WL_LICENSE_UNLIMITED,WL_LICENSE_UNLIMITED,WlPolicyUnavailable,87,WL_POLICY_KEY_PROTECTION},
+            {1,0,0,0x80000000UL,WL_LICENSE_UNLIMITED,WlPolicyUnavailable,13,WL_POLICY_KEY_PROTECTION|WL_POLICY_INITIALIZATION},
+            {1,0,0,WL_LICENSE_UNLIMITED,0xffffffffUL,WlPolicyUnavailable,13,WL_POLICY_KEY_PROTECTION|WL_POLICY_INITIALIZATION},
+            {0,0,0,WL_LICENSE_UNLIMITED,WL_LICENSE_UNLIMITED,WlPolicyUnavailable,21,WL_POLICY_INITIALIZATION},
+            {0,0,0,0,WL_LICENSE_UNLIMITED,WlPolicyUnavailable,21,WL_POLICY_INITIALIZATION},
+            {0,0x80004005UL,0,0,0,WlPolicyUnavailable,0x80004005UL,0}};
+        WL_LICENSE_STATE s;unsigned n;
+        for(n=0;n<sizeof(t)/sizeof(t[0]);++n){
+            ++cases;memset(&s,0,sizeof(s));s.key_protected=t[n].key;s.agent_error=t[n].agent;s.init_status=t[n].init;
+            s.wpa_left=t[n].wpa;s.eval_left=t[n].eval;memset(&r,0x5a,sizeof(r));wl_policy_from_license(&s,&r);
+            CHECK(r.version==1&&r.decision==t[n].d&&r.verified==t[n].verified);
+            CHECK(wl_policy_admission(&r)==t[n].admit);
+            fixture(&f);f.policy=r;
+            if(t[n].admit){CHECK(!wl_engine_start(&f.engine)&&f.engine.operation==WlOpPolicy&&f.engine.error==t[n].admit);
+                CHECK(!f.activations&&!f.copies);CHECK(wl_engine_abort(&f.engine));gone(&f);}
+            else{CHECK(wl_engine_start(&f.engine)&&f.machine.phase==WlInteractive);CHECK(wl_engine_logoff(&f.engine));gone(&f);}
+        }
+        ++cases;memset(&r,0,sizeof(r));wl_policy_from_license(0,&r);CHECK(r.version==1&&r.decision==WlPolicyUnavailable&&r.error==13&&!r.verified);
+        wl_policy_from_license(&s,0);
+    }
     printf("XP25_SESSION_TEST_ONLY cases=%u checks=%u failures=%u\n",cases,checks,failures);
     return failures?1:0;
 }

@@ -2,6 +2,36 @@
 
 ## Current checkpoint
 
+2026-10-25, Winlogon desktop and session continuation from `67de708ed`:
+**the independent NT 5.1 Winlogon now starts the original Explorer with Luna
+and runs the session lifecycle.** Licensing admission is decided by the installed
+`licdll.dll` COMLicenseAgent using SP3 Setup's own `Activationrequired` sequence
+(`Initialize(0xC475,1,NULL)`, status 0, `WPALeft == INT_MAX`); its ABI is
+re-verified against the DLL's type library at runtime and nothing is forced.
+Guest debugging found and fixed missing Winlogon duties: permanent font load
+(userinit otherwise blocks in `win32k`), `WlxWin31Migrate`, logoff process-exit
+wait, per-user system parameters, `Win+L`/`Ctrl+Shift+Esc`, status-message
+removal, the MSGINA theme handoff and crash-recovery identity races.
+
+Final native build 10, SHA-256
+`e3a9cdca26ab7af5ae5b225d647c94be0dc34aa4f7428e025ddf3b3c3becdf93`, passes 18
+gates (authentication, admission, Explorer identity, four regression probes with
+Luna active, lock/unlock, Task Manager, Windows Security, Explorer crash
+recovery, logoff with no remaining user processes, re-logon, 17-case isolated
+network probe) and a guest-requested shutdown under single-vCPU KVM and
+two-vCPU KVM and TCG, plus a desktop restart cycle. A standalone engineering
+image with only this Winlogon (`XP25-Winlogon-Engineering.qcow2`, SHA-256
+`0df7fc05b0b965941f4c488894ce200adcd44d91acf4bf28f93f7a445d30c51c`) passes the same
+18 gates in an independent boot proof. Source, reference images and user VMs are
+unchanged. Known gaps: Terminal
+Services session state (`qwinsta` shows `Conn`, no user), unthemed logon desktop
+and post-logoff GINA edits that accept input but do not paint, no Welcome
+screen, Fast User Switching, event sounds or Group Policy processing. Build 04
+failed the native compiler (C4701) and is retained; all 41 host tests pass.
+[Licensing evidence, duties, builds, matrix and gaps](winlogon-desktop-session.md)
+
+The following earlier entries describe their respective historical inputs.
+
 2026-10-24, policy/session continuation from `8e4bdba7c`: **real NT 5.1
 activation-key protection initialization now runs; licensing admission remains
 blocked.** The supplied linked kernel contains the service in prebuilt
@@ -30,8 +60,6 @@ lock/unlock/logoff, shell crash recovery and the full replacement regression
 matrix remain incomplete. No accepted image is generated; Source, recovery
 executables, prior images and persistent user VM definitions are preserved.
 [Policy findings, code, native test/build hashes and exact limitations](winlogon-policy-session-contract.md)
-
-The following earlier entries describe their respective historical inputs.
 
 2026-10-24, fresh Winlogon runtime verification: **the exact latest input
 failed the native compiler** (`WlSessionActive` undefined; zero-key branch leaves

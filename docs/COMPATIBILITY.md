@@ -6,6 +6,32 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Independent Winlogon desktop and session, 2026-10-25
+
+The [desktop/session record](winlogon-desktop-session.md) supersedes the
+sections below for the current Winlogon. Native build 10, SHA-256
+`e3a9cdca26ab7af5ae5b225d647c94be0dc34aa4f7428e025ddf3b3c3becdf93`, installed as
+the only change in fresh overlays of the verified engineering images:
+
+| Area | KVM 1 vCPU | KVM 2 vCPUs | TCG 1 vCPU |
+| --- | --- | --- | --- |
+| Boot, MSGINA, LSA rejects a wrong password | Observed | Observed | Observed |
+| Licensing admission through installed `licdll` agent (activated) | Observed | Observed | Observed |
+| Explorer/Luna desktop with verified token, LUID and image | Observed | Observed | Observed |
+| File, HKCU, loopback, driver, SCM, Start menu, folder, Luna probes | Pass | Pass | Pass |
+| Lock (`Win+L`), unlock, Windows Security, Task Manager | Pass | Pass | Pass |
+| Explorer crash → re-admission → restart | Pass | Pass | Pass |
+| Logoff, no user processes left, re-logon | Pass | Pass | Pass |
+| RTL8139 DHCP/DNS/TCP/HTTP in the isolated namespace | 17/17 | 17/17 | 17/17 |
+| Desktop Turn Off → guest-requested shutdown | Observed | Observed | Observed |
+| Desktop Restart → guest reset → reboot → re-logon | Observed | Not run | Not run |
+
+Not supported or not verified with this Winlogon: the Welcome screen (classic
+logon only), Fast User Switching, Terminal Services session state (console shows
+`Conn` without a user), Task Manager's Users tab data, event sounds, Group Policy
+processing, domain logon, activation reminders/wizard, and themed logon-desktop
+controls. After a logoff, MSGINA's edit fields do not paint although input works.
+
 ## Winlogon policy/session continuation, 2026-10-24
 
 The [policy/session record](winlogon-policy-session-contract.md) supersedes

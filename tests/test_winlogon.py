@@ -5,6 +5,7 @@ These portable tests do not establish native authentication or desktop safety.
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -69,6 +70,31 @@ class SessionEngineTests(unittest.TestCase):
             self.assertNotEqual(run.returncode, 0)
             self.assertIn('Test session drivers cannot be compiled into production Winlogon', run.stderr)
             self.assertFalse((Path(directory) / 'forbidden.o').exists())
+
+
+class LicensingAgentAbiTests(unittest.TestCase):
+    """policy_native.c hard-codes slots that the installed DLL's type library must confirm."""
+    def test_supplied_type_library_matches_native_provider(self):
+        tlb = ROOT / '.work/winlogon-licensing-20261025/licdll-typelib.tlb'
+        if not tlb.is_file():
+            self.skipTest('private licdll type library extract unavailable')
+        sys.path.insert(0, str(ROOT / 'build'))
+        import typelib_dump
+        infos = {t['name']: t for t in typelib_dump.parse(tlb.read_bytes())}
+        agent = infos['ICOMLicenseAgent']
+        self.assertEqual(agent['guid'], 'B8CBAD79-3F1F-481A-BB0C-E7BBD77BDDD1')
+        self.assertEqual(agent['kind'], 'DISPATCH')
+        self.assertTrue(agent['typeflags'] & 0x40)  # TYPEFLAG_FDUAL
+        slots = {f['name']: f for f in agent['functions']}
+        self.assertEqual(slots['Initialize']['vtable_offset'], 28)
+        self.assertEqual([p['type'] for p in slots['Initialize']['params']],
+                         ['VT_UI4', 'VT_UI4', 'VT_BSTR', 'VT_PTR(VT_UI4)'])
+        self.assertEqual(slots['GetExpirationInfo']['vtable_offset'], 192)
+        self.assertEqual(len(slots['GetExpirationInfo']['params']), 2)
+        self.assertEqual(infos['COMLicenseAgent']['guid'], 'ACADF079-CBCD-4032-83F2-FA47C4DB096F')
+        source = (ROOT / 'components/winlogon/policy_native.c').read_text()
+        self.assertIn('0xacadf079,0xcbcd,0x4032', source)
+        self.assertIn('0xb8cbad79,0x3f1f,0x481a', source)
 
 
 if __name__ == '__main__':

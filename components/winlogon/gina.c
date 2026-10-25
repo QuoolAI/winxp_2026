@@ -14,6 +14,15 @@ static int WINAPI shell_protection(HANDLE h,HANDLE token,HANDLE process,HANDLE t
 static int WINAPI message_box(HANDLE h,HWND owner,LPWSTR text,LPWSTR title,UINT flags)
 {if(!valid(h))return 0;return MessageBoxW(owner,text,title,flags);}
 
+static BOOL CALLBACK log_edit(HWND child,LPARAM parameter)
+{
+    WCHAR cls[16];char row[96];UNREFERENCED_PARAMETER(parameter);
+    if(GetClassNameW(child,cls,16)&&lstrcmpiW(cls,L"Edit")==0){
+        wsprintfA(row,"gina_dialog_edit_%d_enabled_%d_visible_%d",GetDlgCtrlID(child),IsWindowEnabled(child)!=0,IsWindowVisible(child)!=0);
+        wl_log(row,0);
+    }
+    return TRUE;
+}
 static INT_PTR CALLBACK dialog_proc(HWND h,UINT message,WPARAM wp,LPARAM lp)
 {
     WL_DIALOG *context=(WL_DIALOG*)GetPropW(h,dialog_property);INT_PTR result;
@@ -22,13 +31,15 @@ static INT_PTR CALLBACK dialog_proc(HWND h,UINT message,WPARAM wp,LPARAM lp)
         if(!SetPropW(h,dialog_property,context)){EndDialog(h,-1);return FALSE;}
         wl.dialog=h;
         if(wl.timeout&&!SetTimer(h,1,wl.timeout*1000,NULL)){EndDialog(h,-1);return FALSE;}
-        return context->procedure(h,message,wp,context->parameter);
+        result=context->procedure(h,message,wp,context->parameter);
+        EnumChildWindows(h,log_edit,0);SetTimer(h,0x5832,3000,NULL);return result;
     }
     if(!context)return FALSE;
     if(message==WM_TIMER&&wp==1){EndDialog(h,WLX_DLG_INPUT_TIMEOUT);return TRUE;}
+    if(message==WM_TIMER&&wp==0x5832){KillTimer(h,0x5832);EnumChildWindows(h,log_edit,0);return TRUE;}
     if(message==WLX_WM_SAS){EndDialog(h,WLX_DLG_SAS);return TRUE;}
     result=context->procedure(h,message,wp,lp);
-    if(message==WM_NCDESTROY){KillTimer(h,1);RemovePropW(h,dialog_property);wl.dialog=context->previous;}
+    if(message==WM_NCDESTROY){KillTimer(h,1);KillTimer(h,0x5832);RemovePropW(h,dialog_property);wl.dialog=context->previous;}
     return result;
 }
 static int WINAPI dialog_param(HANDLE h,HANDLE instance,LPWSTR name,HWND owner,DLGPROC proc,LPARAM param)
@@ -70,6 +81,8 @@ static BOOL WINAPI get_option(HANDLE h,DWORD id,ULONG_PTR *value)
     if(id==WLX_OPTION_CONTEXT_POINTER){*value=(ULONG_PTR)wl.gina_context;return TRUE;}
     if(id==WLX_OPTION_USE_CTRL_ALT_DEL){*value=wl.cad;return TRUE;}
     if(id==WLX_OPTION_NO_SWITCH_ON_SAS){*value=wl.no_switch;return TRUE;}
+    /* This host does not monitor smart-card readers, so none is present. */
+    if(id==WLX_OPTION_SMART_CARD_PRESENT){*value=0;return TRUE;}
     p=option(id);if(p){*value=*p;return TRUE;}
     wl_log("unsupported_WLX_get_option_id",id);return unsupported("unsupported_WLX_get_option");
 }
@@ -83,7 +96,10 @@ static BOOL WINAPI set_option(HANDLE h,DWORD id,ULONG_PTR value,ULONG_PTR *old)
     else {p=option(id);if(!p){SetLastError(ERROR_INVALID_PARAMETER);return FALSE;}*p=value;}
     if(old)*old=prior;return TRUE;
 }
-static VOID WINAPI migrate(HANDLE h){if(valid(h))wl_fail("Win31_migration_unsupported",ERROR_CALL_NOT_IMPLEMENTED);}
+/* MSGINA's ExecProcesses calls this on every Terminal Services-capable logon.
+   It migrates Windows 3.1 INI/REG.DAT settings, which cannot exist for an NT 5.1
+   profile (there is no 3.x upgrade path); the WLX sample host also returns. */
+static VOID WINAPI migrate(HANDLE h){if(valid(h))wl_log("win31_migration_not_applicable",0);}
 static BOOL WINAPI client_cred(PWLX_CLIENT_CREDENTIALS_INFO_V1_0 c){UNREFERENCED_PARAMETER(c);return unsupported("remote_credentials_unsupported");}
 static BOOL WINAPI ts_cred(PWLX_CLIENT_CREDENTIALS_INFO_V2_0 c){UNREFERENCED_PARAMETER(c);return unsupported("TS_credentials_unsupported");}
 static BOOL WINAPI disconnect(void){return unsupported("session_disconnect_unsupported");}
@@ -117,10 +133,23 @@ BOOL wl_gina_init(void)
     LOAD(activate_shell,"WlxActivateUserShell");LOAD(logged_on,"WlxLoggedOnSAS");LOAD(locked_notice,"WlxDisplayLockedNotice");LOAD(locked_sas,"WlxWkstaLockedSAS");
     LOAD(lock_ok,"WlxIsLockOk");LOAD(logoff_ok,"WlxIsLogoffOk");LOAD(logoff,"WlxLogoff");LOAD(shutdown,"WlxShutdown");LOAD(network,"WlxNetworkProviderLoad");
 #undef LOAD
+    *(FARPROC*)&wl.gina.start_application=GetProcAddress(wl.gina_module,"WlxStartApplication");
     if(!wl.gina.negotiate(WLX_VERSION_1_4,&wl.gina_version)||wl.gina_version<WLX_VERSION_1_3||wl.gina_version>WLX_VERSION_1_4){SetLastError(ERROR_REVISION_MISMATCH);return FALSE;}
     wl_log("gina_negotiated",wl.gina_version);
     if(!wl.gina.initialize(L"WinSta0",&wl,NULL,&wl.dispatch,&wl.gina_context))return FALSE;
     wl_log("gina_initialized",0);return TRUE;
+}
+
+void wl_theme_user_change(unsigned type,HANDLE token)
+{
+    VOID (WINAPI *notice)(int,HANDLE);
+    /* MSGINA ordinal 10, ShellNotifyThemeUserChange(USERLOGTYPE,HANDLE) per the
+       supplied msginaexports.h; the installed export is that stdcall switch.
+       It hands the visual theme between the logon desktop and the user. */
+    if(!wl.gina_module)return;
+    notice=(VOID(WINAPI*)(int,HANDLE))GetProcAddress(wl.gina_module,MAKEINTRESOURCEA(10));
+    if(!notice){wl_log("theme_user_change_unavailable",GetLastError());return;}
+    notice((int)type,token);wl_log("theme_user_change",type);
 }
 
 static void free_string(PWSTR *s,BOOL secret)
@@ -134,15 +163,16 @@ void wl_free_gina_result(void)
 
 static void abort_initialization(DWORD error)
 {
-    WCHAR message[256];
-    /* This path precedes shell admission. Cleanup failures are fatal and keep
+    WCHAR message[384];BOOL licensing=wl_session_license_denied();
+    /* This path covers failed initialization. Cleanup failures are fatal and keep
        their handles/token for diagnosis; a successful rollback permits retry. */
     wl.in_gina=TRUE;wl_log("rollback_secure_begin",0);
     if(!wl_session_abort())wl_fail("session_cleanup_failed",GetLastError());
     wl_log("session_initialization_rolled_back",error);
-    wsprintfW(message,L"The user session could not be initialized (error %lu).\nThe profile has been unloaded. You can try logging on again.",error);
+    if(licensing)lstrcpyW(message,L"This copy of Windows must be activated before you can log on.\nThe licensing agent reports that the activation or evaluation period has expired. The profile has been unloaded.");
+    else wsprintfW(message,L"The user session could not be initialized (error %lu).\nThe profile has been unloaded. You can try logging on again.",error);
     wl.in_gina=TRUE;
-    MessageBoxW(NULL,message,L"XP25 session initialization failed",MB_OK|MB_ICONERROR|MB_SYSTEMMODAL);
+    MessageBoxW(NULL,message,licensing?L"Windows Product Activation":L"XP25 session initialization failed",MB_OK|MB_ICONERROR|MB_SYSTEMMODAL);
     wl.in_gina=FALSE;
     if(!PostMessageW(wl.window,WL_APP_NOTICE,100,0))wl_fail("rollback_notice_failed",GetLastError());
 }
@@ -193,6 +223,10 @@ void wl_attention(DWORD type)
         action=wl.gina.logged_on(wl.gina_context,type,NULL);wl.in_gina=FALSE;wl_log("gina_security_action",action);
         if(action==WLX_SAS_ACTION_LOCK_WKSTA){if(!wl_session_lock())wl_fail("lock_state_rejected",GetLastError());wl.gina.locked_notice(wl.gina_context);}
         else if(action==WLX_SAS_ACTION_NONE||action==0){if(!wl_switch_user()||!wl_state_step(&wl.machine,WlCancelled,WL_USER_ACTIVE))wl_fail("security_cancel_failed",GetLastError());}
+        else if(action==WLX_SAS_ACTION_TASKLIST){
+            if(!wl_session_tasklist()||!wl_switch_user()||!wl_state_step(&wl.machine,WlCancelled,WL_USER_ACTIVE))
+                wl_fail("security_tasklist_failed",GetLastError());
+        }
         else if(action==WLX_SAS_ACTION_LOGOFF||action==WLX_SAS_ACTION_SHUTDOWN||
                 action==WLX_SAS_ACTION_SHUTDOWN_POWER_OFF||action==WLX_SAS_ACTION_SHUTDOWN_REBOOT){
             if(!wl_session_logoff())wl_fail("security_logoff_failed",GetLastError());

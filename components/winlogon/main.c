@@ -102,7 +102,16 @@ static BOOL console_authentication_options(void)
 
 static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
 {
+    if(message==WM_TIMER&&wp==WL_SHELL_TIMER){wl_session_poll_shell();return 0;}
     if(message==WM_HOTKEY&&wp==WL_HOTKEY){PostMessageW(h,WL_APP_SAS,WLX_SAS_TYPE_CTRL_ALT_DEL,0);return 0;}
+    /* Logon-process hotkeys stay effective while the station is locked;
+       act only on an interactive, idle session. */
+    if(message==WM_HOTKEY&&(wp==WL_HOTKEY_LOCK||wp==WL_HOTKEY_TASKMGR)){
+        if(wl.in_gina||wl.machine.phase!=WlInteractive){wl_log("session_hotkey_ignored",(DWORD)wp);return 0;}
+        if(wp==WL_HOTKEY_LOCK)PostMessageW(h,WL_APP_NOTICE,5,0);
+        else if(!wl_session_tasklist())wl_log("task_manager_hotkey_failed",GetLastError());
+        return 0;
+    }
     if(message==WL_APP_SAS){
         if(wl.dialog&&(wl.machine.phase==WlSignedOut||wl.machine.phase==WlLocked)){
             EndDialog(wl.dialog,WLX_DLG_SAS);PostMessageW(h,WL_APP_SAS,wp,0);return 0;
@@ -110,9 +119,13 @@ static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
         if(wl.in_gina&&wl.dialog){PostMessageW(wl.dialog,WLX_WM_SAS,wp,0);return 0;}
         wl_attention((DWORD)wp);return 0;
     }
-    if(message==WL_LOGON_NOTIFY){wl_log("user_logon_notify",(DWORD)wp);PostMessageW(h,WL_APP_NOTICE,wp,lp);return 0;}
+    /* Event-sound notices arrive with every menu/window action; logging each one
+       would keep taking the exclusive COM1 diagnostic port from guest software. */
+    if(message==WL_LOGON_NOTIFY){if(wp!=9)wl_log("user_logon_notify",(DWORD)wp);PostMessageW(h,WL_APP_NOTICE,wp,lp);return 0;}
     if(message==WL_APP_NOTICE){
-        if(wp==100&&wl.machine.phase==WlSignedOut){wl.gina.sas_notice(wl.gina_context);return 0;}
+        if(wp==100&&wl.machine.phase==WlSignedOut){wl_status_clear();wl.gina.sas_notice(wl.gina_context);return 0;}
+        if(wp==2){wl_log("shell_restart_notice",0);wl_session_poll_shell();return 0;}
+        if(wp==9){static BOOL logged;if(!logged){logged=TRUE;wl_log("event_sounds_not_implemented",9);}return 0;}
         if(wp==5&&wl.machine.phase==WlInteractive){
             if(wl_session_lock())wl.gina.locked_notice(wl.gina_context);else wl_log("lock_request_failed",GetLastError());
         }else if(wp==0){
@@ -131,15 +144,28 @@ static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
     return DefWindowProcW(h,message,wp,lp);
 }
 
+static DWORD WINAPI load_local_fonts(PVOID parameter)
+{
+    VOID (WINAPI *load)(void);UNREFERENCED_PARAMETER(parameter);
+    /* USER initialization loads permanent fonts only up to MS Sans Serif for
+       the logon UI; the logon process completes the set in the background via
+       the private user32 export. userinit's LoadRemoteFonts waits for it. */
+    if(!SetThreadDesktop(wl.secure)){wl_log("local_fonts_desktop_failed",GetLastError());return 1;}
+    load=(VOID(WINAPI*)(void))GetProcAddress(GetModuleHandleW(L"user32.dll"),"LoadLocalFonts");
+    if(!load){wl_log("local_fonts_export_missing",ERROR_PROC_NOT_FOUND);return 1;}
+    load();wl_log("local_fonts_loaded",0);return 0;
+}
+
 BOOL wl_boot(void)
 {
-    WNDCLASSW cls;BOOL (WINAPI *set_notify)(HWND);OSVERSIONINFOEXW version;
+    WNDCLASSW cls;BOOL (WINAPI *set_notify)(HWND);OSVERSIONINFOEXW version;HANDLE fonts;
     wl_state_init(&wl.machine);wl_log("entry",0);
     ZeroMemory(&version,sizeof(version));version.dwOSVersionInfoSize=sizeof(version);
     if(!GetVersionExW((OSVERSIONINFOW*)&version))return FALSE;
     if(version.dwPlatformId!=VER_PLATFORM_WIN32_NT||version.dwMajorVersion!=5||version.dwMinorVersion!=1||version.dwBuildNumber!=2600){SetLastError(ERROR_OLD_WIN_VERSION);return FALSE;}
     if(!ProcessIdToSessionId(GetCurrentProcessId(),&wl.session_id)||wl.session_id!=0){SetLastError(ERROR_NOT_SUPPORTED);return FALSE;}
     if(!wl_security_init()){wl_log("security_init_failed",GetLastError());return FALSE;}
+    fonts=CreateThread(NULL,0,load_local_fonts,NULL,0,NULL);if(!fonts)return FALSE;CloseHandle(fonts);
     ZeroMemory(&cls,sizeof(cls));cls.lpfnWndProc=notify_window;cls.hInstance=wl.instance;cls.lpszClassName=L"XP25WinlogonNotify";
     if(!RegisterClassW(&cls))return FALSE;
     wl.window=CreateWindowExW(0,cls.lpszClassName,L"XP25 Winlogon",0,0,0,0,0,NULL,NULL,wl.instance,NULL);
@@ -147,6 +173,8 @@ BOOL wl_boot(void)
     set_notify=(BOOL(WINAPI*)(HWND))GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetLogonNotifyWindow");
     if(!set_notify||!set_notify(wl.window))return FALSE;
     if(!RegisterHotKey(wl.window,WL_HOTKEY,WL_MOD_SAS|MOD_CONTROL|MOD_ALT,VK_DELETE))return FALSE;
+    if(!RegisterHotKey(wl.window,WL_HOTKEY_LOCK,MOD_WIN,'L'))wl_log("lock_hotkey_unavailable",GetLastError());
+    if(!RegisterHotKey(wl.window,WL_HOTKEY_TASKMGR,MOD_CONTROL|MOD_SHIFT,VK_ESCAPE))wl_log("task_manager_hotkey_unavailable",GetLastError());
     if(!wl_bootkey_start())return FALSE;
     if(!wl_system_services())return FALSE;
     if(!connect_console())return FALSE;

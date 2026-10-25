@@ -7,7 +7,8 @@
 typedef enum {
     WlOpNone, WlOpUser, WlOpProfile, WlOpPolicy, WlOpCopyEnvironment,
     WlOpSecure, WlOpProtection, WlOpActivate, WlOpShellIdentity,
-    WlOpDesktop, WlOpNotification, WlOpEndProcesses, WlOpRelease, WlOpState, WlOpPower
+    WlOpDesktop, WlOpNotification, WlOpEndProcesses, WlOpRelease, WlOpState, WlOpPower,
+    WlOpShellExit, WlOpRestart
 } WL_SESSION_OPERATION;
 typedef enum { WlNoticeLogon, WlNoticeStartShell, WlNoticePostShell,
     WlNoticeLock, WlNoticeUnlock, WlNoticeLogoff, WlNoticeShutdown } WL_SESSION_NOTICE;
@@ -29,12 +30,17 @@ typedef struct {
     unsigned long (*end_processes)(void*);
     unsigned long (*release)(void*);
     unsigned long (*power)(void*,unsigned);
+    /* A retained, identity-checked process handle must be signaled. */
+    unsigned long (*shell_exited)(void*);
+    /* Same environment transfer rule as activate; never rerun userinit. */
+    unsigned long (*restart_shell)(void*,void*);
 } WL_SESSION_DRIVER;
 typedef struct {
     WL_MACHINE *machine;
     const WL_SESSION_DRIVER *driver;
     void *context,*environment_copy;
     unsigned protection_attempted,shell_attempted;
+    unsigned recovery_busy,restarts;
     unsigned long error;
     WL_SESSION_OPERATION operation;
     WL_POLICY_RESULT policy_result;
@@ -46,4 +52,5 @@ int wl_engine_lock(WL_SESSION_ENGINE*);
 int wl_engine_unlock(WL_SESSION_ENGINE*,int authenticated_by_gina);
 int wl_engine_logoff(WL_SESSION_ENGINE*);
 int wl_engine_power(WL_SESSION_ENGINE*,unsigned mode);
+int wl_engine_recover(WL_SESSION_ENGINE*,unsigned long session_generation);
 #endif

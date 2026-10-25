@@ -8,16 +8,21 @@
 #include <userenv.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <string.h>
 int wl_session_tests(void);
+int wl_session_runtime_tests(void);
+int wl_session_fixture(void);
 static unsigned failures;
 static void report(const char *name,BOOL ok)
 {printf("{\"session_control\":\"%s\",\"passed\":%s,\"error\":%lu}\n",name,ok?"true":"false",ok?0:GetLastError());if(!ok)++failures;}
-int __cdecl main(void)
+int __cdecl main(int argc,char **argv)
 {
     HANDLE own=NULL,process=NULL,shell=NULL,file=INVALID_HANDLE_VALUE;DWORD pid=0,bytes=0,session=~0u,shell_session=~0u;
     TOKEN_STATISTICS a,b;HWND window,tray;PVOID env=NULL;BOOL ok;WCHAR path[MAX_PATH],profile[MAX_PATH],current[MAX_PATH];
     DWORD chars=MAX_PATH,wrote,got;char payload[]="XP25 native session contract control",data[sizeof(payload)];HKEY key=NULL;
     DWORD disposition=0,value=0x2505,back=0,type=0,length=sizeof(back);LONG error;WCHAR regname[128];
+    if(argc==2&&!strcmp(argv[1],"--fixture"))return wl_session_fixture();
+    if(argc!=1)return 2;
     ZeroMemory(current,sizeof(current));
     ZeroMemory(&a,sizeof(a));ZeroMemory(&b,sizeof(b));
     if(wl_session_tests())++failures;
@@ -25,6 +30,8 @@ int __cdecl main(void)
         GetTokenInformation(own,TokenStatistics,&a,sizeof(a),&bytes)&&
         GetTokenInformation(own,TokenSessionId,&session,sizeof(session),&bytes);
     report("current_authenticated_token",ok);
+    if(ok)printf("{\"host_token_type\":%u,\"host_logon_luid_high\":%ld,\"host_logon_luid_low\":%lu,\"host_session\":%lu}\n",
+        (unsigned)a.TokenType,a.AuthenticationId.HighPart,a.AuthenticationId.LowPart,session);
     window=GetShellWindow();if(window)GetWindowThreadProcessId(window,&pid);
     process=pid?OpenProcess(PROCESS_QUERY_INFORMATION,FALSE,pid):NULL;
     ok=ok&&process&&OpenProcessToken(process,TOKEN_QUERY,&shell)&&
@@ -56,5 +63,6 @@ int __cdecl main(void)
     if(disposition==REG_CREATED_NEW_KEY)ok=RegDeleteKeyW(HKEY_CURRENT_USER,regname)==0&&ok;
     SetLastError(error);report("current_user_registry_roundtrip",ok);
     if(shell)CloseHandle(shell);if(process)CloseHandle(process);if(own)CloseHandle(own);
+    if(wl_session_runtime_tests())++failures;
     printf("XP25_SESSION_NATIVE_CONTROL failures=%u\n",failures);return failures?1:0;
 }

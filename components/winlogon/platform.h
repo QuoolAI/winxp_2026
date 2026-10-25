@@ -18,10 +18,14 @@
 #include <wchar.h>
 #include "state.h"
 #include "session_engine.h"
+#include "session_native.h"
 #define WL_APP_SAS (WM_APP+21)
 #define WL_APP_NOTICE (WM_APP+22)
 #define WL_LOGON_NOTIFY 0x004c
 #define WL_HOTKEY 1
+#define WL_SHELL_TIMER 2
+#define WL_HOTKEY_LOCK 3
+#define WL_HOTKEY_TASKMGR 4
 #define WL_MOD_SAS 0x8000
 #define WL_WINSTA_ACCESS (STANDARD_RIGHTS_REQUIRED|WINSTA_ENUMDESKTOPS|WINSTA_READATTRIBUTES|WINSTA_ACCESSCLIPBOARD|WINSTA_CREATEDESKTOP|WINSTA_WRITEATTRIBUTES|WINSTA_ACCESSGLOBALATOMS|WINSTA_EXITWINDOWS|WINSTA_ENUMERATE|WINSTA_READSCREEN)
 #define WL_DESKTOP_ACCESS (STANDARD_RIGHTS_REQUIRED|DESKTOP_READOBJECTS|DESKTOP_CREATEWINDOW|DESKTOP_CREATEMENU|DESKTOP_HOOKCONTROL|DESKTOP_JOURNALRECORD|DESKTOP_JOURNALPLAYBACK|DESKTOP_ENUMERATE|DESKTOP_WRITEOBJECTS|DESKTOP_SWITCHDESKTOP)
@@ -44,6 +48,7 @@ typedef struct {
     VOID (WINAPI *logoff)(PVOID);
     VOID (WINAPI *shutdown)(PVOID,DWORD);
     BOOL (WINAPI *network)(PVOID,PWLX_MPR_NOTIFY_INFO);
+    BOOL (WINAPI *start_application)(PVOID,PWSTR,PVOID,PWSTR);
 } WL_GINA;
 
 typedef struct {
@@ -81,18 +86,27 @@ void wl_session_policy(WL_POLICY_RESULT *result);
 BOOL wl_policy_initialize(void);
 BOOL wl_wait_user_shell(DWORD *pid);
 BOOL wl_clear_user_security(void);
+BOOL wl_per_user_parameters(HANDLE token,BOOL logged_on);
 BOOL wl_system_services(void);
 BOOL wl_gina_init(void);
 void wl_free_gina_result(void);
+#define WL_THEME_LOGON 0u
+#define WL_THEME_LOGOFF 1u
+#define WL_THEME_START_SHELL 3u
+void wl_theme_user_change(unsigned type,HANDLE token);
 void wl_attention(DWORD type);
 BOOL wl_session_start(void);
 BOOL wl_session_end(void);
 BOOL wl_session_abort(void);
+BOOL wl_session_license_denied(void);
 BOOL wl_session_lock(void);
 BOOL wl_session_unlock(void);
 BOOL wl_session_logoff(void);
 BOOL wl_session_power(unsigned mode);
+void wl_session_poll_shell(void);
+BOOL wl_session_tasklist(void);
 BOOL wl_notify(LPCWSTR event);
+void wl_status_clear(void);
 BOOL wl_notifications_wait(void);
 BOOL wl_notifications_wait_user(void);
 void wl_notifications_probe(void);

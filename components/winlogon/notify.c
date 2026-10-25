@@ -14,6 +14,7 @@ typedef struct WL_NOTIFY_JOB {
     WCHAR user[256],domain[256];
 } WL_NOTIFY_JOB;
 static WL_NOTIFY_JOB *jobs;
+static volatile LONG status_shown;
 
 static DWORD status_message(BOOL verbose,LPWSTR message)
 {
@@ -22,7 +23,16 @@ static DWORD status_message(BOOL verbose,LPWSTR message)
     display=(GINA_STATUS)GetProcAddress(wl.gina_module,"WlxDisplayStatusMessage");
     if(!display)return ERROR_PROC_NOT_FOUND;
     if(!display(wl.gina_context,wl.secure,verbose?0:STATUSMSG_OPTION_NOANIMATION,L"Windows XP 25th Anniversary Edition",message))return GetLastError();
-    return ERROR_SUCCESS;
+    InterlockedExchange((LONG*)&status_shown,1);return ERROR_SUCCESS;
+}
+
+void wl_status_clear(void)
+{
+    BOOL (WINAPI *remove)(PVOID);
+    /* MSGINA keeps a displayed status dialog until the host removes it. */
+    if(!InterlockedExchange((LONG*)&status_shown,0)||!wl.gina_module)return;
+    remove=(BOOL(WINAPI*)(PVOID))GetProcAddress(wl.gina_module,"WlxRemoveStatusMessage");
+    wl_log("status_message_removed",remove&&remove(wl.gina_context)?0:GetLastError());
 }
 
 static DWORD WINAPI notify_worker(PVOID parameter)

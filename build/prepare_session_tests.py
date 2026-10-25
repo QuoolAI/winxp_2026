@@ -20,9 +20,10 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     target = output / 'media/wltests'
     target.mkdir(parents=True, exist_ok=False)
-    for name in ('session_engine.c', 'session_engine.h', 'policy.c', 'policy.h', 'state.c', 'state.h'):
+    for name in ('session_engine.c', 'session_engine.h', 'session_native.c', 'session_native.h',
+                 'environment.c', 'environment.h', 'policy.c', 'policy.h', 'state.c', 'state.h'):
         shutil.copy2(ROOT / 'components/winlogon' / name, target / name)
-    for name in ('winlogon_session.c', 'guest/session_contract_probe.c', 'guest/session_contract.rc'):
+    for name in ('winlogon_session.c', 'guest/session_contract_probe.c', 'guest/session_runtime.c', 'guest/session_contract.rc'):
         shutil.copy2(ROOT / 'tests' / name, target / Path(name).name)
     (target / 'sources').write_text('''TARGETNAME=wlsession_test
 TARGETPATH=obj
@@ -32,7 +33,7 @@ UMENTRY=main
 USE_MSVCRT=1
 MSC_WARNING_LEVEL=/W4 /WX
 C_DEFINES=-DWIN32 -DNT -DXP25_SESSION_TEST=1 -DXP25_NATIVE_TEST_ENTRY=1
-SOURCES=winlogon_session.c session_contract_probe.c session_engine.c policy.c state.c session_contract.rc
+SOURCES=winlogon_session.c session_contract_probe.c session_runtime.c session_engine.c session_native.c environment.c policy.c state.c session_contract.rc
 UMLIBS=$(SDK_LIB_PATH)\\user32.lib $(SDK_LIB_PATH)\\advapi32.lib $(SDK_LIB_PATH)\\userenv.lib
 ''')
     (target / 'makefile').write_bytes((ROOT / 'components/winlogon/makefile').read_bytes())

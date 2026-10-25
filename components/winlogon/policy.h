@@ -17,4 +17,19 @@ typedef struct {
 } WL_POLICY_RESULT;
 /* Returns a Win32 error (0 only for a complete, explicit allow decision). */
 unsigned long wl_policy_admission(const WL_POLICY_RESULT *result);
+
+/* Outputs of the supplied licensing agent (licdll COMLicenseAgent), recorded
+   exactly as returned. Only the native provider fills this; nothing here is
+   inferred from registry data, WMI or a GINA result. */
+#define WL_LICENSE_UNLIMITED 0x7fffffffUL
+typedef struct {
+    unsigned key_protected;     /* NtLockProductActivationKeys succeeded */
+    unsigned long agent_error;  /* Win32 error creating/verifying/calling the agent */
+    unsigned long init_status;  /* ICOMLicenseAgent::Initialize pdwRetCode */
+    unsigned long wpa_left;     /* GetExpirationInfo: activation grace days, or unlimited */
+    unsigned long eval_left;    /* GetExpirationInfo: evaluation days, or unlimited */
+} WL_LICENSE_STATE;
+/* Activated or within the grace/evaluation period: allowed. An expired grace or
+   evaluation period: denied. Any agent failure or malformed output: unavailable. */
+void wl_policy_from_license(const WL_LICENSE_STATE *state,WL_POLICY_RESULT *result);
 #endif

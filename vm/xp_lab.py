@@ -24,7 +24,7 @@ def run(cmd):
 
 class QMP:
     def __enter__(self):
-        self.s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); self.s.settimeout(10)
+        self.s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); self.s.settimeout(30)
         self.s.connect('qmp.sock'); self.f=self.s.makefile('rwb'); self.f.readline(); self.n=0; self.events=[]
         self.call('qmp_capabilities'); return self
     def call(self,command,args=None):
@@ -75,7 +75,7 @@ def key(q,k):
     q.hmp('sendkey '+k);time.sleep(.12)
 
 def type_text(q,value):
-    basic={' ':'spc','\\':'backslash','.':'dot','/':'slash','-':'minus','=':'equal'}
+    basic={' ':'spc','\\':'backslash','.':'dot','/':'slash','-':'minus','=':'equal',',':'comma',';':'semicolon'}
     shifted={':':'semicolon','"':'apostrophe','_':'minus','&':'7','>':'dot','%':'5'}
     for c in value:
         if c.isupper():k='shift-'+c.lower()
