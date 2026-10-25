@@ -117,6 +117,7 @@ EXPORTS
     xp25w_secret_free
     xp25w_wipe
     xp25w_secret_delete
+    xp25w_secret_delete_dpapi
     xp25w_audit
     xp25w_is_admin
     xp25w_read_file
@@ -164,6 +165,7 @@ EXPORTS
     rover_store_load
     rover_store_save
     rover_store_refresh
+    rover_store_reconcile
     rover_watch_start
     rover_watch_stop
     rover_watch_applied

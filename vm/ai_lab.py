@@ -59,10 +59,11 @@ INSTALL_ONLY = r'''@echo off
 rem Image preparation: install like an end user, remove the installer payload, shut down.
 echo XP25_AI_IMAGE_INSTALL_STARTED > COM1
 call C:\xp25\ai-install.cmd > C:\xp25\ai-install.log 2>&1
-del /q C:\xp25\ai-*.exe C:\xp25\ai-*.dll C:\xp25\ai-suite.cmd
+del /q C:\xp25\ai-*.exe C:\xp25\ai-*.dll
 del /q C:\xp25\ai\ai_probe.exe
 del "C:\Documents and Settings\XP25\Start Menu\Programs\Startup\XP25AISuite.cmd"
-echo XP25_AI_SUITE_DONE > COM1
+rem Last line: cmd has read it completely before this running script is deleted.
+del C:\xp25\ai-suite.cmd & echo XP25_AI_SUITE_DONE > COM1
 '''
 
 TESTS_ONLY = r'''@echo off

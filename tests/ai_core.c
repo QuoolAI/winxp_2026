@@ -362,6 +362,31 @@ static void test_agent(void)
     CHECK(xp25_agent_turn(&agent, "hello") == 1);
     CHECK(strstr(host_state.events, "error:-") != NULL && strstr(host_state.events, "notice:-") != NULL &&
           strstr(host_state.events, "answer:-") != NULL);
+    /* Switching from offline to a remote provider: earlier undecided sensitive
+       results are withheld without prompting; only the new request's result is offered. */
+    {
+        XP25_AGENT local;
+        SCRIPT remote_script;
+        XP25_PROVIDER remote;
+        int asked;
+        memset(&remote_script, 0, sizeof(remote_script));
+        remote_script.script[0] = script.script[0];
+        remote_script.script[1] = script.script[2];
+        remote.name = "scripted"; remote.remote = 1; remote.complete = scripted_complete; remote.context = &remote_script;
+        xp25_agent_init(&local, &reg, &offline);
+        local.host.share = mock_share; local.host.ctx = &host_state;
+        host_state.share = 0;
+        CHECK(xp25_conversation_add(&local.conversation, XP25_ITEM_RESULT, "{\"ok\":true,\"secret\":\"old\"}") != NULL);
+        local.conversation.items[0].egress = XP25_EGRESS_SENSITIVE;
+        local.conversation.items[0].call_id = xp25_strdup("old");
+        local.conversation.items[0].name = xp25_strdup("eventlog_read");
+        local.provider = &remote;
+        asked = host_state.shares_asked;
+        CHECK(xp25_agent_turn(&local, "check logs") == 1);
+        CHECK(host_state.shares_asked == asked + 1);
+        CHECK(local.conversation.items[0].shared == -1);
+        xp25_agent_free(&local);
+    }
     xp25_agent_free(&agent);
     xp25_registry_free(&reg);
 }
@@ -396,6 +421,7 @@ static void test_codecs(void)
 /* ---- offline workflows with realistic tool results ---- */
 
 static int busy_killed;
+static int two_cpus;     /* a single-threaded runaway on a two-processor computer */
 
 static int t_sys(const XP25_TOOL *t, const XP25_JNODE *a, XP25_BUF *r, XP25_EGRESS *e)
 {
@@ -410,7 +436,11 @@ static int t_sys(const XP25_TOOL *t, const XP25_JNODE *a, XP25_BUF *r, XP25_EGRE
 static int t_proc(const XP25_TOOL *t, const XP25_JNODE *a, XP25_BUF *r, XP25_EGRESS *e)
 {
     (void)t; (void)a; (void)e;
-    if (!busy_killed)
+    if (!busy_killed && two_cpus)
+        xp25_buf_puts(r, "{\"ok\":true,\"cpu_count\":2,\"cpu_busy_percent\":45,\"total\":24,\"processes\":["
+            "{\"pid\":2400,\"name\":\"ai_cpuhog.exe\",\"cpu_percent\":39,\"working_set_bytes\":1200000},"
+            "{\"pid\":1500,\"name\":\"csrss.exe\",\"cpu_percent\":2,\"working_set_bytes\":3000000}]}");
+    else if (!busy_killed)
         xp25_buf_puts(r, "{\"ok\":true,\"cpu_count\":1,\"cpu_busy_percent\":99,\"total\":24,\"processes\":["
             "{\"pid\":4,\"name\":\"System\",\"cpu_percent\":0,\"working_set_bytes\":200000},"
             "{\"pid\":1500,\"name\":\"csrss.exe\",\"cpu_percent\":2,\"working_set_bytes\":3000000},"
@@ -557,6 +587,15 @@ static void test_offline(void)
     CHECK(xp25_agent_turn(&agent, "It is slow again, please fix it") == 1);
     last = &agent.conversation.items[agent.conversation.count - 1];
     CHECK(strstr(last->text, "you declined it") != NULL && busy_killed == 0);
+    /* Two processors: one busy thread is 39% of the total but 78% of one processor. */
+    busy_killed = 0;
+    two_cpus = 1;
+    host_state.approve = 1;
+    CHECK(xp25_agent_turn(&agent, "My computer is running slowly. Fix it.") == 1);
+    last = &agent.conversation.items[agent.conversation.count - 1];
+    CHECK(strstr(last->text, "ai_cpuhog.exe (PID 2400) is using 39% of all processors (about 78% of one processor)") != NULL);
+    CHECK(busy_killed == 1 && strstr(last->text, "The problem is resolved") != NULL);
+    two_cpus = 0;
     /* Find + explain + fix with approvals for reading and editing. */
     host_state.approve = 1;
     file_edits = 0;

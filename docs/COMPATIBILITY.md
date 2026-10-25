@@ -8,11 +8,19 @@ and hardware support must cite an image hash, exact version, environment and log
 
 ## XP25 AI components (ClippyAI, RoverAI), 2026-10-25
 
-Native build 04 on the accepted engineering image (original Winlogon), see
-[the milestone record](xp25-ai-clippyai-roverai.md): offline ClippyAI tools,
-approvals, troubleshooting workflow, RoverAI index/search/watcher and the
-Explorer Search redirect pass under KVM 1 and 2 vCPUs; gateway/OpenAI cases
-fail (key storage defect); TCG not recorded; real OpenAI service Not tested.
+Native build 10 on the accepted engineering image (original Winlogon, SHA-256
+`39112bbd…0296`), see [the milestone record](xp25-ai-clippyai-roverai.md).
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| QEMU/KVM i440FX, 1 vCPU, 512 MB, RTL8139 in a private namespace | 62/62 AI cases, regression suite exit 0, guest shutdown | `.work/ai-20261025/runs/ai-b10-kvm-up-01` |
+| QEMU/KVM i440FX, 2 vCPUs (MP kernel/HAL parent `d46fa4bf…`) | 62/62, regression suite exit 0, guest shutdown | `ai-b10-kvm-mp-01` |
+| QEMU TCG, 1 vCPU | 62/62, regression suite exit 0, guest shutdown | `ai-b10-tcg-01` |
+| Packaged `XP25-AI-Engineering.qcow2` (`ec22f45b…be2a`), KVM 1 vCPU | 62/62, regression suite exit 0, guest shutdown | `ai-b10-image-proof-01` |
+| OpenAI Responses API through the XP25 gateway | Verified against a local test double only | `gateway.jsonl`, `mock-openai.jsonl` per run |
+| Real OpenAI service, direct HTTPS from XP | Not tested; direct HTTPS refused by design (SChannel lacks TLS 1.2) | — |
+| User-scope DPAPI (`CryptProtectData`) | Fails with 1783 on both engineering images; Credential Manager used | `.work/ai-20261025/bisect/eng0{1,2}-dpapi-b` |
+| Physical hardware, other hypervisors, domain logon, non-English UI | Not tested | — |
 
 ## Independent Winlogon desktop and session, 2026-10-25
 

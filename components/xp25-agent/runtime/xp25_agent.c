@@ -364,6 +364,9 @@ static void decide_sharing(XP25_AGENT *agent, XP25_PROVIDER *provider)
         XP25_ITEM *item = &agent->conversation.items[i];
         int answer;
         if (item->kind != XP25_ITEM_RESULT || item->shared || item->egress != XP25_EGRESS_SENSITIVE) continue;
+        /* Results from earlier requests (for example made while offline) were never
+           offered; they stay on this computer instead of prompting for each one. */
+        if (item->turn != agent->conversation.turn) { item->shared = -1; continue; }
         if (agent->share_remembered) { item->shared = 1; continue; }
         answer = agent->host.share ? agent->host.share(agent->host.ctx, item->name, provider->name, item->text)
                                    : XP25_SHARE_DENY;

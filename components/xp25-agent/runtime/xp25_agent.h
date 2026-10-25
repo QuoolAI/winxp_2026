@@ -8,7 +8,9 @@
      recorded as a digest) and is consumed by that call.
    - Results classified XP25_EGRESS_SENSITIVE are sent to a remote provider
      only after the host's share callback allows it; otherwise the provider
-     receives a withheld placeholder. XP25_EGRESS_NEVER is never sent. */
+     receives a withheld placeholder. XP25_EGRESS_NEVER is never sent.
+     Only results of the current request are offered; undecided results of
+     earlier requests (e.g. made offline) stay withheld. */
 #ifndef XP25_AGENT_H
 #define XP25_AGENT_H
 #include "xp25_base.h"

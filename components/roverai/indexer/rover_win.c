@@ -240,25 +240,74 @@ int rover_store_save(const ROVER_INDEX *index, const XP25W_PATHS *paths)
     return ok;
 }
 
-int rover_store_refresh(ROVER_INDEX *index, ROVER_SETTINGS *s, unsigned long max_age_seconds, ROVER_SCAN_STATS *stats)
+/* Exists while a background indexer has a change notification open on every
+   root (see rover_watch_start). */
+#define WATCHING_EVENT L"Local\\XP25RoverAIWatching"
+#define STORE_MUTEX L"Local\\XP25RoverAIIndex"
+#define STORE_WAIT_LONG 600000
+
+/* A watched index is kept current by change notifications, so its age alone
+   is no reason for a full rescan. */
+static int index_watched(void)
 {
-    HANDLE mutex = CreateMutexW(NULL, FALSE, L"Local\\XP25RoverAIIndex");
-    DWORD wait = mutex ? WaitForSingleObject(mutex, 120000) : WAIT_FAILED;
+    HANDLE h = OpenEventW(SYNCHRONIZE, FALSE, WATCHING_EVENT);
+    if (!h) return 0;
+    CloseHandle(h);
+    return 1;
+}
+
+static int saved_index_exists(const XP25W_PATHS *paths)
+{
+    WCHAR file[MAX_PATH];
+    return rover_store_file(paths, file) && GetFileAttributesW(file) != INVALID_FILE_ATTRIBUTES;
+}
+
+/* Load the saved index; rescan and save when it is missing, forced
+   (max_age_seconds 0) or older than max_age_seconds (unless trust_watch and a
+   background indexer watches every root). Scanning and saving happen only
+   while holding the store mutex: without it, a scan could save a listing
+   older than the owner's save. lock, when given, guards index against
+   watcher threads and is always taken after the store mutex. */
+static int refresh(ROVER_INDEX *index, ROVER_SETTINGS *s, unsigned long max_age_seconds, DWORD wait_ms,
+                   int trust_watch, CRITICAL_SECTION *lock, ROVER_SCAN_STATS *stats)
+{
+    HANDLE mutex = CreateMutexW(NULL, FALSE, STORE_MUTEX);
+    DWORD wait = mutex ? WaitForSingleObject(mutex, wait_ms) : WAIT_FAILED;
+    int owned, ok = 1;
     ROVER_FS fs;
     char error[96];
     unsigned long now = xp25w_now();
-    int ok = 1;
+    if (wait == WAIT_TIMEOUT && wait_ms < STORE_WAIT_LONG && !saved_index_exists(s->paths))
+        wait = WaitForSingleObject(mutex, STORE_WAIT_LONG);   /* the first index is being built elsewhere */
+    owned = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
     memset(stats, 0, sizeof(*stats));
+    if (lock) EnterCriticalSection(lock);
     rover_index_free(index);
     rover_store_load(index, s->paths, error, sizeof(error));
-    if (!max_age_seconds || !index->count || now - index->updated >= max_age_seconds || now < index->updated) {
+    if (!owned) {
+        ok = index->count > 0;    /* the last saved index; the store's owner is updating it */
+    } else if (!max_age_seconds || !index->count ||
+               ((now - index->updated >= max_age_seconds || now < index->updated) && !(trust_watch && index_watched()))) {
         rover_win_fs(&fs, s);
         ok = rover_index_scan(index, &fs, &s->scan, stats, now);
         if (ok && !stats->cancelled) ok = rover_store_save(index, s->paths);
     }
-    if (wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED) ReleaseMutex(mutex);
+    if (lock) LeaveCriticalSection(lock);
+    if (owned) ReleaseMutex(mutex);
     if (mutex) CloseHandle(mutex);
     return ok;
+}
+
+int rover_store_refresh(ROVER_INDEX *index, ROVER_SETTINGS *s, unsigned long max_age_seconds, ROVER_SCAN_STATS *stats)
+{
+    /* A search waits briefly for a busy store; a forced rebuild waits for it. */
+    return refresh(index, s, max_age_seconds, max_age_seconds ? 2000 : STORE_WAIT_LONG, 1, NULL, stats);
+}
+
+int rover_store_reconcile(ROVER_INDEX *index, ROVER_SETTINGS *s, CRITICAL_SECTION *lock, unsigned long max_age_seconds,
+                          ROVER_SCAN_STATS *stats)
+{
+    return refresh(index, s, max_age_seconds, STORE_WAIT_LONG, 0, lock, stats);
 }
 
 /* ---- change watcher ---- */
@@ -279,20 +328,43 @@ struct ROVER_WATCH {
     volatile LONG applied;
     volatile LONG dirty;
     volatile DWORD dirty_since;
+    volatile LONG watching;   /* roots with an open change notification (interlocked) */
+    HANDLE live;              /* WATCHING_EVENT while every root is watched (under lock) */
 };
 
+/* A root is no longer watched: searches judge the saved index by its age again. */
+static void unadvertise(struct ROVER_WATCH *w)
+{
+    HANDLE h;
+    EnterCriticalSection(w->lock);
+    h = w->live;
+    w->live = NULL;
+    LeaveCriticalSection(w->lock);
+    if (h) CloseHandle(h);
+}
+
+/* Saves under the store mutex shared with rover_store_refresh; the index
+   stays dirty (and is retried) until a save actually succeeds. */
 static void save_now(struct ROVER_WATCH *w)
 {
     XP25_BUF data;
     WCHAR file[MAX_PATH];
-    xp25_buf_init(&data);
-    EnterCriticalSection(w->lock);
-    rover_index_serialize(w->index, &data);
-    InterlockedExchange(&w->dirty, 0);
-    LeaveCriticalSection(w->lock);
-    if (xp25_buf_ok(&data) && rover_store_file(w->settings->paths, file))
-        xp25w_write_file_atomic(file, data.data, (DWORD)data.len);
-    xp25_buf_free(&data);
+    HANDLE mutex = CreateMutexW(NULL, FALSE, STORE_MUTEX);
+    DWORD wait = mutex ? WaitForSingleObject(mutex, 30000) : WAIT_FAILED;
+    int saved = 0;
+    if (wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED) {
+        xp25_buf_init(&data);
+        EnterCriticalSection(w->lock);
+        rover_index_serialize(w->index, &data);
+        InterlockedExchange(&w->dirty, 0);
+        LeaveCriticalSection(w->lock);
+        saved = xp25_buf_ok(&data) && rover_store_file(w->settings->paths, file) &&
+                xp25w_write_file_atomic(file, data.data, (DWORD)data.len);
+        xp25_buf_free(&data);
+        ReleaseMutex(mutex);
+    }
+    if (mutex) CloseHandle(mutex);
+    if (!saved && !InterlockedExchange(&w->dirty, 1)) w->dirty_since = GetTickCount();
 }
 
 static void apply_one(struct ROVER_WATCH *w, const char *root, const WCHAR *name, DWORD bytes, int action, char *old_path)
@@ -340,6 +412,7 @@ static DWORD WINAPI watch_thread(void *param)
     dir = CreateFileW(wide, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
     if (dir == INVALID_HANDLE_VALUE) goto done;
+    InterlockedIncrement(&w->watching);
     memset(&ov, 0, sizeof(ov));
     ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
     events[0] = w->stop;
@@ -387,6 +460,8 @@ static DWORD WINAPI watch_thread(void *param)
     }
     CloseHandle(ov.hEvent);
     CloseHandle(dir);
+    InterlockedDecrement(&w->watching);
+    unadvertise(w);
 done:
     xp25_free(wide);
     xp25_free(buffer);
@@ -411,6 +486,12 @@ ROVER_WATCH *rover_watch_start(ROVER_SETTINGS *s, ROVER_INDEX *index, CRITICAL_S
         r->thread = CreateThread(NULL, 0, watch_thread, r, 0, &id);
         if (r->thread) ++w->count;
     }
+    /* Advertise only once every root has an open change notification. */
+    for (i = 0; i < 50 && w->count == s->root_count && w->watching < (LONG)s->root_count; ++i) Sleep(100);
+    EnterCriticalSection(lock);
+    if (w->count == s->root_count && w->watching == (LONG)s->root_count)
+        w->live = CreateEventW(NULL, TRUE, FALSE, WATCHING_EVENT);
+    LeaveCriticalSection(lock);
     return w;
 }
 
@@ -423,6 +504,7 @@ void rover_watch_stop(ROVER_WATCH *w)
         WaitForSingleObject(w->roots[i].thread, 10000);
         CloseHandle(w->roots[i].thread);
     }
+    unadvertise(w);
     if (w->dirty) save_now(w);
     CloseHandle(w->stop);
     xp25_free(w);

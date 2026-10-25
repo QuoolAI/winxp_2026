@@ -38,8 +38,55 @@ def summarize(run):
     return result
 
 
+def wait_shutdown_event(run, seconds=600):
+    """A slow guest can finish shutting down after xp_lab's 60 s window; keep
+    listening on QMP for the guest-requested SHUTDOWN event."""
+    import os
+    sys.path.insert(0, str(ROOT / 'vm'))
+    import xp_lab
+    cwd = os.getcwd()
+    os.chdir(run)
+    try:
+        with xp_lab.QMP() as q:
+            if q.call('query-status')['status'] == 'shutdown':
+                return False          # already down: the event was missed and cannot be proven
+            q.s.settimeout(seconds)
+            while True:
+                event = json.loads(q.f.readline())
+                xp_lab.record({'event': event})
+                if event.get('event') == 'SHUTDOWN':
+                    ok = event.get('data') == {'guest': True, 'reason': 'guest-shutdown'}
+                    if ok:
+                        Path('guest-shutdown-event.json').write_text(json.dumps(event, indent=2) + '\n')
+                    return ok
+    except (OSError, ValueError, EOFError):
+        return False
+    finally:
+        os.chdir(cwd)
+
+
 def lab(run, *args):
     return subprocess.run([sys.executable, str(ROOT / 'vm/xp_lab.py'), str(run), *args], capture_output=True, text=True)
+
+
+def request_shutdown(run, attempts=3):
+    """Type shutdown.exe -s -t 0 through xp_lab. Under host load the Run dialog
+    can open after typing has started, so the start of the command is lost
+    (ai-b07-kvm-up-01 ran "-t"). Each attempt dismisses a message box, uses the
+    longest settle delay, and is repeated only while the guest still runs."""
+    log = []
+    for attempt in range(1, attempts + 1):
+        lab(run, 'key', 'esc')
+        time.sleep(3)
+        down = lab(run, 'shutdown', '--settle-seconds', '10')
+        log.append('attempt %d exit %d\n%s%s' % (attempt, down.returncode, down.stdout, down.stderr))
+        if down.returncode == 0 or 'reset/panic' in down.stderr or wait_shutdown_event(run, 300):
+            break
+        if "'shutdown'" in lab(run, 'qmp', 'query-status').stdout:
+            break     # down, but the event was not observed: not proven
+        lab(run, 'screen', 'shutdown-retry-%02d' % attempt)
+    (run / 'shutdown.log').write_text('\n'.join(log))
+    return (run / 'guest-shutdown-event.json').exists()
 
 
 def main():
@@ -65,9 +112,7 @@ def main():
     if args.no_shutdown or not result['suite_done']:
         return 2
     time.sleep(10)
-    down = lab(run, 'shutdown', '--settle-seconds', '3')
-    (run / 'shutdown.log').write_text(down.stdout + down.stderr)
-    if down.returncode:
+    if not request_shutdown(run):
         return 3
     fin = lab(run, 'finish')
     (run / 'finish.log').write_text(fin.stdout + fin.stderr)

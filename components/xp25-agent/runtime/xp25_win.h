@@ -63,12 +63,14 @@ int xp25w_config_load(XP25_CONFIG *config);
 int xp25w_config_save(const XP25_CONFIG *config);
 const char *xp25w_provider_name(XP25_PROVIDER_KIND kind);
 
-/* DPAPI (CryptProtectData) protected per-user secrets. */
+/* Per-user protected secrets: user-scope DPAPI (CryptProtectData), or the
+   Windows Credential Manager where user DPAPI is unavailable. */
 int xp25w_secret_set(const WCHAR *name, const unsigned char *data, DWORD size);
 int xp25w_secret_get(const WCHAR *name, unsigned char **data, DWORD *size); /* free with xp25w_secret_free */
 void xp25w_secret_free(unsigned char *data, DWORD size);
 void xp25w_wipe(void *data, size_t size);
 int xp25w_secret_delete(const WCHAR *name);
+int xp25w_secret_delete_dpapi(const WCHAR *name);
 
 void xp25w_audit(const char *application, const char *json_line);
 int xp25w_is_admin(void);

@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <wincrypt.h>
+#include <wincred.h>
 #include <string.h>
 #include "xp25_win.h"
 
@@ -299,24 +300,59 @@ int xp25w_config_save(const XP25_CONFIG *c)
     return 1;
 }
 
+/* Credential Manager target for a protected setting: "XP25 Agent/<name>". */
+static void cred_target(const WCHAR *name, WCHAR *out, size_t count)
+{
+    lstrcpynW(out, L"XP25 Agent/", (int)count);
+    if ((size_t)lstrlenW(out) + (size_t)lstrlenW(name) < count) lstrcatW(out, name);
+}
+
+/* User-scope DPAPI first. Where it is unavailable (the accepted engineering
+   image returns RPC_X_BAD_STUB_DATA for user-scope CryptProtectData), the
+   per-user Windows Credential Manager holds the value instead. Machine-scope
+   DPAPI is never used: any local process could decrypt it. */
 int xp25w_secret_set(const WCHAR *name, const unsigned char *data, DWORD size)
 {
     DATA_BLOB in, out, entropy;
+    CREDENTIALW cred;
+    WCHAR target[128];
     HKEY key;
     LONG status;
+    DWORD dpapi_error;
     in.pbData = (BYTE *)data;
     in.cbData = size;
     entropy.pbData = (BYTE *)entropy_text;
     entropy.cbData = sizeof(entropy_text) - 1;
-    if (!CryptProtectData(&in, L"XP25 Agent protected setting", &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out))
-        return 0;
-    status = RegCreateKeyExW(HKEY_CURRENT_USER, XP25_REG_SECRETS, 0, NULL, 0, KEY_WRITE, NULL, &key, NULL);
-    if (status == ERROR_SUCCESS) {
-        status = RegSetValueExW(key, name, 0, REG_BINARY, out.pbData, out.cbData);
-        RegCloseKey(key);
+    if (CryptProtectData(&in, L"XP25 Agent protected setting", &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out)) {
+        status = RegCreateKeyExW(HKEY_CURRENT_USER, XP25_REG_SECRETS, 0, NULL, 0, KEY_WRITE, NULL, &key, NULL);
+        if (status == ERROR_SUCCESS) {
+            status = RegSetValueExW(key, name, 0, REG_BINARY, out.pbData, out.cbData);
+            RegCloseKey(key);
+        }
+        LocalFree(out.pbData);
+        if (status == ERROR_SUCCESS) {
+            cred_target(name, target, 128);
+            CredDeleteW(target, CRED_TYPE_GENERIC, 0);
+        }
+        SetLastError((DWORD)status);
+        return status == ERROR_SUCCESS;
     }
-    LocalFree(out.pbData);
-    return status == ERROR_SUCCESS;
+    dpapi_error = GetLastError();
+    memset(&cred, 0, sizeof(cred));
+    cred_target(name, target, 128);
+    cred.Type = CRED_TYPE_GENERIC;
+    cred.TargetName = target;
+    cred.Comment = L"XP25 Agent protected setting";
+    cred.CredentialBlobSize = size;
+    cred.CredentialBlob = (BYTE *)data;
+    cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    cred.UserName = L"XP25 Agent";
+    if (!CredWriteW(&cred, 0)) {
+        SetLastError(dpapi_error);      /* report the primary mechanism's failure */
+        return 0;
+    }
+    xp25w_secret_delete_dpapi(name);
+    return 1;
 }
 
 int xp25w_secret_get(const WCHAR *name, unsigned char **data, DWORD *size)
@@ -325,31 +361,46 @@ int xp25w_secret_get(const WCHAR *name, unsigned char **data, DWORD *size)
     HKEY key;
     DWORD type, bytes = 0;
     BYTE *blob;
+    CREDENTIALW *cred = NULL;
+    WCHAR target[128];
     int ok = 0;
     *data = NULL;
     *size = 0;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, XP25_REG_SECRETS, 0, KEY_READ, &key) != ERROR_SUCCESS) return 0;
-    if (RegQueryValueExW(key, name, NULL, &type, NULL, &bytes) == ERROR_SUCCESS && type == REG_BINARY &&
-        bytes && bytes < 65536 && (blob = (BYTE *)xp25_alloc(bytes)) != NULL) {
-        if (RegQueryValueExW(key, name, NULL, &type, blob, &bytes) == ERROR_SUCCESS) {
-            in.pbData = blob;
-            in.cbData = bytes;
-            entropy.pbData = (BYTE *)entropy_text;
-            entropy.cbData = sizeof(entropy_text) - 1;
-            if (CryptUnprotectData(&in, NULL, &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out)) {
-                *data = (unsigned char *)xp25_alloc(out.cbData + 1);
-                if (*data) {
-                    memcpy(*data, out.pbData, out.cbData);
-                    *size = out.cbData;
-                    ok = 1;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, XP25_REG_SECRETS, 0, KEY_READ, &key) == ERROR_SUCCESS) {
+        if (RegQueryValueExW(key, name, NULL, &type, NULL, &bytes) == ERROR_SUCCESS && type == REG_BINARY &&
+            bytes && bytes < 65536 && (blob = (BYTE *)xp25_alloc(bytes)) != NULL) {
+            if (RegQueryValueExW(key, name, NULL, &type, blob, &bytes) == ERROR_SUCCESS) {
+                in.pbData = blob;
+                in.cbData = bytes;
+                entropy.pbData = (BYTE *)entropy_text;
+                entropy.cbData = sizeof(entropy_text) - 1;
+                if (CryptUnprotectData(&in, NULL, &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out)) {
+                    *data = (unsigned char *)xp25_alloc(out.cbData + 1);
+                    if (*data) {
+                        memcpy(*data, out.pbData, out.cbData);
+                        *size = out.cbData;
+                        ok = 1;
+                    }
+                    xp25w_wipe(out.pbData, out.cbData);
+                    LocalFree(out.pbData);
                 }
-                xp25w_wipe(out.pbData, out.cbData);
-                LocalFree(out.pbData);
             }
+            xp25_free(blob);
         }
-        xp25_free(blob);
+        RegCloseKey(key);
     }
-    RegCloseKey(key);
+    if (ok) return 1;
+    cred_target(name, target, 128);
+    if (CredReadW(target, CRED_TYPE_GENERIC, 0, &cred) && cred) {
+        if (cred->CredentialBlobSize && cred->CredentialBlobSize < 65536 &&
+            (*data = (unsigned char *)xp25_alloc(cred->CredentialBlobSize + 1)) != NULL) {
+            memcpy(*data, cred->CredentialBlob, cred->CredentialBlobSize);
+            *size = cred->CredentialBlobSize;
+            ok = 1;
+        }
+        xp25w_wipe(cred->CredentialBlob, cred->CredentialBlobSize);
+        CredFree(cred);
+    }
     return ok;
 }
 
@@ -359,7 +410,7 @@ void xp25w_secret_free(unsigned char *data, DWORD size)
     xp25_free(data);
 }
 
-int xp25w_secret_delete(const WCHAR *name)
+int xp25w_secret_delete_dpapi(const WCHAR *name)
 {
     HKEY key;
     LONG status;
@@ -367,6 +418,14 @@ int xp25w_secret_delete(const WCHAR *name)
     status = RegDeleteValueW(key, name);
     RegCloseKey(key);
     return status == ERROR_SUCCESS || status == ERROR_FILE_NOT_FOUND;
+}
+
+int xp25w_secret_delete(const WCHAR *name)
+{
+    WCHAR target[128];
+    cred_target(name, target, 128);
+    if (!CredDeleteW(target, CRED_TYPE_GENERIC, 0) && GetLastError() != ERROR_NOT_FOUND) return 0;
+    return xp25w_secret_delete_dpapi(name);
 }
 
 void xp25w_audit(const char *application, const char *json_line)
@@ -443,13 +502,13 @@ DWORD xp25w_read_file(const WCHAR *path, char **data, DWORD max_bytes, int *trun
 
 int xp25w_write_file_atomic(const WCHAR *path, const void *data, DWORD size)
 {
-    WCHAR temp[MAX_PATH + 8];
+    WCHAR temp[MAX_PATH + 40];
     HANDLE h;
     DWORD written = 0;
     BOOL ok;
     if (lstrlenW(path) >= MAX_PATH) return 0;
-    lstrcpyW(temp, path);
-    lstrcatW(temp, L".new");
+    /* A per-writer temporary name: concurrent writers never share it. */
+    wsprintfW(temp, L"%s.%lu.%lu.new", path, GetCurrentProcessId(), GetCurrentThreadId());
     h = CreateFileW(temp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) return 0;
     ok = WriteFile(h, data, size, &written, NULL) && written == size && FlushFileBuffers(h);
