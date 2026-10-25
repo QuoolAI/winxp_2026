@@ -6,6 +6,23 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Interactive XP25-Winlogon VM, 2026-10-25
+
+`XP25-Winlogon` is a persistent `qemu:///system` domain. Its disk is an
+independent byte copy of the 18-gate-verified Winlogon engineering image (SHA-256
+`0df7fc05b0b965941f4c488894ce200adcd44d91acf4bf28f93f7a445d30c51c`). Under KVM,
+the one-vCPU qemu32/512 MiB/i440fx 8.2/IDE/standard VGA/RTL8139 profile was
+observed reaching the independent Winlogon's MSGINA logon. It was also observed
+rejecting a wrong password, authenticating `XP25`, completing `licdll` admission
+and verifying Explorer identity, then showing Explorer/Luna. Six standard, six
+session and fourteen shell observations pass, covering the desktop, taskbar,
+Start menu, Luna and folder navigation. Notepad and a guest-requested shutdown
+were also observed. Clone MAC `52:54:00:25:00:04` receives `10.25.0.12` from the
+isolated libvirt network, and `xp25.test` answers. Lock, logoff, crash recovery,
+MP/TCG, service and network-probe cases were not repeated for this registration.
+No broader hardware or application claim is made.
+[Exact settings, evidence and limitations](virt-manager-xp25-winlogon.md)
+
 ## Independent Winlogon desktop and session, 2026-10-25
 
 The [desktop/session record](winlogon-desktop-session.md) supersedes the
@@ -313,7 +330,8 @@ Explorer/Luna. Six standard, eleven pointer, six session and seventeen network
 observations pass; DHCP/DNS and a temporary isolated HTTP fixture were exercised.
 A guest-requested shutdown is recorded. This VM is left shut off for interactive
 startup; its registration does not broaden the existing hardware, application,
-graphics or Internet support claims.
+graphics or Internet support claims. On 2026-10-25 the domain and its disk were
+removed through virt-manager's Delete wizard; the evidence directory remains.
 [Exact settings, image hashes and evidence](virt-manager-xp25-desktop.md)
 
 ## Milestone 2 networking, 2026-10-23

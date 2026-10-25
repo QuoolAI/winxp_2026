@@ -2,6 +2,25 @@
 
 ## Current checkpoint
 
+2026-10-25: **`XP25-Winlogon` is registered in system libvirt for interactive
+virt-manager use, running the independent Winlogon.** Its disk is a full,
+unshared byte copy of `XP25-Winlogon-Engineering.qcow2` (SHA-256
+`0df7fc05…c51c`). Before boot, its hash and `qemu-img compare` matched the
+source, and it has no backing file. The VM uses the verified one-vCPU
+qemu32/512 MiB/i440fx/IDE/VGA/RTL8139 KVM profile, a new UUID, MAC
+`52:54:00:25:00:04` and a `.12` reservation on `XP25-Isolated`. A serial-gated
+boot was observed through `core_ready`, the MSGINA logon dialog, a wrong-password
+rejection, `XP25` logon, `licdll` admission and the Explorer identity check. It
+also recorded Luna, the Start menu, the taskbar, the desktop, folder navigation,
+Notepad, 26 passing probe observations, isolated DHCP/DNS and a guest-requested
+shutdown. All 22 verified guest components are unchanged afterwards. The source
+image, the remaining existing domains and the running `xp25-sp3` are preserved.
+The VM is left running at the logon screen with its console open, and autostart
+is disabled. During registration, the virt-manager Delete wizard removed
+`XP25-Desktop` and its disk (04:28–04:29 local). This registration did not cause
+that change; it is recorded in the evidence.
+[Configuration, evidence and limits](virt-manager-xp25-winlogon.md)
+
 2026-10-25, Winlogon desktop and session continuation from `67de708ed`:
 **the independent NT 5.1 Winlogon now starts the original Explorer with Luna
 and runs the session lifecycle.** Licensing admission is decided by the installed

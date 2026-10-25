@@ -1,5 +1,12 @@
 # Interactive XP25 desktop in virt-manager
 
+> **Removed 2026-10-25.** virt-manager's interactive Delete wizard deleted
+> `XP25-Desktop.qcow2` and undefined the domain at 04:28–04:29 local. The log
+> excerpt is in
+> `.work/XP25-Winlogon-registration-20261025/external-XP25-Desktop-removal-virt-manager.log`.
+> The remaining evidence files, the read-only network CD and the `.10` DHCP
+> reservation still exist. The rest of this page records the VM as registered.
+
 The persistent system libvirt VM **XP25-Desktop** uses an independent disposable
 copy of the latest verified desktop checkpoint, `network-native-kvm-mp-02`,
 frozen at 2026-10-23 18:35:27 UTC. Its original Microsoft components, source-built
