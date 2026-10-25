@@ -6,6 +6,17 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Interactive XP25-Winlogon OEM branding and XP25-AI VM, 2026-10-25
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| XP25-Winlogon (libvirt KVM, 1 vCPU, 512 MiB, RTL8139 on `XP25-Isolated`), `OEMINFO.INI` set to QuoolAI / Windows XP 25th Anniversary Edition | `oem` probe 15/16; System Properties clips the model to "Windows XP 25th Anniversary" (179 px text, 165 px line) | `.work/oem-branding-20261025/winlogon-vm-01` |
+| Same change and restore script on a disposable overlay of that disk (KVM, no NIC, COM1) | Applied, verified and restored; Winlogon licensing records `licensing_policy_allowed` on each boot | `.work/oem-branding-20261025/rehearsal-01` |
+| XP25-AI (libvirt KVM, overlay on image-05 `ec22f45b…be2a`) | Boots and auto-logs on to the desktop (screenshot only); no DHCP lease while XP25-Winlogon holds one | `.work/XP25-AI-registration-20261025` |
+| System Properties OEM lines at DPI other than 96, or with a different dialog font | Not tested | — |
+
+See [the OEM record](xp25-winlogon-oem-branding.md) and [the XP25-AI VM record](virt-manager-xp25-ai.md).
+
 ## XP25 AI components (ClippyAI, RoverAI), 2026-10-25
 
 Native build 10 on the accepted engineering image (original Winlogon, SHA-256

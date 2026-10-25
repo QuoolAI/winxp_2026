@@ -52,7 +52,7 @@ def import_symbols(text, expected_dlls=ALLOWED_DLLS):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
-    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile"), default="xp",
+    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem"), default="xp",
                         help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
@@ -89,7 +89,7 @@ def main():
     source = REPO / ("tests/guest/" + stem + ".c")
     executable = output / (stem + ".exe")
     expected_dlls = ALLOWED_DLLS if args.probe == "xp" else {"kernel32.dll", "user32.dll"}
-    if args.probe in ("session", "service", "branding", "regsvc", "gina", "userenv", "profile", "shell"):
+    if args.probe in ("session", "service", "branding", "regsvc", "gina", "userenv", "profile", "shell", "oem"):
         expected_dlls = expected_dlls | {"advapi32.dll"}
     elif args.probe == "network":
         expected_dlls |= {"advapi32.dll", "ws2_32.dll", "iphlpapi.dll"}
@@ -97,7 +97,7 @@ def main():
         expected_dlls |= {'shell32.dll'}
     if args.probe == 'profile':
         expected_dlls |= {'netapi32.dll'}
-    if args.probe == "branding":
+    if args.probe in ("branding", "oem"):
         expected_dlls |= {"gdi32.dll"}
     command = [tools["cc"], "-Os", "-Wall", "-Wextra", "-Werror", "-ffreestanding",
                "-fno-builtin", "-fno-stack-protector", "-nostdlib",
@@ -107,11 +107,11 @@ def main():
                "-lkernel32", "-luser32"]
     if args.probe == "xp":
         command += ["-ladvapi32", "-lws2_32"]
-    elif args.probe in ("session", "service", "branding", "regsvc", "gina", "userenv", "profile", "shell"):
+    elif args.probe in ("session", "service", "branding", "regsvc", "gina", "userenv", "profile", "shell", "oem"):
         command += ["-ladvapi32"]
     elif args.probe == "network":
         command += ["-ladvapi32", "-lws2_32", "-liphlpapi"]
-    if args.probe == "branding":
+    if args.probe in ("branding", "oem"):
         command += ["-lgdi32"]
     if args.probe == 'shell':
         command += ['-lshell32']
