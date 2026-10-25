@@ -76,6 +76,8 @@ BOOL wl_switch_secure(void);
 BOOL wl_switch_user(void);
 BOOL wl_check_token(HANDLE token,const LUID *id,PSID sid);
 BOOL wl_apply_user_security(HANDLE token);
+BOOL wl_session_policy(void);
+BOOL wl_wait_user_shell(DWORD *pid);
 BOOL wl_system_services(void);
 BOOL wl_gina_init(void);
 void wl_free_gina_result(void);

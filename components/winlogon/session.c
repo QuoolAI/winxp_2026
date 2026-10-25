@@ -1,5 +1,5 @@
-/* Original XP25 profile preparation and ownership. This does not authorize a
-   shell: the unresolved activation-policy boundary remains below. */
+/* Original XP25 profile preparation and guarded GINA shell handoff.
+   The unresolved activation-policy dependency does not authorize a shell. */
 #include "platform.h"
 #include "environment.h"
 
@@ -162,40 +162,62 @@ static BOOL prepare_profile(void)
     return TRUE;
 }
 
+static BOOL record_token(void)
+{
+    TOKEN_STATISTICS stats;TOKEN_USER *user;DWORD bytes=0,session;LPWSTR sid=NULL;char row[256];BOOL ok=FALSE;
+    if(!GetTokenInformation(wl.token,TokenStatistics,&stats,sizeof(stats),&bytes)||
+       !GetTokenInformation(wl.token,TokenSessionId,&session,sizeof(session),&bytes))return FALSE;
+    GetTokenInformation(wl.token,TokenUser,NULL,0,&bytes);if(!bytes)return FALSE;
+    user=LocalAlloc(LPTR,bytes);if(!user)return FALSE;
+    if(!GetTokenInformation(wl.token,TokenUser,user,bytes,&bytes)||!ConvertSidToStringSidW(user->User.Sid,&sid))goto done;
+    if(!WideCharToMultiByte(CP_UTF8,0,sid,-1,row,sizeof(row),NULL,NULL))goto done;
+    wl_log(row,0);
+    wsprintfA(row,"authenticated_token_luid_%08lx_%08lx",stats.AuthenticationId.HighPart,stats.AuthenticationId.LowPart);
+    wl_log(row,0);wl_log("authenticated_token_type",stats.TokenType);wl_log("authenticated_token_session",session);ok=TRUE;
+done:
+    if(sid)LocalFree(sid);LocalFree(user);return ok;
+}
+
+static PVOID copy_shell_environment(void)
+{
+    MEMORY_BASIC_INFORMATION memory;SIZE_T bytes;unsigned capacity,at=0,names,values;int status;
+    const unsigned short *name,*value;PVOID copy;
+    if(!VirtualQuery(wl.environment,&memory,sizeof(memory))||memory.State!=MEM_COMMIT){SetLastError(ERROR_INVALID_DATA);return NULL;}
+    bytes=memory.RegionSize-((BYTE*)wl.environment-(BYTE*)memory.BaseAddress);
+    if(bytes>32767*sizeof(WCHAR))bytes=32767*sizeof(WCHAR);
+    capacity=(unsigned)(bytes/sizeof(WCHAR));
+    while((status=wl_environment_next(wl.environment,capacity,&at,&name,&names,&value,&values))==1){}
+    if(status<0){SetLastError(ERROR_INVALID_DATA);return NULL;}
+    bytes=(at?at+1:2)*sizeof(WCHAR);
+    copy=VirtualAlloc(NULL,bytes,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE);
+    if(copy)CopyMemory(copy,wl.environment,bytes);return copy;
+}
+
 BOOL wl_session_start(void)
 {
-    // Prepare user profile, environment, and registry hive
-    if(!prepare_profile())
-    {
-        wl_log("session_preparation_failed", GetLastError());
-        return FALSE;
+    PVOID shell_environment;DWORD shell_pid,error;
+    if(!prepare_profile()||!record_token()){wl_log("session_preparation_failed",GetLastError());return FALSE;}
+    if(!wl_session_policy())return FALSE;
+    shell_environment=copy_shell_environment();if(!shell_environment)return FALSE;
+    if(!wl_switch_secure()||!wl_apply_user_security(wl.token)){
+        error=GetLastError();VirtualFree(shell_environment,0,MEM_RELEASE);
+        /* Desktop ACL assignment can have partially completed. Retain the
+           session instead of returning to authentication with stale grants. */
+        wl_fail("shell_security_setup_failed",error);
     }
-
-    // Activate user shell (Explorer/Luna) using the GINA callback.
-    // Desktop name "Default" is the standard user desktop.
-    if(!wl.gina.activate_shell(wl.gina_context, L"Default", NULL, wl.environment))
-    {
-        wl_log("user_shell_activation_failed", GetLastError());
-        return FALSE;
-    }
-    wl_log("user_shell_activation_success", 0);
-
-    // Switch from the secure Winlogon desktop to the user's desktop.
-    if(!wl_switch_user())
-    {
-        wl_log("desktop_switch_failed", GetLastError());
-    }
-    else
-    {
-        wl_log("desktop_switched_to_user", 0);
-    }
-
-    // Session is now active; update state machine.
-    if(!wl_state_step(&wl.machine, WlSessionActive, WL_USER_ACTIVE))
-    {
-        wl_log("session_state_transition_failed", GetLastError());
-    }
-    return TRUE;
+    /* GINA receives its own virtual allocation and can resize/free it. The
+       host retains wl.environment. Never give both owners the same block. */
+    if(!wl.gina.activate_shell(wl.gina_context,L"WinSta0\\Default",NULL,shell_environment))
+        wl_fail("user_shell_activation_failed",GetLastError());
+    wl_log("user_shell_activation_success",0);
+    /* GINA can start userinit without an Explorer desktop. Confirm the real
+       shell window, image path, primary token, LUID, logon SID and session. */
+    if(!wl_wait_user_shell(&shell_pid))wl_fail("user_shell_identity_failed",GetLastError());
+    if(!wl_switch_user())wl_fail("desktop_switch_failed",GetLastError());
+    wl_log("desktop_switched_to_user",0);
+    if(!wl_state_step(&wl.machine,WlShellReady,WL_SHELL_USER|WL_USER_ACTIVE))
+        wl_fail("session_state_transition_failed",ERROR_INVALID_STATE);
+    wl_log("session_interactive",shell_pid);return TRUE;
 }
 BOOL wl_session_end(void)
 {

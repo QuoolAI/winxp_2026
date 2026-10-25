@@ -101,10 +101,8 @@ static DWORD WINAPI key_worker(PVOID ignored)
             if(message.header.total==sizeof(message)&&message.header.data==sizeof(message)-sizeof(message.header)){
                 if(!trusted_request(client,&message))message.status=STATUS_DENIED;
                 else if(message.api==0){
-                    /* Licensing/activation check removed: always succeed */
-                    message.status=STATUS_OK; /* indicate success */
-                    SecureZeroMemory(message.key,16);
-                    message.used=16;
+                    if(message.auth==1&&message.capacity==16){message.status=read_stored_key(message.key);if(message.status>=0)message.used=16;}
+                    else message.status=STATUS_UNSUPPORTED;
                 }else if(message.api==1){
                     /* The client reports actual cipher authentication results. Never replace failure with success. */
                     message.status=(LONG)message.auth;

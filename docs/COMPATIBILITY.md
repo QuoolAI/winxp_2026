@@ -6,6 +6,34 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Fresh Winlogon runtime verification, 2026-10-24
+
+The [fresh verification record](winlogon-runtime-verification.md) supersedes the
+older prototype matrices below for the current source. Exact input `68f098042`
+fails native compilation; no executable or runtime result is attributed to it.
+The corrected fresh executable is i386/5.1, 31,232 bytes, SHA-256
+`d0b9c70d4e3937e575be21bb0d55b4267cec7719d5fba083c556b76f817ea815`.
+It is installed as the only component change in an overlay of the latest
+hash-verified standalone engineering image, retaining original recovery bytes.
+
+| Gate, fresh corrected binary | Single-vCPU KVM | Two-vCPU KVM / TCG |
+| --- | --- | --- |
+| Native compile/link, direct PE dependency checks | Pass in native XP build VM | Same executable; no separate build claim |
+| MSGINA UI; actual LSA incorrect/correct credential results | Observed, two pairs | Not run for this revision |
+| Token, SID hive, environment preparation and cleanup | Observed, two cycles | Not run for this revision |
+| Admission call stack and cleared ownership readback | Captured | Not run for this revision |
+| GINA shell callback / Explorer / Default / Luna | Not reached: policy error 120 | Desktop prerequisite not met |
+| Full desktop, application, file/registry/network/service regression | Not reached | Desktop prerequisite not met |
+| Complete session lifecycle / normal shutdown / new engineering image | Not reached / not produced | Not reached / not produced |
+
+Error 120 is the host's explicit unimplemented activation-orchestration boundary,
+not a result from a licensing server. Real SYSKEY authentication is restored;
+no fabricated licensing/authentication success is accepted. The new shell code
+has compiled but has not executed past that boundary. This is not a replacement
+desktop compatibility pass. The accepted original-Winlogon engineering image,
+all reference sources/images and user VMs remain preserved. All 38 host checks
+pass independently of the unexecuted shell path.
+
 ## Independent Winlogon prototype, 2026-10-24
 
 The [session recovery continuation](winlogon-session-recovery.md) supersedes

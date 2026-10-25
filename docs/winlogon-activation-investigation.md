@@ -8,8 +8,8 @@ can safely be started.
 ## Result
 
 The original Winlogon source and its licensing orchestration contract are not
-present in `Source/`. The independent implementation consequently stops at
-`wl_session_start` with `ERROR_CALL_NOT_IMPLEMENTED` (120), records
+present in `Source/`. The independent implementation consequently stops at the session-admission
+boundary with `ERROR_CALL_NOT_IMPLEMENTED` (120), records
 `activation_policy_contract_unresolved`, and does not invoke the GINA shell
 callback. It neither changes activation data nor returns an invented success
 result.
@@ -72,3 +72,16 @@ is not a Python package (`ModuleNotFoundError: No module named
 `python3 tests/test_winlogon.py`, then passed all three portable tests. These
 tests exercise only transition/decoder/environment helpers; they do not test
 activation, licensing, a guest boot, or a completed login.
+
+## Fresh runtime verification continuation
+
+The [fresh native verification](winlogon-runtime-verification.md) first builds
+exact input `68f098042`; genuine C2065/C4505 compiler failures prevent linking.
+The corrected build restores real SYSKEY validation and keeps the shell work
+behind `security.c:wl_session_policy`. Hardware-breakpoint captures demonstrate
+real LSA failure/success, correct token/profile/environment state, and that
+boundary before the GINA shell callback. Its error 120 is a local unimplemented
+orchestration result, not a rejected activation request or a licensing-server
+response. The original engineering Winlogon's freshly inspected PE confirms
+its `ntdll!NtLockProductActivationKeys` import; the required orchestration has
+not been established. No forced-success variant was installed or executed.

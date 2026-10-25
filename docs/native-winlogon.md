@@ -5,6 +5,18 @@
 The accepted engineering image still requires the original Microsoft Winlogon.
 No reference image or interactive libvirt VM is an integration target.
 
+## Fresh runtime verification, 2026-10-24
+
+The [fresh-build/runtime record](winlogon-runtime-verification.md) is current
+for the supplied `68f098042` source and its corrections. That exact source fails
+the native compiler; a corrected fresh executable is then actually booted on
+an overlay of the latest verified standalone engineering checkpoint. Two real
+incorrect/correct authentication pairs and profile/environment cleanup cycles
+pass under single-vCPU KVM, with token evidence and a matching-PDB call stack.
+The guarded shell code remains blocked at the unimplemented product-activation
+admission boundary, error 120. No Explorer/Luna acceptance or new image is
+claimed. The older three-configuration records below apply to their own hashes.
+
 ## Environment and failure recovery continuation, 2026-10-24
 
 The [session recovery record](winlogon-session-recovery.md) supersedes the

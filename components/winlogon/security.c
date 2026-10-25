@@ -112,3 +112,65 @@ BOOL wl_apply_user_security(HANDLE token)
     ok=GetTokenInformation(token,TokenUser,user,bytes,&bytes)&&assign(wl.station,&wl.authentication_id,user->User.Sid,GetLengthSid(user->User.Sid));
     LocalFree(user);return ok;
 }
+
+BOOL wl_session_policy(void)
+{
+    /* The original WPA/OEMBIOS/activation-key orchestration is not supplied.
+       This is an explicit unresolved dependency, not an activation decision.
+       Keep it outside the shell implementation; never substitute success. */
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    wl_log("activation_policy_contract_unresolved",ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+typedef struct {DWORD pid,error;} WL_SHELL_CHECK;
+
+static DWORD WINAPI check_shell_desktop(PVOID parameter)
+{
+    WL_SHELL_CHECK *check=parameter;HWND window;HANDLE process,token,snapshot;
+    MODULEENTRY32W module;DWORD pid,again,started=GetTickCount();WCHAR expected[MAX_PATH];BOOL valid;
+    if(!SetThreadDesktop(wl.application)){check->error=GetLastError();return 1;}
+    if(!GetWindowsDirectoryW(expected,MAX_PATH)||lstrlenW(expected)+14>=MAX_PATH){
+        check->error=ERROR_BUFFER_OVERFLOW;return 1;
+    }
+    lstrcatW(expected,L"\\explorer.exe");
+    do{
+        window=GetShellWindow();pid=0;
+        if(window&&GetWindowThreadProcessId(window,&pid)&&pid){
+            process=OpenProcess(PROCESS_QUERY_INFORMATION|SYNCHRONIZE,FALSE,pid);
+            if(!process){check->error=GetLastError();return 1;}
+            token=NULL;valid=OpenProcessToken(process,TOKEN_QUERY,&token)&&
+                wl_check_token(token,&wl.authentication_id,wl.logon_sid);
+            if(!valid){check->error=GetLastError();if(token)CloseHandle(token);CloseHandle(process);return 1;}
+            CloseHandle(token);snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,pid);
+            if(snapshot==INVALID_HANDLE_VALUE){check->error=GetLastError();CloseHandle(process);return 1;}
+            ZeroMemory(&module,sizeof(module));module.dwSize=sizeof(module);
+            valid=Module32FirstW(snapshot,&module);
+            if(!valid)check->error=GetLastError();
+            else if(lstrcmpiW(module.szExePath,expected)){valid=FALSE;check->error=ERROR_ACCESS_DENIED;}
+            CloseHandle(snapshot);again=0;
+            if(valid&&(GetShellWindow()!=window||!GetWindowThreadProcessId(window,&again)||again!=pid||
+               WaitForSingleObject(process,0)!=WAIT_TIMEOUT)){valid=FALSE;check->error=ERROR_PROCESS_ABORTED;}
+            CloseHandle(process);if(!valid)return 1;
+            check->pid=pid;return 0;
+        }
+        Sleep(100);
+    }while(GetTickCount()-started<30000);
+    check->error=ERROR_TIMEOUT;return 1;
+}
+
+BOOL wl_wait_user_shell(DWORD *pid)
+{
+    WL_SHELL_CHECK *check;HANDLE thread;DWORD result,error;
+    if(!pid||!wl.token||!wl.profile){SetLastError(ERROR_INVALID_PARAMETER);return FALSE;}
+    *pid=0;check=LocalAlloc(LPTR,sizeof(*check));if(!check)return FALSE;
+    thread=CreateThread(NULL,0,check_shell_desktop,check,0,NULL);
+    if(!thread){error=GetLastError();LocalFree(check);SetLastError(error);return FALSE;}
+    result=WaitForSingleObject(thread,45000);
+    /* A hung worker still references the authenticated context. Retain it;
+       never return to profile/token cleanup with that thread still running. */
+    if(result!=WAIT_OBJECT_0)wl_fail("shell_identity_worker_wait_failed",result==WAIT_TIMEOUT?ERROR_TIMEOUT:GetLastError());
+    error=check->error;*pid=check->pid;CloseHandle(thread);LocalFree(check);
+    if(!*pid){SetLastError(error?error:ERROR_INVALID_DATA);return FALSE;}
+    wl_log("explorer_token_identity_verified",*pid);return TRUE;
+}

@@ -2,6 +2,25 @@
 
 ## Current checkpoint
 
+2026-10-24, fresh Winlogon runtime verification: **the exact latest input
+failed the native compiler** (`WlSessionActive` undefined; zero-key branch leaves
+`read_stored_key` unused under `/W4 /WX`). Both failures are retained. A corrected
+fresh native build links successfully, restores real SYSKEY handling, preserves
+the guarded GINA shell implementation and fixes environment ownership and false
+success paths. No older Winlogon binary is used.
+
+A new single-vCPU KVM overlay of the hash-verified latest standalone engineering
+image installs only that new executable. Actual LSA wrong-password failures and
+successful status/substatus 0/0, token SID/LUID/type/session, correct profile hive
+and environment, two initialization/cleanup cycles and live cleared ownership
+are recorded. The matching native PDB resolves the admission call stack.
+**Shell admission remains blocked by the implementation gap in product-activation
+orchestration (`wl_session_policy`, error 120), not an activation-server error.**
+GINA shell activation, Explorer/Luna and full desktop/lifecycle acceptance are
+not reached; MP/TCG are not run for this revision. No new engineering image is
+made. All 38 host checks pass and Source/reference images/user VMs are preserved.
+[Exact-source build failures, fresh binary hash and actual guest evidence](winlogon-runtime-verification.md)
+
 2026-10-24, Milestone 5 continued: **GINA environment merge and recoverable
 pre-shell initialization failure now work in the native replacement.** Two
 real authentication/profile/environment/cleanup cycles pass in disposable
