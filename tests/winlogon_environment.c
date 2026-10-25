@@ -17,6 +17,20 @@ static void check(const char *block,unsigned count,const char *name,int expected
         for(i=0;i<length;++i)if(value[i]!=(unsigned char)result[i]){++failures;break;}
     }
 }
+static void walk(const char *block,unsigned count,int expected_entries,int expected_status)
+{
+    unsigned i,at=0,names,values;int entries=0,status;
+    const unsigned short *name,*value;
+    for(i=0;i<count;++i)wide[i]=(unsigned char)block[i];
+    while((status=wl_environment_next(wide,count,&at,&name,&names,&value,&values))==1){
+        if(!names||name<wide||value<name||value+values>=wide+count||at>=count){++failures;break;}
+        ++entries;
+        if(entries>128){++failures;break;}
+    }
+    ++checks;if(entries!=expected_entries||status!=expected_status){
+        printf("walk case %u: entries=%d status=%d\n",checks,entries,status);++failures;
+    }
+}
 int main(void)
 {
     static const char normal[]="USERNAME=XP25\0USERPROFILE=C:\\Users\\XP25\0";
@@ -41,5 +55,16 @@ int main(void)
     ++checks;if(wl_environment_find(unicode,sizeof(unicode)/sizeof(unicode[0]),name,&value,&length)!=1||
        length!=2||value[0]!=0xe9||value[1]!=0x6f22)++failures;
     ++checks;if(wl_environment_find(0,2,name,&value,&length)!=-1)++failures;
+    walk(normal,sizeof(normal),2,0);
+    walk(normal,sizeof(normal)-1,1,-1);
+    walk(normal,sizeof(normal)-2,1,-1);
+    walk("\0",2,0,0);
+    walk("\0",1,0,-1);
+    walk("\0X",3,0,-1);
+    walk(malformed,sizeof(malformed),1,-1);
+    walk(drive,sizeof(drive),2,0);
+    walk("EMPTY=\0",8,1,0);
+    walk("=value\0",8,0,-1);
+    walk("X=%USERPROFILE%\\path\0",22,1,0);
     printf("WINLOGON_ENVIRONMENT cases=%u failures=%u\n",checks,failures);return failures?1:0;
 }

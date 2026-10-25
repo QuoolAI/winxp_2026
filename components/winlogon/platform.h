@@ -84,6 +84,7 @@ BOOL wl_session_start(void);
 BOOL wl_session_end(void);
 BOOL wl_notify(LPCWSTR event);
 BOOL wl_notifications_wait(void);
+BOOL wl_notifications_wait_user(void);
 void wl_notifications_probe(void);
 BOOL wl_boot(void);
 BOOL wl_bootkey_start(void);

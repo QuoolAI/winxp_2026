@@ -35,7 +35,7 @@ class WinlogonCoreTests(unittest.TestCase):
         self.assertIn('cases=7', self.compile_and_run('winlogon_bootkey', 'bootkey_codec.c'))
 
     def test_environment_bounds_duplicates_and_unicode_values(self):
-        self.assertIn('cases=13', self.compile_and_run('winlogon_environment', 'environment.c'))
+        self.assertIn('cases=24', self.compile_and_run('winlogon_environment', 'environment.c'))
 
 
 if __name__ == '__main__':

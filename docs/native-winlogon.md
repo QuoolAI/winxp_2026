@@ -5,6 +5,18 @@
 The accepted engineering image still requires the original Microsoft Winlogon.
 No reference image or interactive libvirt VM is an integration target.
 
+## Environment and failure recovery continuation, 2026-10-24
+
+The [session recovery record](winlogon-session-recovery.md) supersedes the
+profile-only checkpoint below. The existing implementation now merges GINA V2
+environment values and supports authentication retry after successful
+initialization rollback. Two preparation/cleanup cycles pass under one-vCPU
+KVM, two-vCPU KVM and TCG, with live ownership readback. The first notification
+join failure and corrected CSC worker lifetime are retained as evidence.
+The native build passes; the unresolved activation-policy boundary still
+returns error 120 before shell admission. There is no accepted replacement
+Explorer/Luna desktop or new engineering image.
+
 ## Profile preparation continuation, 2026-10-24
 
 Continued directly from `46d081035`; the existing initialization, LSASS, GINA

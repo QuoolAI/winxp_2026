@@ -2,6 +2,30 @@
 
 ## Current checkpoint
 
+2026-10-24, Milestone 5 continued: **GINA environment merge and recoverable
+pre-shell initialization failure now work in the native replacement.** Two
+real authentication/profile/environment/cleanup cycles pass in disposable
+single-vCPU KVM, two-vCPU KVM and TCG overlays. A read-only capture confirms
+matching Winlogon/kernel checksums and cleared token/profile/environment/GINA
+ownership. CSC's machine-lifetime Startup worker is retained instead of being
+joined during user rollback; the first failed matrix and diagnosis are saved.
+The native `/W4 /WX` build and all 38 host checks pass, including 24 environment
+cases and a sanitizer run. The incoming forced-success/zero-SYSKEY edits were
+saved privately and restored to the committed checks before building.
+
+**Desktop acceptance remains blocked at `activation_policy_contract_unresolved`
+(error 120).** Original licensing orchestration is still unavailable. GINA
+shell activation, userinit/Explorer/Luna, full lock/logoff/power and replacement
+security/application/network/service acceptance remain incomplete. No new
+standalone image is produced; prior verified images and user VMs are preserved.
+[Exact changes, native hashes, failures, coverage and reproduction](winlogon-session-recovery.md)
+
+2026-10-24: [Winlogon licensing/activation investigation](winlogon-activation-investigation.md)
+records the absent original orchestration source and unresolved COM, OEM,
+kernel, registry-state and shell-admission contracts. No licensing state or
+activation check was changed, removed or forced to succeed; activation
+compatibility remains unresolved.
+
 2026-10-24, Milestone 5 continuation: **native Winlogon now prepares and cleans
 up an authenticated local user's profile.** New code loads UserEnv's profile,
 checks its actual hive against the token SID, builds and validates the user

@@ -8,6 +8,35 @@ and hardware support must cite an image hash, exact version, environment and log
 
 ## Independent Winlogon prototype, 2026-10-24
 
+The [session recovery continuation](winlogon-session-recovery.md) supersedes
+the earlier profile-only checkpoint below. Native build 02, SHA-256
+`2fc1ea1a801362db4e608becc52531ddbd7874ed530ea293e6b7fe9e9e1dbf55`,
+merges GINA's environment and handles failed initialization without losing
+owned resources or making authentication/activation errors succeed.
+
+| Latest replacement gate | KVM, one vCPU | KVM, two vCPUs | TCG, one vCPU |
+| --- | --- | --- | --- |
+| Two authentication / SID-hive / GINA-environment / cleanup cycles | Observed | Observed | Observed |
+| Secure error-120 rollback, authentication retry and CAD reentry | Observed | Observed | Observed |
+| Wrong password rejected after initialization rollback | Observed | Observed | Observed |
+| Cleared host token/profile/environment/GINA ownership, live read-only capture | Observed | Observed | Observed |
+| GINA shell activation, source Explorer/Luna and desktop transition | Blocked at error 120 | Blocked at error 120 | Blocked at error 120 |
+| Complete lock/logoff/power, hostile-user restrictions and desktop regression | Not reached | Not reached | Not reached |
+| New standalone engineering image | Not produced | Not produced | Not produced |
+
+This verifies recovery **before** shell admission. It does not establish normal
+logoff, user-process ownership, persistent volatile-environment/GPO integration,
+shell recovery, full notification/error fault paths or normal guest shutdown.
+The first matrix is rejected after joining CSC's intentionally persistent
+Startup worker; the corrected user join retains that worker. All experimental
+disks are private overlays, with host stops distinguished from guest shutdown.
+All 38 host checks pass; reference images and all 277,863 source files are
+hash-preserved. The previously verified original-Winlogon image remains current.
+
+The dedicated [licensing/activation investigation](winlogon-activation-investigation.md)
+records the static evidence and every currently unresolved interface. It does
+not claim activation compatibility or Windows-level activation success.
+
 The [profile-stage continuation](native-winlogon.md) supersedes build 09's
 pre-profile boundary below. Build 03 of that continuation, SHA-256
 `8a90fca41f1d21454ddb224276b33afdeab60f1b39d3f5deb6bd5057a4e8d7a7`,

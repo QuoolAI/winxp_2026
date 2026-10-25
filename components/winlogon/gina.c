@@ -132,6 +132,34 @@ void wl_free_gina_result(void)
     if(p){free_string(&p->pszProfile,FALSE);if(p->dwType==WLX_PROFILE_TYPE_V2_0){free_string(&p->pszPolicy,FALSE);free_string(&p->pszNetworkDefaultUserProfile,FALSE);free_string(&p->pszServerName,FALSE);free_string(&p->pszEnvironment,FALSE);}LocalFree(p);wl.gina_profile=NULL;}
 }
 
+static void abort_initialization(DWORD error)
+{
+    WCHAR message[256];
+    /* This path precedes shell admission. Cleanup failures are fatal and keep
+       their handles/token for diagnosis; a successful rollback permits retry. */
+    wl.in_gina=TRUE;wl_log("rollback_secure_begin",0);
+    if(!wl_switch_secure())wl_fail("rollback_secure_switch_failed",GetLastError());
+    wl_log("rollback_user_notifications_begin",0);
+    if(!wl_notifications_wait_user())wl_fail("rollback_notifications_failed",GetLastError());
+    wl_log("rollback_gina_logoff_begin",0);
+    wl.gina.logoff(wl.gina_context);wl_free_gina_result();
+    wl_log("rollback_profile_release_begin",0);
+    if(!wl_session_end())wl_fail("session_cleanup_failed",GetLastError());
+    if(wl.token){
+        if(!CloseHandle(wl.token))wl_fail("rollback_token_close_failed",GetLastError());
+        wl.token=NULL;
+    }
+    if(!wl_state_step(&wl.machine,WlRollbackCompleted,WL_RESOURCES_GONE|WL_SECURE_ACTIVE))
+        wl_fail("rollback_state_rejected",ERROR_INVALID_DATA);
+    ZeroMemory(&wl.authentication_id,sizeof(wl.authentication_id));SecureZeroMemory(wl.logon_sid,sizeof(wl.logon_sid));
+    wl_log("session_initialization_rolled_back",error);
+    wsprintfW(message,L"The user session could not be initialized (error %lu).\nThe profile has been unloaded. You can try logging on again.",error);
+    wl.in_gina=TRUE;
+    MessageBoxW(NULL,message,L"XP25 session initialization failed",MB_OK|MB_ICONERROR|MB_SYSTEMMODAL);
+    wl.in_gina=FALSE;
+    if(!PostMessageW(wl.window,WL_APP_NOTICE,100,0))wl_fail("rollback_notice_failed",GetLastError());
+}
+
 void wl_attention(DWORD type)
 {
     int action;DWORD options=0,error;LUID unique;SID_IDENTIFIER_AUTHORITY authority=SECURITY_NT_AUTHORITY;
@@ -151,11 +179,7 @@ void wl_attention(DWORD type)
             if(options){wl_fail("gina_profile_option_unsupported",ERROR_NOT_SUPPORTED);}
             if(!wl_state_step(&wl.machine,WlAuthenticated,WL_TOKEN_CHECKED))wl_fail("auth_state_rejected",ERROR_INVALID_DATA);
             if(!wl_session_start()){
-                error=GetLastError();wl_free_gina_result();wl.gina.logoff(wl.gina_context);
-                if(!wl_session_end())wl_fail("session_cleanup_failed",GetLastError());
-                if(wl.token){CloseHandle(wl.token);wl.token=NULL;}
-                if(!wl.profile&&!wl.environment)wl_state_step(&wl.machine,WlRollbackCompleted,WL_RESOURCES_GONE|WL_SECURE_ACTIVE);
-                wl_fail("session_start_failed",error);
+                error=GetLastError();wl_log("session_start_failed",error);abort_initialization(error);
             }
         }else{
             if(wl.token){CloseHandle(wl.token);wl.token=NULL;}

@@ -5,6 +5,7 @@
 
 typedef struct {USHORT length,maximum;PWSTR buffer;} WL_ENV_STRING;
 typedef LONG (NTAPI *SET_ENVIRONMENT)(PVOID*,WL_ENV_STRING*,WL_ENV_STRING*);
+typedef LONG (NTAPI *EXPAND_ENVIRONMENT)(PVOID,WL_ENV_STRING*,WL_ENV_STRING*,PULONG);
 typedef LONG (NTAPI *QUERY_KEY)(HANDLE,ULONG,PVOID,ULONG,PULONG);
 
 static BOOL user_identity(void)
@@ -65,6 +66,50 @@ static BOOL environment_value(LPCWSTR name,LPCWSTR expected)
     if(lstrcmpiW(copy,expected)){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}return TRUE;
 }
 
+static BOOL merge_gina_environment(SET_ENVIRONMENT set)
+{
+    PWLX_PROFILE_V2_0 source=wl.gina_profile;HLOCAL block;SIZE_T bytes;unsigned capacity,at=0,previous;
+    const unsigned short *name,*value,*other,*ignored;unsigned names,values,others,unused;int status,comparison;
+    EXPAND_ENVIRONMENT expand;WL_ENV_STRING key,input,output;WCHAR *expanded;ULONG required;LONG result;BOOL ok=FALSE;
+    if(source->dwType!=WLX_PROFILE_TYPE_V2_0||!source->pszEnvironment)return TRUE;
+    block=source->pszEnvironment;bytes=LocalSize(block);
+    if(bytes<2*sizeof(WCHAR)||bytes>32767*sizeof(WCHAR)||bytes%sizeof(WCHAR)){
+        SetLastError(ERROR_INVALID_DATA);return FALSE;
+    }
+    capacity=(unsigned)(bytes/sizeof(WCHAR));
+    /* Validate the complete GINA allocation before changing our environment.
+       CompareString provides NT's Unicode case-insensitive name comparison. */
+    while((status=wl_environment_next(block,capacity,&at,&name,&names,&value,&values))==1){
+        if(name[0]==L'='){SetLastError(ERROR_INVALID_DATA);return FALSE;}
+        previous=0;
+        while(wl_environment_next(block,capacity,&previous,&other,&others,&ignored,&unused)==1&&other<name){
+            comparison=CompareStringW(LOCALE_INVARIANT,NORM_IGNORECASE,name,(int)names,other,(int)others);
+            if(!comparison)return FALSE;
+            if(comparison==CSTR_EQUAL){SetLastError(ERROR_INVALID_DATA);return FALSE;}
+        }
+    }
+    if(status<0){SetLastError(ERROR_INVALID_DATA);return FALSE;}
+    expand=(EXPAND_ENVIRONMENT)GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"RtlExpandEnvironmentStrings_U");
+    if(!expand){SetLastError(ERROR_PROC_NOT_FOUND);return FALSE;}
+    expanded=LocalAlloc(LPTR,32767*sizeof(WCHAR));if(!expanded)return FALSE;
+    at=0;
+    while(wl_environment_next(block,capacity,&at,&name,&names,&value,&values)==1){
+        key.buffer=(PWSTR)name;key.length=(USHORT)(names*sizeof(WCHAR));key.maximum=key.length;
+        input.buffer=(PWSTR)value;input.length=(USHORT)(values*sizeof(WCHAR));input.maximum=input.length;
+        output.buffer=expanded;output.length=0;output.maximum=32767*sizeof(WCHAR);required=0;
+        result=expand(wl.environment,&input,&output,&required);
+        if(result<0){SetLastError(LsaNtStatusToWinError(result));goto done;}
+        if(output.length%sizeof(WCHAR)||output.length>=output.maximum||required>output.maximum){
+            SetLastError(ERROR_INVALID_DATA);goto done;
+        }
+        result=set(&wl.environment,&key,&output);
+        if(result<0){SetLastError(LsaNtStatusToWinError(result));goto done;}
+    }
+    ok=TRUE;wl_log("gina_environment_merged",0);
+done:
+    LocalFree(expanded);return ok;
+}
+
 static BOOL prepare_environment(void)
 {
     SET_ENVIRONMENT set;WL_ENV_STRING name,value;LONG status;WCHAR path[MAX_PATH];DWORD chars=MAX_PATH,attributes;
@@ -75,6 +120,7 @@ static BOOL prepare_environment(void)
     if(!CreateEnvironmentBlock(&wl.environment,wl.token,FALSE))return FALSE;
     set=(SET_ENVIRONMENT)GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"RtlSetEnvironmentVariable");
     if(!set){SetLastError(ERROR_PROC_NOT_FOUND);return FALSE;}
+    if(!merge_gina_environment(set))return FALSE;
     name.buffer=L"SESSIONNAME";name.length=(USHORT)(lstrlenW(name.buffer)*sizeof(WCHAR));name.maximum=name.length+sizeof(WCHAR);
     value.buffer=L"Console";value.length=(USHORT)(lstrlenW(value.buffer)*sizeof(WCHAR));value.maximum=value.length+sizeof(WCHAR);
     if(WTSGetActiveConsoleSessionId()!=wl.session_id){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
@@ -111,8 +157,9 @@ static BOOL prepare_profile(void)
     if(!profile.hProfile){SetLastError(ERROR_INVALID_DATA);return FALSE;}
     wl.profile=profile.hProfile;wl_log("profile_loaded",0);
     if(!verify_hive())return FALSE;
+    if(!prepare_environment())return FALSE;
     if(!wl_state_step(&wl.machine,WlProfileReady,WL_PROFILE_LOADED)){SetLastError(ERROR_INVALID_DATA);return FALSE;}
-    return prepare_environment();
+    return TRUE;
 }
 
 BOOL wl_session_start(void)

@@ -45,17 +45,34 @@ static void release_job(WL_NOTIFY_JOB *job)
     LocalFree(job);
 }
 
-BOOL wl_notifications_wait(void)
+static BOOL wait_jobs(BOOL user_only)
 {
-    WL_NOTIFY_JOB *job;DWORD result;
-    while(jobs){
-        job=jobs;result=WaitForSingleObject(job->thread,120000);
+    WL_NOTIFY_JOB *job,**link=&jobs;DWORD result,started,elapsed;MSG message;
+    while(*link){
+        job=*link;
+        /* Startup jobs own no user token or profile. Retain their worker and
+           module until a machine-wide join; user rollback must not join them. */
+        if(user_only&&!job->info.hToken){link=&job->next;continue;}
+        started=GetTickCount();
+        /* Notification packages can synchronously send to this GUI thread.
+           Service sent messages while joining, without dispatching posted SAS
+           or user input and reentering authentication/cleanup. */
+        for(;;){
+            elapsed=GetTickCount()-started;
+            if(elapsed>=120000){result=WAIT_TIMEOUT;break;}
+            result=MsgWaitForMultipleObjects(1,&job->thread,FALSE,120000-elapsed,QS_SENDMESSAGE);
+            if(result!=WAIT_OBJECT_0+1)break;
+            PeekMessageW(&message,NULL,0,0,PM_NOREMOVE);
+        }
         if(result!=WAIT_OBJECT_0){SetLastError(result==WAIT_TIMEOUT?ERROR_TIMEOUT:GetLastError());return FALSE;}
         if(job->result){SetLastError(job->result);return FALSE;}
-        jobs=job->next;release_job(job);
+        *link=job->next;release_job(job);
     }
     return TRUE;
 }
+
+BOOL wl_notifications_wait(void){return wait_jobs(FALSE);}
+BOOL wl_notifications_wait_user(void){return wait_jobs(TRUE);}
 
 static LONG registry_string(HKEY key,LPCWSTR name,WCHAR *buffer,DWORD capacity)
 {
@@ -86,7 +103,7 @@ BOOL wl_notify(LPCWSTR event)
     error=RegOpenKeyExW(HKEY_LOCAL_MACHINE,WL_WINLOGON_KEY L"\\Notify",0,KEY_READ,&root);
     if(error==ERROR_FILE_NOT_FOUND)return TRUE;
     if(error){SetLastError(error);return FALSE;}
-    if(lstrcmpW(event,L"Logoff")==0&&!wl_notifications_wait()){RegCloseKey(root);return FALSE;}
+    if(lstrcmpW(event,L"Logoff")==0&&!wl_notifications_wait_user()){RegCloseKey(root);return FALSE;}
     for(;;){
         chars=128;error=RegEnumKeyExW(root,index++,package,&chars,NULL,NULL,NULL,NULL);
         if(error==ERROR_NO_MORE_ITEMS){RegCloseKey(root);return TRUE;}
