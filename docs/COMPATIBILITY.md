@@ -6,10 +6,42 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
-## Fresh Winlogon runtime verification, 2026-10-24
+## Winlogon policy/session continuation, 2026-10-24
 
-The [fresh verification record](winlogon-runtime-verification.md) supersedes the
-older prototype matrices below for the current source. Exact input `68f098042`
+The [policy/session record](winlogon-policy-session-contract.md) supersedes
+older prototype results for current Winlogon. Fresh native executable SHA-256
+`120a9ddebcf610a060a8aac6d42ee01f9308e1deb8b34560f26e8d230b7030d1`
+is i386 PE32/5.1, 34,816 bytes, checksum `0x1091e`; all direct guest imports
+resolve. The real kernel key-protection service is implemented and exercised.
+Complete licensing admission still returns local error 120; it is not a
+licence-server denial and no activation success is fabricated.
+
+| Current fresh replacement gate | KVM one vCPU | KVM two vCPUs | TCG one vCPU |
+| --- | --- | --- | --- |
+| Native boot, MSGINA, real key-protection initialization | Observed | Observed, source MP kernel/HAL | Observed |
+| Incorrect/correct credentials, profile hive and environment | Observed | Observed | Observed |
+| Repeated pre-shell initialization/cleanup, cleared live ownership | Observed | Observed | Observed |
+| GINA shell / source Explorer / Luna / Default desktop | Blocked by policy 120 | Blocked by policy 120 | Blocked by policy 120 |
+| GINA signed-out power-off | Actual guest shutdown event | Actual guest shutdown event | Actual guest shutdown event |
+| GINA signed-out restart | Not run | Guest reset and MSGINA return | Not run |
+| Native desktop lock/unlock/logoff, secure-desktop attacks, full regressions | Not reached | Not reached | Not reached |
+| New accepted standalone image | Not produced | Not produced | Not produced |
+
+The separate session executable runs 31 scenarios/528 assertions in native XP
+and under host sanitizers; all 40 host tests pass, including rejection of test
+mode in production compilation. Its explicit doubles exercise policy gating,
+shell invocation, environment ownership, desktop errors, notifications and
+lifecycle/failure transitions; they do not establish native post-shell behavior.
+The authenticated original-Winlogon control separately passes actual token,
+UserEnv, file/HKCU, Explorer/Luna/Start/folder, network and service probes and
+normal shutdown. Its read-only WMI observation reports ActivationRequired=0;
+this is not substituted for a complete Winlogon policy decision. Shell crash
+recovery and full replacement lifecycle/security compatibility remain incomplete.
+
+## Previous fresh Winlogon runtime verification, 2026-10-24
+
+The [fresh verification record](winlogon-runtime-verification.md) documents
+the preceding source checkpoint. Exact input `68f098042`
 fails native compilation; no executable or runtime result is attributed to it.
 The corrected fresh executable is i386/5.1, 31,232 bytes, SHA-256
 `d0b9c70d4e3937e575be21bb0d55b4267cec7719d5fba083c556b76f817ea815`.

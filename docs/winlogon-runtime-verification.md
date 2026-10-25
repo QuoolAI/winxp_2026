@@ -1,5 +1,11 @@
 # Fresh native Winlogon runtime verification
 
+The [later policy/session continuation](winlogon-policy-session-contract.md)
+records the current fresh build, real kernel key-protection initialization,
+separate native session tests and new limited shutdown/restart results. This
+document preserves the evidence for its earlier input; it does not describe
+the current policy adapter or current executable hash.
+
 2026-10-24, branch `xp25-nt`, input commit `68f098042`.
 **The primary Explorer/Luna objective did not pass.** The exact input failed
 native compilation. A corrected, freshly built executable was then booted and

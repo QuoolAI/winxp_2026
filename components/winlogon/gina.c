@@ -138,20 +138,7 @@ static void abort_initialization(DWORD error)
     /* This path precedes shell admission. Cleanup failures are fatal and keep
        their handles/token for diagnosis; a successful rollback permits retry. */
     wl.in_gina=TRUE;wl_log("rollback_secure_begin",0);
-    if(!wl_switch_secure())wl_fail("rollback_secure_switch_failed",GetLastError());
-    wl_log("rollback_user_notifications_begin",0);
-    if(!wl_notifications_wait_user())wl_fail("rollback_notifications_failed",GetLastError());
-    wl_log("rollback_gina_logoff_begin",0);
-    wl.gina.logoff(wl.gina_context);wl_free_gina_result();
-    wl_log("rollback_profile_release_begin",0);
-    if(!wl_session_end())wl_fail("session_cleanup_failed",GetLastError());
-    if(wl.token){
-        if(!CloseHandle(wl.token))wl_fail("rollback_token_close_failed",GetLastError());
-        wl.token=NULL;
-    }
-    if(!wl_state_step(&wl.machine,WlRollbackCompleted,WL_RESOURCES_GONE|WL_SECURE_ACTIVE))
-        wl_fail("rollback_state_rejected",ERROR_INVALID_DATA);
-    ZeroMemory(&wl.authentication_id,sizeof(wl.authentication_id));SecureZeroMemory(wl.logon_sid,sizeof(wl.logon_sid));
+    if(!wl_session_abort())wl_fail("session_cleanup_failed",GetLastError());
     wl_log("session_initialization_rolled_back",error);
     wsprintfW(message,L"The user session could not be initialized (error %lu).\nThe profile has been unloaded. You can try logging on again.",error);
     wl.in_gina=TRUE;
@@ -184,6 +171,11 @@ void wl_attention(DWORD type)
         }else{
             if(wl.token){CloseHandle(wl.token);wl.token=NULL;}
             wl_free_gina_result();
+            if(action==WLX_SAS_ACTION_SHUTDOWN||action==WLX_SAS_ACTION_SHUTDOWN_POWER_OFF||action==WLX_SAS_ACTION_SHUTDOWN_REBOOT){
+                if(!wl_state_step(&wl.machine,WlDenied,0))wl_fail("power_denial_state_failed",ERROR_INVALID_DATA);
+                if(!wl_session_power(action==WLX_SAS_ACTION_SHUTDOWN_REBOOT))wl_fail("signed_out_power_failed",GetLastError());
+                return;
+            }
             if(action!=0&&action!=WLX_SAS_ACTION_NONE)wl_fail("logged_out_action_unsupported",ERROR_NOT_SUPPORTED);
             if(!wl_state_step(&wl.machine,WlDenied,0))wl_fail("denial_state_rejected",ERROR_INVALID_DATA);
             PostMessageW(wl.window,WL_APP_NOTICE,100,0);
@@ -191,14 +183,21 @@ void wl_attention(DWORD type)
     }else if(wl.machine.phase==WlUnlocking){
         action=wl.gina.locked_sas(wl.gina_context,type);wl.in_gina=FALSE;wl_log("gina_unlock_result",action);
         if(action==WLX_SAS_ACTION_UNLOCK_WKSTA){
-            if(!wl_check_token(wl.token,&wl.authentication_id,wl.logon_sid)||!wl_switch_user())wl_fail("unlock_token_or_desktop_failed",GetLastError());
-            if(!wl_state_step(&wl.machine,WlUnlockCompleted,WL_UNLOCK_CHECKED|WL_USER_ACTIVE))wl_fail("unlock_state_rejected",ERROR_INVALID_DATA);
+            if(!wl_session_unlock())wl_fail("unlock_token_or_desktop_failed",GetLastError());
         }else if(action==WLX_SAS_ACTION_NONE||action==0){wl_state_step(&wl.machine,WlDenied,0);wl.gina.locked_notice(wl.gina_context);}
-        else wl_fail("locked_action_unsupported",ERROR_NOT_SUPPORTED);
+        else if(action==WLX_SAS_ACTION_LOGOFF||action==WLX_SAS_ACTION_FORCE_LOGOFF){
+            if(!wl_session_logoff())wl_fail("locked_logoff_failed",GetLastError());
+            PostMessageW(wl.window,WL_APP_NOTICE,100,0);
+        }else wl_fail("locked_action_unsupported",ERROR_NOT_SUPPORTED);
     }else{
         action=wl.gina.logged_on(wl.gina_context,type,NULL);wl.in_gina=FALSE;wl_log("gina_security_action",action);
-        if(action==WLX_SAS_ACTION_LOCK_WKSTA){if(!wl_state_step(&wl.machine,WlLockCompleted,WL_SECURE_ACTIVE))wl_fail("lock_state_rejected",ERROR_INVALID_DATA);wl.gina.locked_notice(wl.gina_context);}
+        if(action==WLX_SAS_ACTION_LOCK_WKSTA){if(!wl_session_lock())wl_fail("lock_state_rejected",GetLastError());wl.gina.locked_notice(wl.gina_context);}
         else if(action==WLX_SAS_ACTION_NONE||action==0){if(!wl_switch_user()||!wl_state_step(&wl.machine,WlCancelled,WL_USER_ACTIVE))wl_fail("security_cancel_failed",GetLastError());}
-        else wl_fail("security_action_unsupported",ERROR_NOT_SUPPORTED);
+        else if(action==WLX_SAS_ACTION_LOGOFF||action==WLX_SAS_ACTION_SHUTDOWN||
+                action==WLX_SAS_ACTION_SHUTDOWN_POWER_OFF||action==WLX_SAS_ACTION_SHUTDOWN_REBOOT){
+            if(!wl_session_logoff())wl_fail("security_logoff_failed",GetLastError());
+            if(action!=WLX_SAS_ACTION_LOGOFF){if(!wl_session_power(action==WLX_SAS_ACTION_SHUTDOWN_REBOOT))wl_fail("security_power_failed",GetLastError());}
+            else PostMessageW(wl.window,WL_APP_NOTICE,100,0);
+        }else wl_fail("security_action_unsupported",ERROR_NOT_SUPPORTED);
     }
 }

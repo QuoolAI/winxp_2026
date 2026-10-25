@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <wchar.h>
 #include "state.h"
+#include "session_engine.h"
 #define WL_APP_SAS (WM_APP+21)
 #define WL_APP_NOTICE (WM_APP+22)
 #define WL_LOGON_NOTIFY 0x004c
@@ -76,14 +77,21 @@ BOOL wl_switch_secure(void);
 BOOL wl_switch_user(void);
 BOOL wl_check_token(HANDLE token,const LUID *id,PSID sid);
 BOOL wl_apply_user_security(HANDLE token);
-BOOL wl_session_policy(void);
+void wl_session_policy(WL_POLICY_RESULT *result);
+BOOL wl_policy_initialize(void);
 BOOL wl_wait_user_shell(DWORD *pid);
+BOOL wl_clear_user_security(void);
 BOOL wl_system_services(void);
 BOOL wl_gina_init(void);
 void wl_free_gina_result(void);
 void wl_attention(DWORD type);
 BOOL wl_session_start(void);
 BOOL wl_session_end(void);
+BOOL wl_session_abort(void);
+BOOL wl_session_lock(void);
+BOOL wl_session_unlock(void);
+BOOL wl_session_logoff(void);
+BOOL wl_session_power(unsigned mode);
 BOOL wl_notify(LPCWSTR event);
 BOOL wl_notifications_wait(void);
 BOOL wl_notifications_wait_user(void);

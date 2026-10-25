@@ -113,14 +113,17 @@ BOOL wl_apply_user_security(HANDLE token)
     LocalFree(user);return ok;
 }
 
-BOOL wl_session_policy(void)
+BOOL wl_clear_user_security(void)
 {
-    /* The original WPA/OEMBIOS/activation-key orchestration is not supplied.
-       This is an explicit unresolved dependency, not an activation decision.
-       Keep it outside the shell implementation; never substitute success. */
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    wl_log("activation_policy_contract_unresolved",ERROR_CALL_NOT_IMPLEMENTED);
-    return FALSE;
+    SET_STATION_USER assign;LUID none;
+    if(!object_dacl(wl.application,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)")||
+       !object_dacl(wl.station,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)"))return FALSE;
+    assign=(SET_STATION_USER)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetWindowStationUser");
+    if(!assign){SetLastError(ERROR_PROC_NOT_FOUND);return FALSE;}
+    ZeroMemory(&none,sizeof(none));
+    /* Supplied NT 5.1 _SetWindowStationUser explicitly accepts a NULL SID
+       and clears the previous station SID before assigning the zero LUID. */
+    return assign(wl.station,&none,NULL,0);
 }
 
 typedef struct {DWORD pid,error;} WL_SHELL_CHECK;

@@ -114,8 +114,17 @@ static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
     if(message==WL_APP_NOTICE){
         if(wp==100&&wl.machine.phase==WlSignedOut){wl.gina.sas_notice(wl.gina_context);return 0;}
         if(wp==5&&wl.machine.phase==WlInteractive){
-            if(wl.gina.lock_ok(wl.gina_context)&&wl_switch_secure()&&wl_state_step(&wl.machine,WlLockCompleted,WL_SECURE_ACTIVE))wl.gina.locked_notice(wl.gina_context);
-        }else if(wp==0){wl.pending_power=(DWORD)lp;wl_fail("session_termination_not_implemented",ERROR_CALL_NOT_IMPLEMENTED);}
+            if(wl_session_lock())wl.gina.locked_notice(wl.gina_context);else wl_log("lock_request_failed",GetLastError());
+        }else if(wp==0){
+            /* USER adds EWX_WINLOGON_CALLER (0x200) to completion notices from
+               our own registered-process ExitWindowsEx call; do not recurse. */
+            if((DWORD)lp&0x200){wl_log("native_end_session_completion",(DWORD)lp);return 0;}
+            wl.pending_power=(DWORD)lp;
+            if(wl.token&&!wl_session_logoff())wl_fail("user_requested_logoff_failed",GetLastError());
+            if((DWORD)lp&(EWX_SHUTDOWN|EWX_REBOOT|EWX_POWEROFF)){
+                if(!wl_session_power(((DWORD)lp&EWX_REBOOT)!=0))wl_fail("user_requested_power_failed",GetLastError());
+            }else PostMessageW(h,WL_APP_NOTICE,100,0);
+        }
         else wl_log("unsupported_user_notification",(DWORD)wp);
         return 0;
     }
@@ -142,6 +151,7 @@ BOOL wl_boot(void)
     if(!wl_system_services())return FALSE;
     if(!connect_console())return FALSE;
     if(!console_authentication_options())return FALSE;
+    if(!wl_policy_initialize())return FALSE;
     if(!wl_gina_init())return FALSE;
     if(!wl_notify(L"Startup"))return FALSE;
     if(!wl_switch_secure())return FALSE;

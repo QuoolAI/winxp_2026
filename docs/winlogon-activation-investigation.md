@@ -7,6 +7,13 @@ can safely be started.
 
 ## Result
 
+The [later native policy/session investigation](winlogon-policy-session-contract.md)
+supersedes the static kernel-boundary finding below: the linked kernel does
+contain the implementation in prebuilt `ex:systime.obj`. Its two-output ABI
+and successful original-host calls are recorded, and the independent host now
+performs real key protection. Complete licensing admission remains unresolved;
+the historical source-search gap must not be read as absent machine code.
+
 The original Winlogon source and its licensing orchestration contract are not
 present in `Source/`. The independent implementation consequently stops at the session-admission
 boundary with `ERROR_CALL_NOT_IMPLEMENTED` (120), records

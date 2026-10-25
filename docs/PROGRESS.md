@@ -2,6 +2,37 @@
 
 ## Current checkpoint
 
+2026-10-24, policy/session continuation from `8e4bdba7c`: **real NT 5.1
+activation-key protection initialization now runs; licensing admission remains
+blocked.** The supplied linked kernel contains the service in prebuilt
+`systime.obj`; three original-host calls establish its two-output ABI. The new
+Winlogon calls that real service and preserves failures. A typed, fail-closed
+policy interface isolates the remaining unavailable activation/OEM/initialization
+decision. No WMI observation or test double authorizes production admission.
+
+The working profile/environment code now uses a shared session coordinator,
+with explicit doubles confined to a separate test executable and a production
+compile guard. All 40 host tests pass; 31 session scenarios / 528 assertions
+also pass under sanitizers and in an authenticated original-host XP25 process.
+That control passes actual token/profile/environment, file/HKCU, source
+Explorer/Luna/Start/folder, networking and service checks, then normal shutdown.
+
+A freshly compiled native `/W4 /WX` Winlogon, SHA-256
+`120a9ddebcf610a060a8aac6d42ee01f9308e1deb8b34560f26e8d230b7030d1`,
+boots in disposable verified-engineering UP KVM, MP KVM and TCG overlays. All
+three authenticate, validate the SID hive/environment and clean up on policy
+error 120; live resource readback confirms cleanup. Signed-out GINA power-off
+passes under UP KVM, MP KVM and TCG; GINA restart under MP returns to MSGINA.
+These limited power results do not establish desktop logoff or full lifecycle.
+
+**Custom-Winlogon Explorer/Luna remains unaccepted.** Post-shell security,
+lock/unlock/logoff, shell crash recovery and the full replacement regression
+matrix remain incomplete. No accepted image is generated; Source, recovery
+executables, prior images and persistent user VM definitions are preserved.
+[Policy findings, code, native test/build hashes and exact limitations](winlogon-policy-session-contract.md)
+
+The following earlier entries describe their respective historical inputs.
+
 2026-10-24, fresh Winlogon runtime verification: **the exact latest input
 failed the native compiler** (`WlSessionActive` undefined; zero-key branch leaves
 `read_stored_key` unused under `/W4 /WX`). Both failures are retained. A corrected

@@ -158,7 +158,6 @@ static BOOL prepare_profile(void)
     wl.profile=profile.hProfile;wl_log("profile_loaded",0);
     if(!verify_hive())return FALSE;
     if(!prepare_environment())return FALSE;
-    if(!wl_state_step(&wl.machine,WlProfileReady,WL_PROFILE_LOADED)){SetLastError(ERROR_INVALID_DATA);return FALSE;}
     return TRUE;
 }
 
@@ -193,31 +192,135 @@ static PVOID copy_shell_environment(void)
     if(copy)CopyMemory(copy,wl.environment,bytes);return copy;
 }
 
+static WL_SESSION_ENGINE session_engine;
+static DWORD shell_pid;
+static unsigned long native_error(BOOL ok)
+{DWORD error;if(ok)return 0;error=GetLastError();return error?error:ERROR_GEN_FAILURE;}
+static unsigned long native_user(void *context)
+{UNREFERENCED_PARAMETER(context);return native_error(user_identity());}
+static unsigned long native_profile(void *context)
+{UNREFERENCED_PARAMETER(context);return native_error(prepare_profile()&&record_token());}
+static void native_policy(void *context,WL_POLICY_RESULT *result)
+{UNREFERENCED_PARAMETER(context);wl_session_policy(result);}
+static unsigned long native_copy(void *context,void **copy)
+{UNREFERENCED_PARAMETER(context);*copy=copy_shell_environment();return native_error(*copy!=NULL);}
+static unsigned long native_discard(void *context,void *copy)
+{UNREFERENCED_PARAMETER(context);return native_error(VirtualFree(copy,0,MEM_RELEASE));}
+static unsigned long native_secure(void *context)
+{UNREFERENCED_PARAMETER(context);return native_error(wl_switch_secure());}
+static unsigned long native_protect(void *context)
+{UNREFERENCED_PARAMETER(context);return native_error(wl_apply_user_security(wl.token));}
+static unsigned long native_activate(void *context,void *copy)
+{
+    BOOL result;UNREFERENCED_PARAMETER(context);
+    result=wl.gina.activate_shell(wl.gina_context,L"WinSta0\\Default",NULL,copy);
+    if(result)wl_log("user_shell_activation_success",0);return native_error(result);
+}
+static unsigned long native_shell(void *context)
+{UNREFERENCED_PARAMETER(context);return native_error(wl_wait_user_shell(&shell_pid));}
+static unsigned long native_desktop(void *context)
+{UNREFERENCED_PARAMETER(context);return native_error(wl_switch_user());}
+static unsigned long native_notify(void *context,WL_SESSION_NOTICE event)
+{
+    static const WCHAR *names[]={L"Logon",L"StartShell",L"PostShell",L"Lock",L"Unlock",L"Logoff",L"Shutdown"};
+    UNREFERENCED_PARAMETER(context);if((unsigned)event>=sizeof(names)/sizeof(names[0]))return ERROR_INVALID_PARAMETER;
+    return native_error(wl_notify(names[event]));
+}
+
+static BOOL no_user_processes(void)
+{
+    HANDLE list,process,token;PROCESSENTRY32W row;TOKEN_STATISTICS stats;DWORD bytes,error=0;BOOL more;
+    list=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);if(list==INVALID_HANDLE_VALUE)return FALSE;
+    row.dwSize=sizeof(row);more=Process32FirstW(list,&row);
+    if(!more){error=GetLastError();CloseHandle(list);SetLastError(error);return FALSE;}
+    do{
+        /* NT 5.1 Idle/System and our own SYSTEM host are not user processes. */
+        if(!row.th32ProcessID||row.th32ProcessID==4||row.th32ProcessID==GetCurrentProcessId())continue;
+        process=OpenProcess(PROCESS_QUERY_INFORMATION|SYNCHRONIZE,FALSE,row.th32ProcessID);
+        if(!process){error=GetLastError();if(error==ERROR_INVALID_PARAMETER){error=0;continue;}break;}
+        if(WaitForSingleObject(process,0)==WAIT_OBJECT_0){CloseHandle(process);continue;}
+        token=NULL;
+        if(!OpenProcessToken(process,TOKEN_QUERY,&token)||!GetTokenInformation(token,TokenStatistics,&stats,sizeof(stats),&bytes)){
+            error=GetLastError();if(token)CloseHandle(token);CloseHandle(process);break;
+        }
+        CloseHandle(token);CloseHandle(process);
+        if(stats.AuthenticationId.LowPart==wl.authentication_id.LowPart&&stats.AuthenticationId.HighPart==wl.authentication_id.HighPart){
+            error=ERROR_BUSY;break;
+        }
+    }while(Process32NextW(list,&row));
+    if(!error){error=GetLastError();if(error==ERROR_NO_MORE_FILES)error=0;}
+    CloseHandle(list);SetLastError(error);return error==0;
+}
+static unsigned long native_end_processes(void *context)
+{
+    BOOL result;DWORD error;UNREFERENCED_PARAMETER(context);
+    if(!ImpersonateLoggedOnUser(wl.token))return GetLastError();
+    /* Supplied USER/Csr code uses this thread's impersonation LUID, recognizes
+       the registered Winlogon PID, and performs normal end-session processing. */
+    result=ExitWindowsEx(EWX_LOGOFF,0);error=result?0:GetLastError();
+    if(!RevertToSelf())wl_fail("session_logoff_revert_failed",GetLastError());
+    if(!result)return error?error:ERROR_CANCELLED;
+    if(!no_user_processes())return GetLastError();
+    return native_error(wl_clear_user_security());
+}
+static unsigned long native_release(void *context)
+{
+    UNREFERENCED_PARAMETER(context);
+    if(!wl_notifications_wait_user())return GetLastError();
+    wl.gina.logoff(wl.gina_context);wl_free_gina_result();
+    if(!wl_session_end())return GetLastError();
+    if(wl.token){if(!CloseHandle(wl.token))return GetLastError();wl.token=NULL;}
+    ZeroMemory(&wl.authentication_id,sizeof(wl.authentication_id));SecureZeroMemory(wl.logon_sid,sizeof(wl.logon_sid));return 0;
+}
+static unsigned long native_power(void *context,unsigned mode)
+{
+    LONG (NTAPI *shutdown)(int);LONG status;UNREFERENCED_PARAMETER(context);
+    shutdown=(LONG(NTAPI*)(int))GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"NtShutdownSystem");
+    if(!shutdown)return ERROR_PROC_NOT_FOUND;
+    wl.gina.shutdown(wl.gina_context,mode?WLX_SAS_ACTION_SHUTDOWN_REBOOT:WLX_SAS_ACTION_SHUTDOWN_POWER_OFF);
+    /* First let USER/Csr/SCM finish system end-session processing. An API
+       request alone is not recorded as successful hardware shutdown. */
+    if(!ExitWindowsEx(EWX_SHUTDOWN,0))return GetLastError();
+    wl_log("native_power_system_processes_released",mode);
+    status=shutdown(mode?1:2); /* supplied NT SHUTDOWN_ACTION: reboot / poweroff */
+    return status<0?LsaNtStatusToWinError(status):0;
+}
+static const WL_SESSION_DRIVER native_driver={native_user,native_profile,native_policy,native_copy,native_discard,
+    native_secure,native_protect,native_activate,native_shell,native_desktop,native_notify,
+    native_end_processes,native_release,native_power};
+
 BOOL wl_session_start(void)
 {
-    PVOID shell_environment;DWORD shell_pid,error;
-    if(!prepare_profile()||!record_token()){wl_log("session_preparation_failed",GetLastError());return FALSE;}
-    if(!wl_session_policy())return FALSE;
-    shell_environment=copy_shell_environment();if(!shell_environment)return FALSE;
-    if(!wl_switch_secure()||!wl_apply_user_security(wl.token)){
-        error=GetLastError();VirtualFree(shell_environment,0,MEM_RELEASE);
-        /* Desktop ACL assignment can have partially completed. Retain the
-           session instead of returning to authentication with stale grants. */
-        wl_fail("shell_security_setup_failed",error);
-    }
-    /* GINA receives its own virtual allocation and can resize/free it. The
-       host retains wl.environment. Never give both owners the same block. */
-    if(!wl.gina.activate_shell(wl.gina_context,L"WinSta0\\Default",NULL,shell_environment))
-        wl_fail("user_shell_activation_failed",GetLastError());
-    wl_log("user_shell_activation_success",0);
-    /* GINA can start userinit without an Explorer desktop. Confirm the real
-       shell window, image path, primary token, LUID, logon SID and session. */
-    if(!wl_wait_user_shell(&shell_pid))wl_fail("user_shell_identity_failed",GetLastError());
-    if(!wl_switch_user())wl_fail("desktop_switch_failed",GetLastError());
-    wl_log("desktop_switched_to_user",0);
-    if(!wl_state_step(&wl.machine,WlShellReady,WL_SHELL_USER|WL_USER_ACTIVE))
-        wl_fail("session_state_transition_failed",ERROR_INVALID_STATE);
+    BOOL result;wl_engine_bind(&session_engine,&wl.machine,&native_driver,&wl);
+    wl.in_gina=TRUE;result=wl_engine_start(&session_engine);wl.in_gina=FALSE;
+    if(!result){SetLastError(session_engine.error);wl_log("session_engine_start_operation",session_engine.operation);return FALSE;}
     wl_log("session_interactive",shell_pid);return TRUE;
+}
+BOOL wl_session_abort(void)
+{
+    BOOL result=wl_engine_abort(&session_engine);
+    if(!result)SetLastError(session_engine.error);return result;
+}
+BOOL wl_session_lock(void)
+{
+    BOOL result;
+    if(!wl.gina.lock_ok(wl.gina_context)){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
+    result=wl_engine_lock(&session_engine);if(!result)SetLastError(session_engine.error);return result;
+}
+BOOL wl_session_unlock(void)
+{BOOL result=wl_engine_unlock(&session_engine,1);if(!result)SetLastError(session_engine.error);return result;}
+BOOL wl_session_logoff(void)
+{
+    BOOL result;
+    if(!wl.gina.logoff_ok(wl.gina_context)){SetLastError(ERROR_CANCELLED);return FALSE;}
+    wl.in_gina=TRUE;result=wl_engine_logoff(&session_engine);wl.in_gina=FALSE;
+    if(!result)SetLastError(session_engine.error);return result;
+}
+BOOL wl_session_power(unsigned mode)
+{
+    BOOL result;
+    if(!session_engine.driver)wl_engine_bind(&session_engine,&wl.machine,&native_driver,&wl);
+    result=wl_engine_power(&session_engine,mode);if(!result)SetLastError(session_engine.error);return result;
 }
 BOOL wl_session_end(void)
 {

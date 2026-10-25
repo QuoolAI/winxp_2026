@@ -38,5 +38,38 @@ class WinlogonCoreTests(unittest.TestCase):
         self.assertIn('cases=24', self.compile_and_run('winlogon_environment', 'environment.c'))
 
 
+class SessionEngineTests(unittest.TestCase):
+    def compiler(self):
+        compiler = shutil.which('cc')
+        if not compiler:
+            self.skipTest('host C compiler unavailable')
+        return compiler
+
+    def test_real_coordinator_with_explicit_drivers_and_failure_cleanup(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work') as directory:
+            binary = Path(directory) / 'session-tests'
+            command = [self.compiler(), '-std=c89', '-pedantic', '-Wall', '-Wextra',
+                       '-Werror', '-DXP25_SESSION_TEST=1', '-I',
+                       str(ROOT / 'components/winlogon'), str(ROOT / 'tests/winlogon_session.c')]
+            command += [str(ROOT / 'components/winlogon' / name)
+                        for name in ('session_engine.c', 'policy.c', 'state.c')]
+            subprocess.run(command + ['-o', str(binary)], check=True, capture_output=True)
+            run = subprocess.run([str(binary)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn('XP25_SESSION_TEST_ONLY cases=', run.stdout)
+            self.assertIn('failures=0', run.stdout)
+
+    def test_production_compilation_rejects_test_driver_mode(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work') as directory:
+            run = subprocess.run([self.compiler(), '-std=c89',
+                '-DXP25_PRODUCTION_WINLOGON=1', '-DXP25_SESSION_TEST=1',
+                '-I', str(ROOT / 'components/winlogon'), '-c',
+                str(ROOT / 'components/winlogon/session_engine.c'), '-o',
+                str(Path(directory) / 'forbidden.o')], capture_output=True, text=True)
+            self.assertNotEqual(run.returncode, 0)
+            self.assertIn('Test session drivers cannot be compiled into production Winlogon', run.stderr)
+            self.assertFalse((Path(directory) / 'forbidden.o').exists())
+
+
 if __name__ == '__main__':
     unittest.main()

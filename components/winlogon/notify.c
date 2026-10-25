@@ -137,7 +137,7 @@ BOOL wl_notify(LPCWSTR event)
         }
         job->info.WindowStation=L"WinSta0";job->info.hDesktop=wl.machine.phase==WlInteractive?wl.application:wl.secure;
         job->info.pStatusCallback=status_message;wl_log(entry,0);
-        if(async&&lstrcmpW(event,L"Logoff")!=0){
+        if(async&&lstrcmpW(event,L"Logoff")!=0&&lstrcmpW(event,L"Shutdown")!=0){
             job->thread=CreateThread(NULL,0,notify_worker,job,0,NULL);
             if(!job->thread){error=GetLastError();release_job(job);break;}
             job->next=jobs;jobs=job;
