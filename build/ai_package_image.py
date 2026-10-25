@@ -42,7 +42,21 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     image = out / 'XP25-AI-Engineering.qcow2'
     source_sha = sha(disk)
-    subprocess.run(['qemu-img', 'convert', '-O', 'qcow2', str(disk), str(image)], check=True)
+    base = Path(inputs['base'])
+    base_info = json.loads(subprocess.check_output(['qemu-img', 'info', '--output=json', str(base)]))
+    if 'backing-filename' in base_info or sha(base) != inputs['base_sha256']:
+        raise SystemExit('the reference base must be the unchanged standalone image')
+    # Space-efficient flattening on a copy-on-write volume: a reflink copy of the
+    # standalone reference receives the install run's changed clusters through a
+    # reflinked copy of the frozen overlay; neither original file is written.
+    subprocess.run(['cp', '--reflink=always', str(base), str(image)], check=True)
+    image.chmod(0o644)
+    staging = out / 'install-overlay-copy.qcow2'
+    subprocess.run(['cp', '--reflink=always', str(disk), str(staging)], check=True)
+    staging.chmod(0o644)
+    subprocess.run(['qemu-img', 'rebase', '-u', '-F', 'qcow2', '-b', str(image), str(staging)], check=True)
+    subprocess.run(['qemu-img', 'commit', str(staging)], check=True, capture_output=True)
+    staging.unlink()
     compare = subprocess.run(['qemu-img', 'compare', str(disk), str(image)], capture_output=True, text=True)
     (out / 'sector-compare.log').write_text(compare.stdout + compare.stderr)
     check = subprocess.run(['qemu-img', 'check', str(image)], capture_output=True, text=True)

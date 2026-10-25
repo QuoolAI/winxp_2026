@@ -125,17 +125,30 @@ static void settings_read(HWND dlg, XP25_CONFIG *c)
     c->ai_query_interpretation = IsDlgButtonChecked(dlg, IDC_ST_ROVERAI) == BST_CHECKED;
 }
 
-static void store_secret(HWND dlg, int id, const WCHAR *name)
+/* Returns 0 and reports the Windows error in the dialog when the key cannot be protected. */
+static int store_secret(HWND dlg, int id, const WCHAR *name)
 {
     WCHAR w[600];
     char u[1800];
+    int ok;
     GetDlgItemTextW(dlg, id, w, 600);
-    if (!w[0]) return;              /* blank keeps the stored value */
+    if (!w[0]) return 1;              /* blank keeps the stored value */
     xp25w_copy_utf8(u, sizeof(u), w);
-    xp25w_secret_set(name, (const unsigned char *)u, (DWORD)strlen(u));
+    ok = xp25w_secret_set(name, (const unsigned char *)u, (DWORD)strlen(u));
+    if (!ok) {
+        DWORD error = GetLastError();
+        XP25_BUF b;
+        xp25_buf_init(&b);
+        xp25_buf_puts(&b, "The key could not be protected by Windows (Data Protection error ");
+        xp25_buf_u64(&b, error);
+        xp25_buf_puts(&b, "). It was not saved.");
+        set_text(dlg, IDC_ST_RESULT, xp25_buf_cstr(&b));
+        xp25_buf_free(&b);
+    }
     xp25w_wipe(u, sizeof(u));
     xp25w_wipe(w, sizeof(w));
-    SetDlgItemTextW(dlg, id, L"");
+    if (ok) SetDlgItemTextW(dlg, id, L"");
+    return ok;
 }
 
 static INT_PTR CALLBACK settings_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
@@ -180,8 +193,10 @@ static INT_PTR CALLBACK settings_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         char reason[300];
         HCURSOR old = SetCursor(LoadCursor(NULL, IDC_WAIT));
         settings_read(dlg, &test);
-        store_secret(dlg, IDC_ST_SECRET, L"GatewaySecret");
-        store_secret(dlg, IDC_ST_KEY, L"LocalApiKey");
+        if (!store_secret(dlg, IDC_ST_SECRET, L"GatewaySecret") || !store_secret(dlg, IDC_ST_KEY, L"LocalApiKey")) {
+            SetCursor(old);
+            return TRUE;
+        }
         p = xp25w_provider_create(&test, reason, sizeof(reason));
         if (!p) set_text(dlg, IDC_ST_RESULT, reason);
         else {
@@ -210,9 +225,9 @@ static INT_PTR CALLBACK settings_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         return TRUE;
     }
     case IDOK:
+        if (!store_secret(dlg, IDC_ST_SECRET, L"GatewaySecret") || !store_secret(dlg, IDC_ST_KEY, L"LocalApiKey"))
+            return TRUE;                /* keep the dialog open with the reason shown */
         settings_read(dlg, &g_app.config);
-        store_secret(dlg, IDC_ST_SECRET, L"GatewaySecret");
-        store_secret(dlg, IDC_ST_KEY, L"LocalApiKey");
         xp25w_config_save(&g_app.config);
         app_autostart(1, IsDlgButtonChecked(dlg, IDC_ST_AUTOSTART) == BST_CHECKED);
         EndDialog(dlg, 1);

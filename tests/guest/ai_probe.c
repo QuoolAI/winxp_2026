@@ -2,13 +2,16 @@
    the RoverAI Explorer bar through their real windows, dialogs and command
    lines, and reports one JSON record per case to COM1 and C:\xp25\ai.
    No C runtime. Usage: ai_probe.exe suite [slow] | ai_probe.exe burn |
-   ai_probe.exe provider <secret> [slow]. Exit code = failed cases. */
+   ai_probe.exe provider <secret> [slow] | ai_probe.exe dpapi | ai_probe.exe cpu.
+   Exit code = failed cases. */
 #define WINVER 0x0501
 #define _WIN32_WINNT 0x0501
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
+#include <wincrypt.h>
+#include <wincred.h>
 
 #define APP L"C:\\Program Files\\XP25"
 #define WORK L"C:\\xp25\\ai"
@@ -26,6 +29,7 @@
 #define IDC_ST_MODEL 2204
 #define IDC_ST_CLIENT 2205
 #define IDC_ST_SECRET 2206
+#define IDC_ST_RESULT 2214
 #define IDC_RV_QUERY 4002
 #define IDC_RV_GO 4003
 #define IDC_RV_SCOPE 4004
@@ -278,7 +282,8 @@ static void section_rover_cli(void)
     wsprintfW(line, L"\"%s\\RoverAI.exe\" /index /out \"%s\\index-2.json\"", APP, WORK);
     code = run(line, 900000);
     json = slurp(WORK L"\\index-2.json");
-    report("rover_incremental_update", code == 0 && json && find_a(json, "\"added\":") && !find_a(json, "\"removed\":0,"), "");
+    /* The background indexer may already have saved these changes; the rescan must succeed and save. */
+    report("rover_incremental_update", code == 0 && json && find_a(json, "\"ok\":true"), "");
     if (json) HeapFree(GetProcessHeap(), 0, json);
     search_cli("rover_rename_reflected", L"house-notes", "house-notes.txt", "home-notes.txt", NULL);
     search_cli("rover_delete_reflected", L"small-clip", NULL, "small-clip.wmv", NULL);
@@ -286,21 +291,38 @@ static void section_rover_cli(void)
 }
 
 /* Real-time updates from the RoverAI background indexer (ReadDirectoryChangesW):
-   the CLI searches below load the saved index without rescanning. */
+   the CLI searches load the saved index without rescanning; the measured
+   delay until the change is visible is reported. */
+static BOOL watch_until(const char *name, const WCHAR *query, const char *expect, const char *absent)
+{
+    WCHAR line[1200], out[MAX_PATH];
+    char *json, detail[120];
+    DWORD t0 = GetTickCount();
+    BOOL ok = FALSE;
+    wsprintfW(out, L"%s\\watch-%S.json", WORK, name);
+    wsprintfW(line, L"\"%s\\RoverAI.exe\" /search \"%s\" /limit 50 /out \"%s\"", APP, query, out);
+    do {
+        Sleep(2000);
+        json = run(line, 240000) == 0 ? slurp(out) : NULL;
+        ok = json && find_a(json, "\"ok\":true") && (!expect || find_a(json, expect)) && (!absent || !find_a(json, absent));
+        if (json) HeapFree(GetProcessHeap(), 0, json);
+    } while (!ok && GetTickCount() - t0 < 90000 * scale);
+    wsprintfA(detail, "visible after %lu ms", GetTickCount() - t0);
+    report(name, ok, detail);
+    return ok;
+}
+
 static void section_watcher(void)
 {
     WCHAR a[MAX_PATH], b[MAX_PATH];
     fx(a, L"watch-me-xp25.txt");
     fx(b, L"watched-renamed-xp25.txt");
     write_text(a, "watcher fixture\r\n");
-    Sleep(12000 * scale);
-    search_cli("rover_watcher_sees_new_file", L"watch-me-xp25", "watch-me-xp25.txt", NULL, NULL);
+    watch_until("rover_watcher_sees_new_file", L"watch-me-xp25", "watch-me-xp25.txt", NULL);
     MoveFileW(a, b);
-    Sleep(12000 * scale);
-    search_cli("rover_watcher_sees_rename", L"watched-renamed-xp25", "watched-renamed-xp25.txt", "watch-me-xp25.txt", NULL);
+    watch_until("rover_watcher_sees_rename", L"watched-renamed-xp25", "watched-renamed-xp25.txt", "watch-me-xp25.txt");
     DeleteFileW(b);
-    Sleep(12000 * scale);
-    search_cli("rover_watcher_sees_delete", L"watched-renamed-xp25", NULL, "watched-renamed-xp25.txt", NULL);
+    watch_until("rover_watcher_sees_delete", L"watched-renamed-xp25", NULL, "watched-renamed-xp25.txt");
 }
 
 typedef struct { const WCHAR *cls; HWND found; DWORD pid; } FINDER;
@@ -505,6 +527,9 @@ static void section_explorer(void)
         while (!(panel = descendant(cabinet, L"XP25RoverAIPanel")) && GetTickCount() - t0 < 20000 * scale) Sleep(300);
         note("explorer_f3", panel ? "RoverAI panel shown" : "no RoverAI panel");
     }
+    /* Explorer creates the band hidden and shows it with ShowDW; wait for that. */
+    t0 = GetTickCount();
+    while (panel && !IsWindowVisible(panel) && GetTickCount() - t0 < 20000 * scale) Sleep(300);
     report("explorer_search_opens_roverai", panel != NULL && IsWindowVisible(panel), "");
     if (panel) {
         put_text(panel, IDC_RV_QUERY, L"report-q3");
@@ -551,6 +576,24 @@ static BOOL wait_chat(const WCHAR *needle, DWORD ms)
         Sleep(500);
     } while (GetTickCount() - t0 < ms * scale);
     return FALSE;
+}
+
+/* Note the first transcript line containing needle after the latest anchor. */
+static void note_chat_line(const char *name, const WCHAR *anchor, const WCHAR *needle)
+{
+    const WCHAR *p, *from = NULL, *hit;
+    WCHAR line[300];
+    char detail[300];
+    int i;
+    chat_text(chat_buffer, CHAT_CHARS);
+    for (p = chat_buffer; (p = find_w(p, anchor)) != NULL; ++p) from = p;
+    hit = from ? find_w(from, needle) : NULL;
+    if (!hit) { note(name, "not in transcript"); return; }
+    while (hit > chat_buffer && hit[-1] != L'\n') --hit;
+    for (i = 0; i < 299 && hit[i] && hit[i] != L'\r' && hit[i] != L'\n'; ++i) line[i] = hit[i];
+    line[i] = 0;
+    plain(detail, sizeof(detail), line);
+    note(name, detail);
 }
 
 static int chat_count(const WCHAR *needle)
@@ -646,6 +689,62 @@ static DWORD WINAPI burn_thread(void *p)
     return x;
 }
 
+static ULONGLONG ft(const FILETIME *f) { return ((ULONGLONG)f->dwHighDateTime << 32) | f->dwLowDateTime; }
+
+/* One 1.5 s sample of a process, computed like the process_list tool
+   (process time over GetTickCount wall time and all processors). */
+static void sample_note(const char *name, HANDLE process, const char *label)
+{
+    FILETIME c, e, k1, u1, k2, u2, i1, sk1, su1, i2, sk2, su2;
+    SYSTEM_INFO si;
+    DWORD t1, t2, wall;
+    ULONGLONG proc, idle, total;
+    char detail[220];
+    GetSystemInfo(&si);
+    GetProcessTimes(process, &c, &e, &k1, &u1);
+    GetSystemTimes(&i1, &sk1, &su1);
+    t1 = GetTickCount();
+    Sleep(1500);
+    t2 = GetTickCount();
+    GetProcessTimes(process, &c, &e, &k2, &u2);
+    GetSystemTimes(&i2, &sk2, &su2);
+    wall = t2 - t1 ? t2 - t1 : 1;
+    proc = ft(&k2) + ft(&u2) - ft(&k1) - ft(&u1);
+    idle = ft(&i2) - ft(&i1);
+    total = ft(&sk2) + ft(&su2) - ft(&sk1) - ft(&su1);
+    wsprintfA(detail, "%s: wall %lu ms, process %lu ms = %lu%% of %lu processors, system busy %lu%%", label, wall,
+              (DWORD)(proc / 10000), (DWORD)(proc / 100 / ((ULONGLONG)wall * si.dwNumberOfProcessors)),
+              si.dwNumberOfProcessors, total ? (DWORD)(100 - idle * 100 / total) : 0);
+    note(name, detail);
+}
+
+/* Diagnostic mode "cpu": how one busy thread is accounted on this guest,
+   unpinned and then pinned to each processor. Notes only. */
+static void section_cpu(void)
+{
+    WCHAR self[MAX_PATH], line[MAX_PATH + 16];
+    SYSTEM_INFO si;
+    HANDLE hog;
+    DWORD pass, round;
+    char label[40];
+    GetSystemInfo(&si);
+    GetModuleFileNameW(NULL, self, MAX_PATH);
+    wsprintfW(line, L"\"%s\" burn", self);
+    hog = start(line, NULL);
+    if (!hog) { note("cpu_sample", "burn child did not start"); return; }
+    Sleep(2000);
+    for (pass = 0; pass <= si.dwNumberOfProcessors && pass <= 2; ++pass) {
+        if (pass && !SetProcessAffinityMask(hog, (DWORD_PTR)1 << (pass - 1))) continue;
+        Sleep(1000);
+        for (round = 0; round < 4; ++round) {
+            wsprintfA(label, "%s round %lu", !pass ? "unpinned" : pass == 1 ? "pinned CPU0" : "pinned CPU1", round + 1);
+            sample_note("cpu_sample", hog, label);
+        }
+    }
+    TerminateProcess(hog, 0);
+    CloseHandle(hog);
+}
+
 static void section_slow(void)
 {
     WCHAR line[600], command[1000];
@@ -658,6 +757,7 @@ static void section_slow(void)
     report("slow_fixture_started", hog != NULL, "");
     if (!hog) return;
     Sleep(4000);
+    sample_note("slow_hog_sample", hog, "before asking");
     ask(L"My computer is running slowly. Fix it.");
     report("slow_workflow_proposes_fix", approval(TRUE, command, 1000, 120000) && find_w(command, L"ai_cpuhog.exe") != NULL, "");
     plain(detail, sizeof(detail), command);
@@ -667,6 +767,9 @@ static void section_slow(void)
     report("slow_workflow_used_real_tools", wait_chat(L"system_info: completed", 1000) && wait_chat(L"process_list: completed", 1000) &&
            wait_chat(L"eventlog_read: completed", 1000) && wait_chat(L"disk_diagnostics: completed", 1000) &&
            wait_chat(L"process_control: completed", 1000), "");
+    note_chat_line("slow_processor", L"I checked this computer's processor", L"% busy");
+    note_chat_line("slow_hog_measured", L"I checked this computer's processor", L"ai_cpuhog.exe (PID");
+    note_chat_line("slow_likely_cause", L"I checked this computer's processor", L"Likely cause:");
     TerminateProcess(hog, 0);
     CloseHandle(hog);
     wait_idle(30000);
@@ -740,7 +843,63 @@ static BOOL configure(int provider, const WCHAR *endpoint, const WCHAR *secret)
     }
     PostMessageW(dlg, WM_COMMAND, IDOK, 0);
     Sleep(1500);
-    return !IsWindow(dlg);
+    if (IsWindow(dlg)) {
+        WCHAR why[400];
+        char detail[400];
+        take_text(dlg, IDC_ST_RESULT, why, 400);
+        plain(detail, sizeof(detail), why);
+        note("settings_not_accepted", detail);
+        PostMessageW(dlg, WM_COMMAND, IDCANCEL, 0);
+        Sleep(500);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* DPAPI in this logon session, as ClippyAI uses it. */
+static void section_dpapi(void)
+{
+    static const char entropy_text[] = "XP25-Agent-Protected-v1";
+    DATA_BLOB in, out, entropy, back;
+    char detail[160];
+    BOOL protect, unprotect = FALSE;
+    in.pbData = (BYTE *)"probe-secret";
+    in.cbData = 12;
+    entropy.pbData = (BYTE *)entropy_text;
+    entropy.cbData = sizeof(entropy_text) - 1;
+    protect = CryptProtectData(&in, L"probe", &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out);
+    wsprintfA(detail, "protect %d error %lu", protect, protect ? 0 : GetLastError());
+    if (protect) {
+        unprotect = CryptUnprotectData(&out, NULL, &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &back);
+        wsprintfA(detail + lstrlenA(detail), " unprotect %d error %lu", unprotect, unprotect ? 0 : GetLastError());
+        if (unprotect) LocalFree(back.pbData);
+        LocalFree(out.pbData);
+    }
+    note(protect && unprotect ? "dpapi_round_trip_ok" : "dpapi_round_trip_failed", detail);
+    protect = CryptProtectData(&in, NULL, NULL, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN | CRYPTPROTECT_LOCAL_MACHINE, &out);
+    wsprintfA(detail, "machine scope protect %d error %lu", protect, protect ? 0 : GetLastError());
+    if (protect) LocalFree(out.pbData);
+    note("dpapi_machine_scope", detail);
+    {
+        CREDENTIALW cred, *read = NULL;
+        BOOL wrote, got = FALSE;
+        zero(&cred, sizeof(cred));
+        cred.Type = CRED_TYPE_GENERIC;
+        cred.TargetName = L"XP25AI-probe";
+        cred.CredentialBlobSize = 12;
+        cred.CredentialBlob = (BYTE *)"probe-secret";
+        cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
+        cred.UserName = L"xp25";
+        wrote = CredWriteW(&cred, 0);
+        wsprintfA(detail, "credwrite %d error %lu", wrote, wrote ? 0 : GetLastError());
+        if (wrote) {
+            got = CredReadW(L"XP25AI-probe", CRED_TYPE_GENERIC, 0, &read);
+            wsprintfA(detail + lstrlenA(detail), " credread %d error %lu", got, got ? 0 : GetLastError());
+            if (got) CredFree(read);
+            CredDeleteW(L"XP25AI-probe", CRED_TYPE_GENERIC, 0);
+        }
+        note("credential_manager", detail);
+    }
 }
 
 static void section_provider(const WCHAR *secret)
@@ -791,10 +950,12 @@ void WINAPI ProbeMain(void)
     cat(fixtures, docs, L"\\XP25AI-Fixtures");
     if ((arg2 && !lstrcmpiW(arg2, L"slow")) || (arg3 && !lstrcmpiW(arg3, L"slow"))) scale = 4;
     emit("AI_PROBE_STARTED\r\n");
-    if (mode && !lstrcmpiW(mode, L"provider") && arg2) {
+    if (mode && !lstrcmpiW(mode, L"cpu")) section_cpu();
+    else if (mode && !lstrcmpiW(mode, L"dpapi")) section_dpapi();
+    else if (mode && !lstrcmpiW(mode, L"provider") && arg2) {
         clippy = wait_window(L"XP25ClippyAI", L"ClippyAI", 30000);
         if (!clippy) report("provider_clippy_running", FALSE, "");
-        else section_provider(arg2);
+        else { section_dpapi(); section_provider(arg2); }
     } else {
         section_fixtures();
         section_rover_cli();

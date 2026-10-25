@@ -8,6 +8,7 @@
 typedef struct {
     unsigned long self_pid;      /* the assistant's own process is never proposed */
     int cpu_threshold;           /* percent of all CPUs that marks a runaway process */
+    int cpu_single_threshold;    /* percent of one CPU: a single-threaded runaway on a multiprocessor */
     int memory_threshold;        /* system memory load percent that triggers memory advice */
     int disk_free_threshold;     /* percent free on the system drive */
 } XP25_OFFLINE;

@@ -237,7 +237,7 @@ def main():
                                 '-nostdlib', '-D_WIN32_WINNT=0x0501', '-Wl,--entry,_ProbeMain@0', '-Wl,--subsystem,console:5.1',
                                 '-Wl,--major-os-version,5,--minor-os-version,1', '-Wl,--no-insert-timestamp',
                                 '-Wl,--disable-dynamicbase', str(src), '-o', str(probe), '-lkernel32', '-luser32',
-                                '-ladvapi32', '-lshell32', '-lgcc'], check=True, stdout=f, stderr=subprocess.STDOUT, env=env)
+                                '-ladvapi32', '-lshell32', '-lcrypt32', '-lgcc'], check=True, stdout=f, stderr=subprocess.STDOUT, env=env)
             result['targets']['ai_probe.exe'] = {'sha256': digest(probe), 'imports': verify(objdump, probe, {}),
                                                  'source_sha256': digest(src)}
         result['status'] = 'compiled_static_checks_passed'

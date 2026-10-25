@@ -24,8 +24,16 @@ int rover_store_file(const XP25W_PATHS *paths, WCHAR *out);
 int rover_store_load(ROVER_INDEX *index, const XP25W_PATHS *paths, char *error, size_t size);
 int rover_store_save(const ROVER_INDEX *index, const XP25W_PATHS *paths);
 /* Load the saved index, rescan incrementally when it is older than
-   max_age_seconds (0 forces a rescan), save, and return 1 on success. */
+   max_age_seconds (0 forces a rescan) and no background indexer is watching
+   every root, save, and return 1 on success. Scans and saves only while
+   owning the store; when another process holds it (for more than 2 s, or
+   10 minutes for a forced rescan) the last saved index is used as is. */
 int rover_store_refresh(ROVER_INDEX *index, ROVER_SETTINGS *s, unsigned long max_age_seconds, ROVER_SCAN_STATS *stats);
+/* Background indexer start, with watchers already running and lock held by
+   the caller: reconcile index with the file system when older than
+   max_age_seconds and save, so that changes seen meanwhile apply after it. */
+int rover_store_reconcile(ROVER_INDEX *index, ROVER_SETTINGS *s, CRITICAL_SECTION *lock, unsigned long max_age_seconds,
+                          ROVER_SCAN_STATS *stats);
 
 typedef struct ROVER_WATCH ROVER_WATCH;
 /* Watch every root with ReadDirectoryChangesW and apply renames, moves,

@@ -3,12 +3,21 @@
 ## Current checkpoint
 
 2026-10-25, Milestone 6 (branch `xp25-ai`): **ClippyAI, RoverAI and the shared
-XP25 agent runtime are implemented and pass offline guest acceptance; the
-OpenAI-gateway path in the guest is blocked by an open key-storage defect.**
-Native `/W4 /WX` build 04 passes 55/55 main cases under two-vCPU KVM and
-53/55 under one-vCPU KVM on the accepted engineering image (original Winlogon),
-with the full established regression suite at exit 0 and guest-requested
-shutdown. TCG, the verified QCOW2 and a real OpenAI call are not complete.
+XP25 agent runtime pass guest acceptance under KVM (1 and 2 vCPUs) and TCG,
+and the experimental QCOW2 is verified.** Native `/W4 /WX` build 10 passes
+62/62 guest cases in each mode on the accepted engineering image (original
+Winlogon, native Explorer and UserEnv): desktop, Explorer Search redirect,
+RoverAI index/watcher/search, ClippyAI tools, approvals and troubleshooting
+workflow, and OpenAI Responses requests through the authenticated gateway to a
+test double. The full established regression suite exits 0 and every run ends
+with a guest-requested shutdown. `XP25-AI-Engineering.qcow2` (SHA-256
+`ec22f45b67af19f584eb6ca0a286e943731298543aa1b910eab6ff42674bee2a`) boots
+independently and passes the same 62 cases. Guest runs of builds 04–08 found
+and fixed: user-scope DPAPI error 1783 on the engineering images (keys now go
+to Credential Manager), share consent asked for earlier offline results, two
+index-store races including a stale overwrite by the background indexer, and
+a runaway-process rule that missed single-threaded loops on multiprocessors.
+No real OpenAI call was made (no key or uplink in the isolated lab).
 [Architecture, security model, evidence, failures and limits](xp25-ai-clippyai-roverai.md)
 
 The following entry describes the Winlogon checkpoint this branch is based on.

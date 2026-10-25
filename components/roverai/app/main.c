@@ -134,9 +134,13 @@ static int background(void)
     xp25w_config_load(&config);
     if (!rover_settings_init(&settings, &config, &paths)) return 2;
     rover_index_init(&index);
-    rover_store_refresh(&index, &settings, 300, &stats);
     InitializeCriticalSection(&lock);
+    /* Watch before reconciling: changes made during the reconcile queue behind
+       the lock and apply after it, and no watcher saves a partial index. */
+    EnterCriticalSection(&lock);
     watch = rover_watch_start(&settings, &index, &lock);
+    rover_store_reconcile(&index, &settings, &lock, 300, &stats);
+    LeaveCriticalSection(&lock);
     /* Message loop so logoff (WM_QUIT/end session) ends the indexer cleanly. */
     while (GetMessageW(&msg, NULL, 0, 0) > 0) DispatchMessageW(&msg);
     rover_watch_stop(watch);

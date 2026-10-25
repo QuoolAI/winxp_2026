@@ -81,7 +81,7 @@ BEGIN
     EDITTEXT IDC_ST_SECRET, 75, 92, 238, 12, ES_PASSWORD | ES_AUTOHSCROLL
     LTEXT "Local API key:", -1, 7, 111, 66, 8
     EDITTEXT IDC_ST_KEY, 75, 109, 238, 12, ES_PASSWORD | ES_AUTOHSCROLL
-    LTEXT "Secrets are protected with Windows Data Protection for your account. Leave blank to keep the saved value.", -1, 75, 123, 238, 16
+    LTEXT "Keys are protected for your account by Windows (Data Protection, or Credential Manager). Leave blank to keep the saved value.", -1, 75, 123, 238, 16
     LTEXT "Timeout (s):", -1, 7, 144, 60, 8
     EDITTEXT IDC_ST_TIMEOUT, 75, 142, 40, 12, ES_NUMBER
     LTEXT "Retries:", -1, 130, 144, 36, 8

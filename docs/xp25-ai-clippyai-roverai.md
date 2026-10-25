@@ -9,27 +9,30 @@ Winlogon, native Explorer and native UserEnv**
 experimental Winlogon. Private evidence is under `.work/ai-20261025/` (`W`) and
 build-VM runs under `.work/boot-debug-20261022/` (`B`) of this worktree.
 
-**Status: implemented and guest-verified offline; milestone not yet fully
-accepted.** Native NT-toolchain build 04 of all five binaries passes `/W4 /WX`.
+**Status: implemented and guest-verified, including a verified experimental
+QCOW2.** Native NT-toolchain build 10 of all five binaries passes `/W4 /WX`.
 On the accepted engineering image, with the components installed by their own
-installer, the native binaries pass **55/55 main guest cases under two-vCPU
-KVM** and **53/55 under one-vCPU KVM**, and the complete established regression
-suite (standard, pointer, session, network, service, Regsvc, GINA, UserEnv,
-branding, MSI, shell, profile probes) exits 0 in every run, followed by a
-guest-requested shutdown. **Open defect:** the gateway key entered in ClippyAI
-Settings is never stored (no `HKCU\Software\XP25\Agent\Protected` value is
-created, also with real keystrokes; Protected Storage is running), so the
-OpenAI-via-gateway guest cases (4) fail; the gateway itself passes its host
-interop tests. TCG run, verified QCOW2 and the fixes listed under *Pending*
-are not complete.
+installer, the native binaries pass **62/62 guest cases under one-vCPU KVM,
+two-vCPU KVM and TCG** (55 desktop cases plus 7 OpenAI-via-gateway cases).
+The complete established regression suite (standard, pointer, session,
+network, service, Regsvc, GINA, UserEnv, branding, MSI, shell, profile probes)
+exits 0 in every run, and every run ends with a guest-requested shutdown
+(`SHUTDOWN guest=true reason=guest-shutdown`). The packaged image
+`XP25-AI-Engineering.qcow2` (SHA-256
+`ec22f45b67af19f584eb6ca0a286e943731298543aa1b910eab6ff42674bee2a`) boots
+independently and passes the same 62 cases. **Not done:** no call to the real
+OpenAI service was made (no key and no uplink in the isolated lab; the
+Responses-API path was exercised through the real gateway against a test
+double). User-scope DPAPI fails on these images (error 1783, see *Secrets*);
+ClippyAI stores keys through Credential Manager instead.
 
 ## Architecture
 
 ```text
 components/
-├── xp25-agent/          shared runtime, built as xp25agent.dll (176 exports)
+├── xp25-agent/          shared runtime, built as xp25agent.dll (178 exports)
 │   ├── runtime/         C89 core: buffers, JSON, agent loop, tool registry contract;
-│   │                    native: paths, config, DPAPI secrets, audit log, MS Agent characters
+│   │                    native: paths, config, protected secrets, audit log, MS Agent characters
 │   ├── llm/             Responses + Chat Completions codecs, gateway HMAC, SHA-256,
 │   │                    offline planner (C89); HTTP/1.1 client and providers (native)
 │   ├── tools/           13 native tools (Toolhelp, PSAPI, SCM, Event Log, IP Helper, registry, files, RoverAI)
@@ -73,9 +76,21 @@ guest's own system DLLs. The NT kernel, Explorer and Winlogon are not modified.
   (`error.code`, HTTP status, retryability) are encoded and parsed by
   `xp25_llm.c`. Chat Completions is supported for local servers.
 - **Secrets**: the gateway key and an optional local API key are stored with
-  DPAPI (`CryptProtectData`, per user, application entropy) under
-  `HKCU\Software\XP25\Agent\Protected`; they are never logged, never readable
-  through `registry_read`, and wiped from memory after use.
+  user-scope DPAPI (`CryptProtectData`, application entropy) under
+  `HKCU\Software\XP25\Agent\Protected` when DPAPI works. On both XP25
+  engineering images it does not: `CryptProtectData` without
+  `CRYPTPROTECT_LOCAL_MACHINE` returns error 1783 (`RPC_X_BAD_STUB_DATA`),
+  while machine-scope DPAPI and Credential Manager work (bisected with
+  `vm/ai_bisect.py` on the current and the previous engineering image,
+  `W/bisect/eng02-dpapi-b`, `W/bisect/eng01-dpapi-b`; the root cause in the
+  rebuilt components is not identified). ClippyAI therefore falls back to a
+  Credential Manager generic credential (`CredWriteW`, target
+  `XP25 Agent/<name>`, local-machine persistence, protected by Windows for
+  this user). Machine-scope DPAPI is deliberately not used, because any local
+  process could decrypt it. If neither store works, Settings reports the
+  Windows error and keeps the dialog open; nothing is saved in clear text.
+  Secrets are never logged, never readable through `registry_read`, and wiped
+  from memory after use.
 - **Offline operation**: `xp25_offline.c` is a deterministic planner that
   implements the provider interface and drives the same tools, permissions and
   approval dialogs. It handles the slow-computer workflow, Event Viewer, CMD,
@@ -126,7 +141,10 @@ model text, tool output, file names and log messages cannot approve anything
 log record leads to a declined, unexecuted command). Results classified as
 sensitive (logs, file content, command output, registry data) reach a remote
 provider only after the **Share Data?** dialog allows it; otherwise the model
-receives a withheld placeholder. RoverAI sends only the wording of a search
+receives a withheld placeholder. Only results of the current request are
+offered: undecided results of earlier requests (for example made while
+offline, before a provider was configured) stay withheld without prompting.
+RoverAI sends only the wording of a search
 (never file content) and only when the user enables AI interpretation.
 
 `XP25Broker.exe` is a LocalSystem service with one named pipe
@@ -160,8 +178,11 @@ XP's own Agent server.
 **Troubleshooting workflow.** "My computer is running slowly. Fix it." runs
 `system_info` → `process_list` (1.5 s CPU sample) → `eventlog_read` System and
 Application → `disk_diagnostics`, explains the findings, proposes one
-corrective action (end the busiest non-system process, or clean old TEMP files
-when the system drive is nearly full), waits for approval, executes it,
+corrective action (end the busiest non-system process when it uses at least
+40% of all processors or keeps one processor at least 60% busy, a
+single-threaded loop on N processors reaching only 100/N percent of the total;
+or clean old TEMP files when the system drive is nearly full), waits for
+approval, executes it,
 verifies with a fresh `process_list` and reports the actual outcome; a
 declined proposal is reported as "nothing was changed".
 
@@ -178,9 +199,16 @@ privacy exclusions are applied by default: other users' profiles, credential
 and DPAPI folders, browser caches/cookies/history, TEMP, registry hives,
 `system32\config`, `repair`, paging files, `System Volume Information` and
 RECYCLER. Roots and exclusions are configurable (`IndexRoots`,
-`IndexExcludes`). `RoverAI.exe /background` (started at logon) applies
-`ReadDirectoryChangesW` notifications for additions, changes, renames, moves
-and deletions in real time and falls back to a reconcile on buffer overflow.
+`IndexExcludes`). `RoverAI.exe /background` (started at logon) opens
+`ReadDirectoryChangesW` watchers on every root *before* reconciling the saved
+index with the file system, so changes made during that reconcile are applied
+after it; additions, changes, renames, moves and deletions then apply in real
+time, with a reconcile on buffer overflow. Index scans and saves happen only
+while owning the store mutex (a scan that proceeded without it could save a
+listing older than the owner's save; see failures). While a background
+indexer watches every root it publishes `Local\XP25RoverAIWatching`, and
+searches then use the saved index without an age-based rescan; a search
+waits at most 2 s for a busy store and otherwise uses the last saved index.
 Text content of small text documents under the user's profile and All Users is
 indexed as sorted word hashes (≤512 words, first 32 KB).
 
@@ -235,26 +263,39 @@ Explorer's search pane, that pane shows RoverAI while the redirect is enabled.
   extracts binaries, PDBs and logs read-only, confirms the 91 compiled sources
   match the media manifest and verifies imports.
 
-| Native build 04 artifact (`W/native-04/collect.json`) | SHA-256 |
+| Native build 10 artifact (`W/native-10/collect.json`) | SHA-256 |
 | --- | --- |
-| `xp25agent.dll` (152,064 bytes) | `ab2329d41fda7040463e1522ef3d730f6a2842db1239da35fa8265bc8aaab654` |
-| `ClippyAI.exe` (51,200) | `5265f211319dfaa49f36e3ad841874fade0d2bf064576e81eb35d45aa0cee3f3` |
-| `RoverAI.exe` (35,328) | `66463c846c415e10187a1cf175b483ff7c7511f5ea386a9d14547105305f4877` |
-| `RoverAIBand.dll` (38,400) | `593015df306c4643c43b3c4f0b98aa8a9ebc32999ee88e2e423511f0998e63e5` |
-| `XP25Broker.exe` (10,240) | `d3a323dcb4c05624c6de6666949c71e60fc7208c10070bf625d2c5b3f7459111` |
-| Build media ISO (`W/native-media-05`) | `ea5a4853bc2254127a01dff472ec17cb74a9a416ab9288fcaf7bb231e6a98834` |
-| Guest probe `ai_probe.exe` (MinGW, `W/mingw-08`) | `905812ebeadfa83cbb80c2fe45e043c1cc3445c7a37ba3f0359b424b2291c988` |
+| `xp25agent.dll` (153,600 bytes) | `1230582a847516ba83c0359411c5135c6a95be7a2efc492b36c3d7cab4fa312e` |
+| `ClippyAI.exe` (51,712) | `90369905f1fa30bfcf2c5ef97a888644b3fc4ce69241f6ff798fd3a85f61de90` |
+| `RoverAI.exe` (35,328) | `4c31327124d6399d4d75f2b57e662b49a4c726078a5847ce1eea8877112fb7a7` |
+| `RoverAIBand.dll` (38,400) | `60e76d82f61323792f1c49fc25fb7fab164b59cadb0852ba6d57edcdf3f39b46` |
+| `XP25Broker.exe` (10,240) | `9ca8093ad97faff109abf752ec5cd3d5788986f4f8538663a5d9ac292528ab46` |
+| Build media ISO (`W/native-media-11`) | `8dad03fcdc48660423255f42094eb50194fb656d012d24e4e19361f16d4bf6d4` |
+| Guest probe `ai_probe.exe` (MinGW, `W/mingw-20`) | `94a1b06062ea46c75c3e4b0f56cec460b7dc0c141ebf2c889c6b34d7b94df4b8` |
 
-PE OS version 5.1, subsystem 4.0 (NT toolchain default); build.err/build.wrn
-absent; 91 compiled sources match the media manifest.
+PE OS version 5.1, subsystem 4.0 (NT toolchain default); `native.log` and
+`build.log` contain no `nmake.exe failed`, compiler, linker or RC error;
+build.err/build.wrn absent; 91 compiled sources match the media manifest.
+Build VM runs are `B/ai-native-build-01` … `-10`. Builds 05–08 and 10 were
+complete; 09 failed to link and is kept (see failures). Each later build
+fixed a defect found by the guest runs of the previous one:
+
+| Build | Change | Found by |
+| --- | --- | --- |
+| 05 | Credential Manager fallback for secrets; watcher saves after at most 10 s of activity; ClippyAI focus restored after dialogs; Settings reports key-storage errors | build 04 runs, DPAPI bisect |
+| 06 | Earlier offline results stay withheld instead of prompting when a remote provider is first used | build 05 provider phase |
+| 07 | Watcher saves under the store mutex and retry until saved; per-writer temporary file names | build 06 two-vCPU run |
+| 08 | Multiprocessor runaway rule; no age-based rescans while the index is watched | build 07 two-vCPU and TCG runs |
+| 10 | Scans and saves only while owning the store; watchers start before the background reconcile | build 08 TCG and two-vCPU runs |
 
 ## Tests and guest evidence
 
 Host: `python3 -m unittest discover -s tests -p test_ai.py` (7 tests) compiles
-`tests/ai_core.c` with the strict C89 flags under ASan/UBSan (195 checks: JSON
+`tests/ai_core.c` with the strict C89 flags under ASan/UBSan (202 checks: JSON
 edge cases, SHA-256/HMAC vectors, policy classes, agent loop with injection and
-egress cases, Responses/Chat codecs, offline workflows, index scan/incremental
-rename/move/delete/permissions/exclusions/persistence/corruption, the five
+egress cases (including results withheld across a provider switch), Responses/Chat codecs, offline workflows, index scan/incremental
+rename/move/delete/permissions/exclusions/persistence/corruption, the
+slow-computer workflow on one and two processors, the five
 natural-language example queries and strict criteria validation), checks the C
 signer against the Python gateway, runs a live gateway against the OpenAI test
 double (authentication, single-use challenges, wrong keys, `store:false`, no
@@ -274,25 +315,51 @@ background indexer) and restarts the guest; after the next logon
 then the provider checks and `D:\compat-regress.cmd` run, and
 `vm/ai_monitor.py` requests a normal shutdown. Gates come from COM1 records.
 
-| Native build 04 | KVM 1 vCPU `W/runs/ai-native-kvm-up-01` | KVM 2 vCPUs `W/runs/ai-native-kvm-mp-01` | TCG `W/runs/ai-native-tcg-01` |
-| --- | --- | --- | --- |
-| Installer: broker service, Explorer bar, search redirect, shortcuts | 0/0/0/0 | 0/0/0/0 | running when recorded |
-| RoverAI index (315,852 entries, all of C:), filename/date/type/size searches, five NL examples, incremental rename/delete | Pass | Pass | not recorded |
-| RoverAI real-time watcher (new/rename/delete) | 1/3 (save starvation, fix pending) | 3/3 | not recorded |
-| RoverAI window, results, Open, Open containing folder | Pass | Pass | not recorded |
-| Explorer Search command opens RoverAI band, search, close, Explorer PID stable, navigation after | Pass | Pass | not recorded |
-| ClippyAI start, chat UI, offline default, desktop shortcut | Pass | Pass | not recorded |
-| Event Viewer tool and answer; read-only CMD; approval dialog shows exact command and runs it; denial leaves file; failed command reported | Pass | Pass | not recorded |
-| Slow-computer workflow: real tools, proposes ending `ai_cpuhog.exe`, approved, verified resolved | Pass | Pass | not recorded |
-| Find network config → approve read → approve line fix → file fixed with .bak | Pass | Pass | not recorded |
-| RoverAI "Ask ClippyAI" hand-off, tray minimize/restore | Pass | Pass | not recorded |
-| Gateway key stored, OpenAI via gateway, share prompt, auth failure | **Fail** (key not stored) | **Fail** | not recorded |
-| Unreachable provider falls back to offline | Pass | Pass | not recorded |
-| Established regression suite (12 probes + MSI) | all exit 0 | all exit 0 | not recorded |
-| Guest-requested shutdown (`SHUTDOWN guest=true`) | Observed | Observed | not recorded |
+| Native build 10 | KVM 1 vCPU `W/runs/ai-b10-kvm-up-01` | KVM 2 vCPUs `W/runs/ai-b10-kvm-mp-01` | TCG `W/runs/ai-b10-tcg-01` | Packaged image, KVM 1 vCPU `W/runs/ai-b10-image-proof-01` |
+| --- | --- | --- | --- | --- |
+| Installer: broker service, Explorer bar, search redirect, shortcuts (exit codes) | 0/0/0/0 | 0/0/0/0 | 0/0/0/0 | preinstalled (`W/runs/ai-b10-image-install-01`: 0/0/0/0) |
+| RoverAI index (315,853 entries, all of C:), filename/date/type/size searches, five NL examples, incremental rename/delete | Pass | Pass | Pass | Pass |
+| RoverAI real-time watcher: new / rename / delete visible after | 27 / 41 / 13 s | 84 / 47 / 32 s | 39 / 34 / 21 s | 11 / 11 / 11 s |
+| RoverAI window, results, Open, Open containing folder | Pass | Pass | Pass | Pass |
+| Explorer Search command opens RoverAI band, search, close, Explorer PID stable, navigation after | Pass | Pass | Pass | Pass |
+| ClippyAI start, chat UI, offline default, desktop shortcut | Pass | Pass | Pass | Pass |
+| Event Viewer tool and answer; read-only CMD; approval dialog shows exact command and runs it; denial leaves file; failed command reported | Pass | Pass | Pass | Pass |
+| Slow-computer workflow: real tools, proposes ending `ai_cpuhog.exe`, approved, verified resolved (ClippyAI's measurement) | Pass (100%) | Pass (49% of 2 CPUs, about 98% of one) | Pass (85%) | Pass (100%) |
+| Find network config → approve read → approve line fix → file fixed with .bak | Pass | Pass | Pass | Pass |
+| RoverAI "Ask ClippyAI" hand-off, tray minimize/restore | Pass | Pass | Pass | Pass |
+| Gateway key stored (Credential Manager), OpenAI Responses via gateway with tool call and Share prompt, wrong key and auth failure reported, unreachable provider falls back offline, offline restored | 7/7 | 7/7 | 7/7 | 7/7 |
+| Gateway log: forwarded / rejected (wrong key); test double: `store:false`, authenticated, earlier results withheld | 2 / 1; yes | 2 / 1; yes | 2 / 1; yes | 2 / 1; yes |
+| Established regression suite (12 probes + MSI) | all exit 0 | all exit 0 | all exit 0 | all exit 0 |
+| Guest-requested shutdown (`SHUTDOWN guest=true`) | Observed | Observed | Observed | Observed |
 
-Results: `ai-results.json` in each run directory. Earlier MinGW-built runs
-`ai-kvm-up-01` and `-02` are listed under failures.
+Results: `ai-results.json`, `serial.log`, `gateway.jsonl`,
+`mock-openai.jsonl`, `network.pcap` and screenshots in each run directory.
+The user-scope DPAPI check is recorded as a note (`dpapi_round_trip_failed`,
+error 1783) in every run; it is a platform finding, not a ClippyAI gate.
+Runs of builds 04–08 are listed under failures.
+
+## Experimental QCOW2
+
+`build/ai_package_image.py` turns a frozen, normally shut down install-only
+run (`vm/ai_lab.py --install-only`: the components installed by their own
+installer at logon on a fresh overlay of the accepted engineering image) into
+a standalone image. It reflink-copies the unchanged reference image, commits a
+reflinked copy of the frozen overlay into it (neither original file is
+written), compares all sectors against the overlay chain (`qemu-img compare`),
+checks the image and writes `manifest.json` with every input and output hash.
+
+| `W/image-05` | Value |
+| --- | --- |
+| `XP25-AI-Engineering.qcow2` | SHA-256 `ec22f45b67af19f584eb6ca0a286e943731298543aa1b910eab6ff42674bee2a`, 9,674,620,928 bytes, 32 GiB virtual, no backing file |
+| Source run / overlay | `W/runs/ai-b10-image-install-01`, SHA-256 `7019edb52bf937cfebed877aeb09a690ce2ab4a0be3a44373ff8e407833e86a1` |
+| Reference base | `XP25-Components-Engineering.qcow2`, `39112bbd…0296` (unchanged) |
+| Checks | sector compare: identical; `qemu-img check`: no errors |
+| Independent proof | `W/runs/ai-b10-image-proof-01`: fresh overlay of the image, 62/62, regression suite all 0, guest-requested shutdown |
+
+It is a private experimental engineering disk, not Windows Setup media; no
+licensing or redistribution claim is made. Images 01–04 (builds 05–08) are
+superseded; their files were removed to free space and `SUPERSEDED.json`
+plus `manifest.json` keep their hashes and proofs.
 
 ## Failures and corrections (retained)
 
@@ -315,15 +382,67 @@ Results: `ai-results.json` in each run directory. Earlier MinGW-built runs
   `FD_SET` C4127, comparators lacking `__cdecl` under the NT `__stdcall`
   default, a missing include, const casts, one C4701, and RC2176 on
   PNG-compressed icons (XP-era RC and XP itself need DIB icons). Builds 03 and
-  04 succeed; 04 is used.
+  04 succeed.
+- Build 04 (`W/runs/ai-native-kvm-up-01`, `-mp-01`, `-tcg-01`: 56, 58 and
+  57 of 62): the gateway key was never stored, so 4 provider cases failed in
+  each mode; one-vCPU watcher saves starved (1/3); under TCG the probe checked
+  the RoverAI band before Explorer had made it visible (the probe now waits
+  for `IsWindowVisible`). Diagnostic boots `W/runs/ai-debug-key-01` and
+  `W/runs/ai-debug-dpapi-01` and the bisect (`W/bisect/eng02-dpapi-b`,
+  `eng01-dpapi-b`; the first attempt `eng02-dpapi` never booted because the
+  harness resolved the probe path after changing directory) found user-scope
+  DPAPI error 1783 on both engineering images.
+- Build 05 (`W/runs/ai-final-kvm-up-01`, `-mp-01`, `-tcg-01`): main suites
+  54/55 under KVM with one and two vCPUs (first watcher case) and 55/55 under
+  TCG, but only 2/7 provider
+  cases: when the gateway was first used, ClippyAI asked Share consent for
+  every earlier offline result and the probe saw an unexpected dialog. In
+  the one-vCPU run the guest finished shutting down after the 60 s QMP wait,
+  so the SHUTDOWN event was not captured (`failure.json`); the TCG run was
+  stopped once superseded.
+- Build 06 (`W/runs/ai-b06-*`): 62/63 one vCPU (DPAPI only) and image proof
+  62/63; two vCPUs and TCG failed `rover_incremental_update` and
+  `rover_rename_reflected`: the background save and a CLI rescan shared one
+  temporary file name and raced. TCG also failed the first watcher case,
+  RoverAI UI results and both hand-off cases.
+- Build 07 (`W/runs/ai-b07-*`): 62/62 one vCPU and image proof. Two vCPUs
+  failed the slow workflow: the busy thread measured 39% of all processors,
+  under the 40% rule, although it kept one processor busy. TCG RoverAI
+  searches timed out (stopped and frozen). One-vCPU shutdown: the Run dialog
+  opened after typing had started and received only `-t`; `vm/ai_monitor.py`
+  now dismisses message boxes, waits 10 s and retries while the guest runs.
+- Build 08 (`W/runs/ai-b08-*`): 62/62 one vCPU and image proof
+  (`W/image-04`). The two-vCPU slow workflow failed once
+  (`ai-b08-kvm-mp-01`) and passed with the instrumented probe
+  (`ai-b08-kvm-mp-02`: 50% of 2 processors), which in turn failed
+  `rover_rename_reflected`. TCG 55/59: RoverAI showed the pre-rename name
+  `home-notes.txt` long after the CLI rename had been indexed. Cause: after
+  120 s without the store mutex, the background indexer's logon reconcile
+  scanned and saved anyway and overwrote the newer index; its watchers
+  started only after that scan and missed the rename. A diagnostic boot
+  (`W/bisect/mp-cpu-01`, `ai_probe.exe cpu`) showed exact accounting of a busy
+  thread on the two-vCPU parent (50% of 2 processors, unpinned and pinned to
+  either CPU).
+- `B/ai-native-build-09`: link error LNK2019 `_rover_store_reconcile@20`
+  (export missing from `xp25agent.def`); fixed in build 10.
+- Install-only run `W/runs/ai-image-install-01`: its batch file deleted
+  itself before the completion marker; the remaining two steps were run from
+  the Run dialog (journaled) and the template now deletes itself on its last
+  line.
+- Space: the shared host volume reached 99% while other sessions' guests were
+  running. Frozen overlays of superseded runs were archived losslessly as
+  `disk.qcow2.zst` (`disk-archive.json` records the original SHA-256 and the
+  verified decompressed SHA-256; restore with `zstd -d`), and raw `.ppm`
+  screendumps were removed only where the `.png` beside them decodes to
+  identical pixels (`W/ppm-cleanup-20261025.json`). No evidence was deleted.
 
-## Pending
+## Open items
 
-- Gateway key storage defect (above); diagnostic boot `W/runs/ai-debug-key-01`.
-- Watcher save starvation fix and ClippyAI focus restoration after dialogs are
-  in the sources and host-tested only (no native rebuild or guest run yet).
-- TCG run result, image install run, `build/ai_package_image.py` QCOW2 and its
-  independent boot proof; a real OpenAI call (needs a key and an uplink).
+- A call to the real OpenAI service (needs an API key on the gateway host and
+  an uplink); compatibility with a given live model is not verified.
+- Root cause of user-scope DPAPI error 1783 on the engineering images.
+- Encryption for the XP25–gateway link (it is authenticated and
+  integrity-protected only).
 
 ## Recovery
 
@@ -352,6 +471,11 @@ the immediate fallback; no reference image or registered VM is modified.
   engineering image (315,852 entries) takes about 30 s under KVM.
 - The Search Companion redirect also affects Internet Explorer's search pane
   and requires a logon/restart to take effect in a running session.
+- Secrets are protected by Credential Manager, not DPAPI, on these images
+  (see *Secrets*).
+- After logon the background indexer first reconciles the whole index (about
+  1–3 minutes for 315,853 entries under TCG); changes made meanwhile become
+  searchable after it, and searches until then use the last saved index.
 - The broker performs only service changes; privileged file changes are
   refused. Domain environments, multiple simultaneous users, non-English UI,
   accelerated graphics and long-term stability are not tested.

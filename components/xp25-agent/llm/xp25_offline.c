@@ -259,11 +259,21 @@ static int protected_process(const PLAN *p, const XP25_JNODE *proc)
     return xp25_policy_process((unsigned long)pid, str(proc, "name"), "terminate", reason, sizeof(reason)) == XP25_PERM_DENIED;
 }
 
+static xp25_i64 cpu_count(const XP25_JNODE *list)
+{
+    return num(list, "cpu_count") > 1 ? num(list, "cpu_count") : 1;
+}
+
+/* A runaway uses cpu_threshold percent of all processors or keeps one
+   processor mostly busy: a single-threaded loop on N processors reaches at
+   most 100/N percent of the total. */
 static const XP25_JNODE *busiest(const PLAN *p, const XP25_JNODE *list)
 {
     const XP25_JNODE *proc;
     for (proc = xp25_json_get(list, "processes") ? xp25_json_get(list, "processes")->child : NULL; proc; proc = proc->next)
-        if (num(proc, "cpu_percent") >= p->settings->cpu_threshold && !protected_process(p, proc)) return proc;
+        if ((num(proc, "cpu_percent") >= p->settings->cpu_threshold ||
+             num(proc, "cpu_percent") * cpu_count(list) >= p->settings->cpu_single_threshold) && !protected_process(p, proc))
+            return proc;
     return NULL;
 }
 
@@ -353,7 +363,13 @@ static int plan_slow(PLAN *p)
             xp25_buf_i64(&out, num(cand, "pid"));
             xp25_buf_puts(&out, ") is using ");
             xp25_buf_i64(&out, num(cand, "cpu_percent"));
-            xp25_buf_puts(&out, "% of the processor.\n");
+            if (cpu_count(proc) > 1) {
+                xp25_buf_puts(&out, "% of all processors (about ");
+                xp25_buf_i64(&out, num(cand, "cpu_percent") * cpu_count(proc));
+                xp25_buf_puts(&out, "% of one processor).\n");
+            } else {
+                xp25_buf_puts(&out, "% of the processor.\n");
+            }
         } else if (sys && num(xp25_json_get(sys, "memory"), "load_percent") >= p->settings->memory_threshold) {
             xp25_buf_puts(&out, "memory is almost full; close programs you are not using.\n");
         } else if (vol && num(vol, "free_percent") < p->settings->disk_free_threshold) {
@@ -989,6 +1005,7 @@ static int offline_complete(XP25_PROVIDER *self, const XP25_CONVERSATION *c, con
 void xp25_offline_init(XP25_PROVIDER *provider, XP25_OFFLINE *settings)
 {
     if (!settings->cpu_threshold) settings->cpu_threshold = 40;
+    if (!settings->cpu_single_threshold) settings->cpu_single_threshold = 60;
     if (!settings->memory_threshold) settings->memory_threshold = 90;
     if (!settings->disk_free_threshold) settings->disk_free_threshold = 10;
     provider->name = "offline";

@@ -76,3 +76,17 @@ failed runs. These commands do not infer login transitions or shut down the
 guest. Check the full suite's completion marker before the next UI/debugger
 operation. See the [networking milestone](../../docs/native-networking-milestone.md)
 for guest restart, authentication, Notepad, shutdown and packet evidence.
+
+`build/ai_build.py --probe` builds `ai_probe.exe` for the XP25 AI milestone;
+`vm/ai_lab.py` stages and starts it. Without arguments it drives the installed
+ClippyAI and RoverAI windows, command lines and the Explorer Search command
+through window messages and writes one `{"ai_case":...}` record per gate to
+COM1, followed by `AI_PROBE_COMPLETE passes=N failures=M`; the exit code is the
+number of failures. `provider <gateway-hex-key>` configures the gateway in
+ClippyAI Settings with typed keys and checks requests, consent, signed
+replies and failure fallback; `dpapi` records user-scope `CryptProtectData`,
+machine-scope DPAPI and Credential Manager behavior as notes; `cpu` records
+how a single busy thread is accounted (unpinned and pinned to each processor),
+sampled like ClippyAI's `process_list`; `burn` is the single-threaded CPU load
+fixture; a trailing `slow` multiplies every timeout by
+four for TCG. See [the milestone record](../../docs/xp25-ai-clippyai-roverai.md).
