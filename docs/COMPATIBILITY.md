@@ -6,6 +6,14 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## XP25 AI components (ClippyAI, RoverAI), 2026-10-25
+
+Native build 04 on the accepted engineering image (original Winlogon), see
+[the milestone record](xp25-ai-clippyai-roverai.md): offline ClippyAI tools,
+approvals, troubleshooting workflow, RoverAI index/search/watcher and the
+Explorer Search redirect pass under KVM 1 and 2 vCPUs; gateway/OpenAI cases
+fail (key storage defect); TCG not recorded; real OpenAI service Not tested.
+
 ## Independent Winlogon desktop and session, 2026-10-25
 
 The [desktop/session record](winlogon-desktop-session.md) supersedes the
