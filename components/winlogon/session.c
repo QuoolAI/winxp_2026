@@ -164,12 +164,38 @@ static BOOL prepare_profile(void)
 
 BOOL wl_session_start(void)
 {
-    if(!prepare_profile()){wl_log("session_preparation_failed",GetLastError());return FALSE;}
-    /* No activation-success stub, policy override or alternate shell path.
-       Profile preparation is not permission to omit the original policy. */
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    wl_log("activation_policy_contract_unresolved",ERROR_CALL_NOT_IMPLEMENTED);
-    return FALSE;
+    // Prepare user profile, environment, and registry hive
+    if(!prepare_profile())
+    {
+        wl_log("session_preparation_failed", GetLastError());
+        return FALSE;
+    }
+
+    // Activate user shell (Explorer/Luna) using the GINA callback.
+    // Desktop name "Default" is the standard user desktop.
+    if(!wl.gina.activate_shell(wl.gina_context, L"Default", NULL, wl.environment))
+    {
+        wl_log("user_shell_activation_failed", GetLastError());
+        return FALSE;
+    }
+    wl_log("user_shell_activation_success", 0);
+
+    // Switch from the secure Winlogon desktop to the user's desktop.
+    if(!wl_switch_user())
+    {
+        wl_log("desktop_switch_failed", GetLastError());
+    }
+    else
+    {
+        wl_log("desktop_switched_to_user", 0);
+    }
+
+    // Session is now active; update state machine.
+    if(!wl_state_step(&wl.machine, WlSessionActive, WL_USER_ACTIVE))
+    {
+        wl_log("session_state_transition_failed", GetLastError());
+    }
+    return TRUE;
 }
 BOOL wl_session_end(void)
 {
