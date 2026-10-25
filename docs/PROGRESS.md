@@ -2,6 +2,32 @@
 
 ## Current checkpoint
 
+2026-10-25, interactive VMs (branch `xp25-ai`): **XP25-Winlogon now carries the
+QuoolAI OEM branding, and a disposable XP25-AI VM is running in virt-manager.**
+
+- **XP25-Winlogon.** The Maher's Digital World `OEMINFO.INI` (`a1052310…`) was
+  replaced offline on the VM's own writable disk with `[General]
+  Manufacturer=QuoolAI / Model=Windows XP 25th Anniversary Edition`
+  (`7760193a…`). Before that, a guest-requested shutdown was confirmed and the
+  backups were made in the guest and on the host. There was no OEM logo.
+  - Help and Support's copy of the values (`HelpSvc\OEMInfo`) was updated with `reg.exe`.
+  - The new `oem` probe passes 15 of 16 cases. The 22 XP25 components, the branding
+    and licensing files, and every other System Properties text are unchanged.
+  - The model line is clipped to "Windows XP 25th Anniversary": 179 px of text in a
+    165 px field. Fitting it needs either a shorter value or a wider line in
+    XP25's branded `sysdm.cpl`, so it was left as specified.
+  - The whole procedure, including restore, was rehearsed first on a disposable overlay.
+  - [OEM record](xp25-winlogon-oem-branding.md)
+- **XP25-AI.** A new libvirt domain whose disk is an overlay on the verified AI
+  image-05 (`ec22f45b…`). It auto-logs on to the desktop (screenshot evidence
+  only). Other domains, xp25-sp3, the default network and image-05 are unchanged;
+  `XP25-Isolated` gained one reservation, `.13`.
+  - The single-address DHCP range lets only one of these VMs hold a lease at a
+    time, so XP25-AI has no IP while XP25-Winlogon runs.
+  - [VM record](virt-manager-xp25-ai.md)
+
+The Milestone 6 entry follows.
+
 2026-10-25, Milestone 6 (branch `xp25-ai`): **ClippyAI, RoverAI and the shared
 XP25 agent runtime pass guest acceptance under KVM (1 and 2 vCPUs) and TCG,
 and the experimental QCOW2 is verified.** Native `/W4 /WX` build 10 passes

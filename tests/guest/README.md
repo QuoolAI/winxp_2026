@@ -90,3 +90,13 @@ how a single busy thread is accounted (unpinned and pinned to each processor),
 sampled like ClippyAI's `process_list`; `burn` is the single-threaded CPU load
 fixture; a trailing `slow` multiplies every timeout by
 four for TCG. See [the milestone record](../../docs/xp25-ai-clippyai-roverai.md).
+
+`build/guest.py --probe oem` builds `oem_probe.exe` (kernel32, user32, advapi32,
+gdi32). `oem_probe.exe [--expect] --out <file>` records `oeminfo.ini`'s
+`[General]` values, OEM logo files, Help and Support's `HelpSvc\OEMInfo` copy
+and the NT 5.1 identity. It then opens System Properties through `sysdm.cpl` and
+records every General-page control's text, and whether the manufacturer and
+model lines fit their controls. It leaves the dialog open. JSON lines go to the
+file, and to COM1 when that opens. Without `--expect` every case is `observed`
+with a `holds` flag; with it the QuoolAI values are gates and the exit code is
+the number of failures. See [the OEM record](../../docs/xp25-winlogon-oem-branding.md).
