@@ -2,6 +2,17 @@
 
 ## Current checkpoint
 
+2026-10-25, Milestone 6 (branch `xp25-ai`): **ClippyAI, RoverAI and the shared
+XP25 agent runtime are implemented and pass offline guest acceptance; the
+OpenAI-gateway path in the guest is blocked by an open key-storage defect.**
+Native `/W4 /WX` build 04 passes 55/55 main cases under two-vCPU KVM and
+53/55 under one-vCPU KVM on the accepted engineering image (original Winlogon),
+with the full established regression suite at exit 0 and guest-requested
+shutdown. TCG, the verified QCOW2 and a real OpenAI call are not complete.
+[Architecture, security model, evidence, failures and limits](xp25-ai-clippyai-roverai.md)
+
+The following entry describes the Winlogon checkpoint this branch is based on.
+
 2026-10-25, Winlogon desktop and session continuation from `67de708ed`:
 **the independent NT 5.1 Winlogon now starts the original Explorer with Luna
 and runs the session lifecycle.** Licensing admission is decided by the installed
