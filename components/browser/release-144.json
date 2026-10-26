@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "repository": "win32ss/supermium",
+  "tag": "v144-r5",
+  "version": "144.0.7559.256",
+  "release_name": "Release 144.0.7559.256 R5",
+  "published_at": "2026-07-14T20:41:02Z",
+  "asset": "supermium_144_32_nonsetup.zip",
+  "url": "https://github.com/win32ss/supermium/releases/download/v144-r5/supermium_144_32_nonsetup.zip",
+  "sha256": "17acfcdf89ea651905053b50b0fce5a28db19cb2c69ed5579c7b177806ed6d31",
+  "bytes": 153211908,
+  "architecture": "x86",
+  "digest_source": "Official GitHub release asset digest and release body",
+  "redistribution_approved": false,
+  "selection": "Fallback candidate after observed v150-r2.01 child-process failures; not yet accepted"
+}
