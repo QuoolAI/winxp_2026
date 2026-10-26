@@ -461,10 +461,14 @@ receipts in `X/runs/fmatrix150-02-tcg`), but the DevTools CDP calls exceeded the
 45-second per-call timeout and the automated deep regression did not complete;
 this is harness/emulation slowness, not a browser crash (the same image passes
 fully on KVM). The CDP timeout is now configurable (`XP25_CDP_TIMEOUT`,
-`vm/browser_cdp.py`), and `vm/browser_matrix.py` raises it to 240 s for TCG; a
-re-run under that longer budget is recorded in `X/matrix-150-03`. The failed TCG
-worker left its guest running (the harness detaches guests), so it was frozen with
-a `failure.json`, not left orphaned.
+`vm/browser_cdp.py`), and `vm/browser_matrix.py` raises it to 240 s for TCG, but a
+re-run at that budget (`X/matrix-150-03`) **still** timed out on the first CDP call
+while again rendering the shell and all five ShellExecute document types — a
+single-thread-emulation wall, not a browser defect. DevTools-driven deep
+automation is therefore impractical under TCG; TCG browser functionality is
+evidenced through the non-DevTools ShellExecute path instead. Both failed TCG
+workers left their guests running (the harness detaches guests), so each was frozen
+with a `failure.json`, not left orphaned.
 
 Milestone 7 is **not** promoted: `full_regression_coverage` is still incomplete by
 design (the four `not_tested` cases), the `0x842214` handle-type CHECK remains an
