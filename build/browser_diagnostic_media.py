@@ -9,6 +9,14 @@ import subprocess
 
 ROOT=Path(__file__).resolve().parents[1]
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def inherit_suite():
+    """Install the browser, then characterize progwrp's PROC_THREAD_ATTRIBUTE_HANDLE_LIST
+    handle inheritance against the installed pwrp_k32.dll/pwrp_k32_sm.dll."""
+    return '\n'.join([r'@echo off',r'mkdir C:\xp25 2>nul',r'mkdir C:\xp25\browserdiag 2>nul',
+        r'call D:\install.cmd > C:\xp25\browserdiag\install.log 2>&1',r'echo XP25_DIAGNOSTIC_INSTALL_EXIT=%ERRORLEVEL% > COM1',r'if errorlevel 1 goto done',
+        r'D:\browser_inherit.exe "C:\Program Files\Supermium" > COM1',r'echo XP25_DIAGNOSTIC_INHERIT_EXIT=%ERRORLEVEL% > COM1',
+        r':done',r'del "%USERPROFILE%\Start Menu\Programs\Startup\XP25BrowserSuite.cmd"','echo XP25_DIAGNOSTIC_DONE > COM1',r'D:\wait.exe','shutdown.exe -s -t 5'])+'\n'
+
 def containment_suite():
     """Launch through the windowed launcher and through a shell association, then
     test the live browser tokens against administrator-only objects."""
@@ -51,7 +59,7 @@ def watch_ab_suite(cycles,hold):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ['prepared','native','output']:p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--mode',choices=['debug','plain','watch-ab','containment'],required=True)
+    p.add_argument('--mode',choices=['debug','plain','watch-ab','containment','inherit'],required=True)
     p.add_argument('--cycles',type=int,default=5,help='watch-ab: cycles per block')
     p.add_argument('--hold',type=int,default=45,help='watch-ab: seconds before close; Chromium reclaims idle pool workers after 30')
     a=p.parse_args();out=a.output.resolve()
@@ -61,7 +69,7 @@ def main():
         if sha(a.prepared/'media'/name)!=digest:raise ValueError('prepared file changed: '+name)
     out.mkdir(parents=True,exist_ok=False);media=out/'media'
     shutil.copytree(a.prepared/'media',media,copy_function=lambda src,dst:subprocess.run(['cp','--reflink=always',src,dst],check=True) and dst)
-    for name in ['browser_debug','browser_sandbox','browser_iocancel','browserctl']+(['browser_watch'] if a.mode=='watch-ab' else [])+(['browser_shell'] if a.mode=='containment' else []):
+    for name in ['browser_debug','browser_sandbox','browser_iocancel','browserctl']+(['browser_watch'] if a.mode=='watch-ab' else [])+(['browser_shell'] if a.mode=='containment' else [])+(['browser_inherit'] if a.mode=='inherit' else []):
         shutil.copy2(a.native/(name+'.exe'),media/(name+'.exe'))
     if a.mode=='watch-ab':
         (media/'xp25compat').mkdir();shutil.copy2(a.native/'pwrp_k32.dll',media/'xp25compat/pwrp_k32.dll')
@@ -92,6 +100,7 @@ shutdown.exe -s -t 5
 '''.replace('__MODE__','plain' if a.mode=='plain' else '')
     if a.mode=='watch-ab':suite=watch_ab_suite(a.cycles,a.hold)
     if a.mode=='containment':suite=containment_suite()
+    if a.mode=='inherit':suite=inherit_suite()
     (out/'suite.cmd').write_bytes(suite.replace('\n','\r\n').encode())
     command=['genisoimage','-quiet','-J','-joliet-long','-r','-o',str(out/'diagnostic.iso'),str(media)]
     subprocess.run(command,check=True)

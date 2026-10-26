@@ -2,6 +2,31 @@
 
 ## Current checkpoint
 
+2026-10-27, Milestone 7 stability + 0x842214 investigation (`xp25-browser`):
+**On KVM the browser now passes the full functional regression; two defects are
+characterized, one fixed and one open; Milestone 7 stays unaccepted.** Re-running
+`vm/browser_matrix.py` on the frozen install base with disk headroom, **both
+KVM single-vCPU and two-vCPU pass every browser check** — modern JavaScript, local
+HTML, multiple tabs, the full HTTPS certificate matrix (valid + reject expired/
+wrong-host/untrusted), download, the new default Internet-block policy
+(`URLBlocklist=*` blocks lab subdomain and public site), **profile + appearance
+persistence across restart** (previously failing), 55+7 AI cases, and normal guest
+shutdown; the only non-pass is the honest `full_regression_coverage` marker (four
+`not_tested` probe cases). This resolves the earlier DevTools WebSocket timeout as
+**host storage contention, not a browser defect**. TCG still renders shell + all
+five ShellExecute types but its CDP calls exceed 45 s under single-thread
+emulation; the timeout is now configurable (`XP25_CDP_TIMEOUT`, raised to 240 s for
+TCG) and re-run in `matrix-150-03`. The `0x842214` CHECK was investigated: it is
+`TakeHandleOfType("Section")` in the gpu-process parsing its inherited
+`--field-trial-handle` (minidump: value 1836 is a `File`, not the Section); a native
+`browser_inherit` probe shows progwrp's handle-list inheritance preserves a listed
+Section's value/type on both XP25 and stock SP3 (so not a basic inheritance bug or
+XP25-specific), and it reproduces on stock SP3 — a browser gpu-process
+handle-lifetime defect with no safe compat-layer fix (can't patch chrome.dll or
+disable the CHECK); documented, not forced. No CHECK removed, no API faked, no
+sandbox weakened, `Source/` unchanged. Host: 67 tests, 10 skips, no failures.
+[Evidence](browser-stability-security.md)
+
 2026-10-27, Milestone 7 watcher fix + containment (`xp25-browser`):
 **The first captured crash is fixed and the browser now runs reduced-privilege,
 but Milestone 7 is still unaccepted and no new image is produced.** The directory

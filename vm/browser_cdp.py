@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import time
 import threading
+CDP_TIMEOUT=float(os.environ.get('XP25_CDP_TIMEOUT','45'))
 import urllib.request
 import websocket
 
@@ -23,7 +24,7 @@ def get(path):
 
 class CDP:
     def __init__(self,url,transcript):
-        self.ws=websocket.create_connection(url,timeout=45,suppress_origin=True,http_no_proxy=['*'])
+        self.ws=websocket.create_connection(url,timeout=CDP_TIMEOUT,suppress_origin=True,http_no_proxy=['*'])
         self.n=0;self.events=[];self.transcript=transcript
         self.stopped=threading.Event()
         def keepalive():
@@ -36,7 +37,7 @@ class CDP:
         self.ws.send(json.dumps(message));self.transcript.append({'request':message,'time':time.time()})
         if TRACE_OUTPUT:
             (TRACE_OUTPUT/'current-request.json').write_text(json.dumps({'method':method,'parameters':params or {},'time':time.time()},indent=2)+'\n')
-        deadline=time.time()+45
+        deadline=time.time()+CDP_TIMEOUT
         while True:
             remaining=deadline-time.time()
             if remaining<=0:raise TimeoutError(method)
@@ -58,7 +59,7 @@ def page(browser,context,transcript):
     target=browser.call('Target.createTarget',dict({'url':'about:blank'},**({'browserContextId':context} if context else {})))['targetId']
     return target,CDP('ws://10.25.0.10:9223/devtools/page/'+target,transcript)
 
-def loaded(p,timeout=45,expected=None):
+def loaded(p,timeout=CDP_TIMEOUT,expected=None):
     deadline=time.time()+timeout
     while time.time()<deadline:
         r=p.evaluate('({ready:document.readyState,title:document.title,url:location.href})')

@@ -6,6 +6,19 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Browser KVM regression + 0x842214 checkpoint, 2026-10-27
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| Supermium 150, KVM single-vCPU (up) + two-vCPU (mp), 2 GB, disk headroom | Full DevTools regression passes: modern JS, local HTML, multi-tab, HTTPS valid + reject expired/wrong-host/untrusted, download, Internet-block policy (lab subdomain + public site), profile + appearance persistence across restart, 55+7 AI cases, normal shutdown. Only non-pass is the explicit `full_regression_coverage` marker (login_transition/legacy_games/security_mitigations/shutdown `not_tested`). | `.work/browser-fix-20261026/matrix-150-02`, `matrix-150-02-summary.json` |
+| Supermium 150, TCG, 2 GB | Shell + all 5 ShellExecute types render (4 JS receipts); DevTools CDP calls exceed the 45 s timeout under single-thread emulation (harness/timing, not a crash). Timeout now configurable (`XP25_CDP_TIMEOUT`, 240 s for TCG); re-run in `matrix-150-03`. Guest frozen as failure. | `.work/browser-fix-20261026/runs/fmatrix150-02-tcg`, `matrix-150-03` |
+| 0x842214 handle-type CHECK (gpu-process field-trial Section) | Characterized: inherited `--field-trial-handle` value reads as `File`, not `Section`, at the CHECK. Isolated progwrp handle-list inheritance preserves the Section on XP25 **and** stock SP3; reproduces on stock SP3 → browser gpu-process handle-lifetime defect, not the compat proxy or XP25. Intermittent. No safe compat-layer fix; not patched. | `.work/browser-fix-20261026/collect-fab150-sp3-up-01`, `runs/finherit-{xp25,sp3}-up-02`, `crash-842214-summary.json` |
+
+Earlier DevTools timeouts were host storage contention, not a browser defect. The
+`0x842214` CHECK and the four `not_tested` probe cases remain open; no new accepted
+or Internet-safe image is produced.
+[Watcher fix, containment, KVM regression and 0x842214 detail](browser-stability-security.md)
+
 ## Browser watcher fix and containment checkpoint, 2026-10-27
 
 | Configuration | Result | Evidence |

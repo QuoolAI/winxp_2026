@@ -40,7 +40,7 @@ def wait_until(run,predicate,label,timeout=900):
         time.sleep(1)
     raise TimeoutError(label)
 
-def client(run,namespace,phase,extra):
+def client(run,namespace,phase,extra,cdp_timeout=45):
     out=run/phase
     attempt=1
     while out.exists():
@@ -55,8 +55,9 @@ def client(run,namespace,phase,extra):
         if time.time()>deadline:raise TimeoutError('Chromium DevTools readiness')
         time.sleep(2)
     command=['nsenter','--target',str(namespace),'--user','--net','--preserve-credentials',sys.executable,str(ROOT/'vm/browser_cdp.py'),'--output',str(out),'--close-browser',*extra]
+    env=dict(os.environ,XP25_CDP_TIMEOUT=str(cdp_timeout))
     with (run/(out.name+'.log')).open('w') as log:
-        process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
+        process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,env=env)
         deadline=time.time()+480
         captured=False
         while process.poll() is None:
@@ -94,11 +95,11 @@ def execute(a,mode):
         if previous:
             _,f,report['browser']=max(previous,key=lambda row:row[0]);browser_evidence=str(f)
         else:
-            report['browser'],browser_evidence=client(run,namespace,'cdp-browser',['--https','--policy'])
+            report['browser'],browser_evidence=client(run,namespace,'cdp-browser',['--https','--policy'],cdp_timeout=240 if mode=='tcg' else 45)
         wait_until(run,lambda:'XP25_BROWSER_PERSISTENCE_STARTING' in serial(run),'browser relaunch',120)
         time.sleep(4)
         status(run,'profile_and_settings_persistence')
-        report['persistence'],persistence_evidence=client(run,namespace,'cdp-persistence',['--persistence'])
+        report['persistence'],persistence_evidence=client(run,namespace,'cdp-persistence',['--persistence'],cdp_timeout=240 if mode=='tcg' else 45)
         status(run,'windows_and_ai_regressions')
         wait_until(run,lambda:'XP25_BROWSER_SUITE_DONE' in serial(run),'regression suite',1800 if mode=='tcg' else 900)
         os.chdir(run)
