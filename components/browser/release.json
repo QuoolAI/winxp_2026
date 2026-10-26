@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "repository": "win32ss/supermium",
+  "tag": "v150-r2.01",
+  "version": "150.0.7871.255",
+  "release_name": "Release 150.0.7871.255 R2.01",
+  "published_at": "2026-10-21T05:28:15Z",
+  "asset": "supermium_150_32_nonsetup.zip",
+  "url": "https://github.com/win32ss/supermium/releases/download/v150-r2.01/supermium_150_32_nonsetup.zip",
+  "sha256": "d9a06a6cea97e41bfa9b9595481f9728fbfd35ea0fcc0f67ad6f4a9431c843b3",
+  "bytes": 165223567,
+  "architecture": "x86",
+  "digest_source": "GitHub official release asset 661433251 digest",
+  "redistribution_approved": false
+}

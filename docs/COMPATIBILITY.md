@@ -6,6 +6,21 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Browser modernization checkpoint, 2026-10-25/26
+
+Official Supermium x86 150.0.7871.255 R2.01 passes preliminary single-vCPU
+KVM page, JavaScript, tab, download and HTTPS certificate cases with software
+rendering on standard VGA. Thirteen default-association/shortcut observations
+pass. The original NT compiler builds all three utilities. Final native
+KVM 1-vCPU / KVM 2-vCPU / TCG acceptance remains incomplete because browser
+crashes/timeouts were observed. Corrected shell launches have positive page
+receipts; 24 registry scopes and 12 shortcut paths round-trip through rollback.
+A standalone experimental image is generated and explicitly unaccepted. The browser internally
+adds `--no-sandbox` on NT 5.1; unrestricted sampled child tokens do not establish
+sandbox protection. No certificate bypass is used. Shared IE DLLs and legacy
+COM remain; complete Trident removal is unverified.
+[Browser evidence, audit, regressions and limitations](browser-modernization.md)
+
 ## Interactive XP25-Winlogon OEM branding and XP25-AI VM, 2026-10-25
 
 | Configuration | Result | Evidence |

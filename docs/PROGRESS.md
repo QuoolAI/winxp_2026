@@ -2,6 +2,23 @@
 
 ## Current checkpoint
 
+2026-10-25/26, Milestone 7 (branch `xp25-browser`): **Supermium integration is
+implemented and preliminary XP25 browser/HTTPS tests pass; final acceptance is
+in progress.** Official x86 150.0.7871.255 R2.01 is hash-pinned. The native NT
+compiler builds the shell adapter and probes. Thirteen registration/shortcut
+checks pass, along with local HTML, modern JavaScript, tabs, downloads, TLS 1.3
+and rejection of expired, wrong-hostname and untrusted certificates in an
+isolated guest. Software rendering addresses the unverified VGA/D3D path.
+The browser internally disables its sandbox on this NT 5.1 configuration;
+security isolation is not established. IE compatibility libraries are retained,
+with a private static/runtime audit. Corrected HTTP/HTML/HTM/URL shell launches render the intended pages. All 24
+registry rollback scopes and 12 shortcut paths round-trip. A hash-verified
+standalone experimental QCOW2 is generated and independently boots. Its normal
+restart test still fails JavaScript completion. Full KVM/TCG acceptance is blocked by browser crashes/timeouts.
+Help and Support loads MSHTML/JScript at runtime; those dependencies remain. Previous images and registered
+VMs remain outside this experiment. [Evidence and limits](browser-modernization.md)
+
+
 2026-10-25, interactive VMs (branch `xp25-ai`): **XP25-Winlogon now carries the
 QuoolAI OEM branding, and a disposable XP25-AI VM is running in virt-manager.**
 
