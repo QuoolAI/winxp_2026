@@ -70,7 +70,7 @@ unexercised RPC methods or all SP1/SP3 behavioral differences.
 ## Runtime evidence
 
 Experiments and checkpoints are under `.work/boot-debug-20261022/`. Each uses
-QEMU 8.2.2, i440fx 8.2, qemu32, 512 MiB, IDE/BIOS, standard VGA and RTL8139,
+QEMU 8.2, i440fx 8.2, qemu32, 512 MiB, IDE/BIOS, standard VGA and RTL8139,
 with the previously verified source kernel/HAL and native user-component set.
 The network is private: local DHCP/DNS/HTTP, no uplink or default route.
 

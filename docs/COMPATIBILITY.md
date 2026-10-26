@@ -385,7 +385,7 @@ The [supplied XP SP3 guest](xp-sp3-guest.md) has booted in KVM. Its stopped
 backing-disk SHA-256 is
 `e64190c0c2314945d56cb78efa08bcda4551cb4247d6dde848c076a4cc0d776c`.
 Results below apply to that guest and its recorded build overlay, with QEMU
-8.2.2, i440fx, qemu32, one CPU, 512 MiB RAM, IDE and standard VGA. They do not
+8.2, i440fx, qemu32, one CPU, 512 MiB RAM, IDE and standard VGA. They do not
 establish a custom source build or other hardware configurations.
 
 ## Supplied SP3 runtime regression coverage
@@ -494,7 +494,7 @@ and `LsaLogonUser` returns `0xc0000003`. Matching original LSA is being built.
 | Explorer and Luna desktop | Observed under KVM, TCG and two-vCPU KVM; session probe passes |
 | Filesystem and basic applications after login | KVM temporary-file and HKCU round trips pass; Notepad save/reopen verified offline |
 | Normal source-guest shutdown from desktop | Guest `shutdown.exe -s -t 0` reaches QMP shutdown state |
-| Ubuntu reproduction | Fresh clones launched from Ubuntu; native build-media pipeline executes independently |
+| Linux-host reproduction | Fresh clones launched from the Linux host; native build-media pipeline executes independently |
 | Pointer compatibility/security contract | Eleven checks pass, including 262,144 concurrent round trips and rejected remote/invalid queries; not a general security audit |
 | Networking | Historical SP3-helper failure 10022; resolved by the original source-built helper in Milestone 2 above |
 

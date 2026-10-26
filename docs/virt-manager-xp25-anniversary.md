@@ -18,7 +18,7 @@ virt-manager --connect qemu:///system --show-domain-console XP25-Anniversary
 virsh --connect qemu:///system start XP25-Anniversary
 ```
 
-The inherited account is `XP25`, with a blank password. Shut down through
+The inherited account is `XP25`; its credentials are kept outside the repository. Shut down through
 Windows when finished. Standard VGA and the inherited 640x480 layout are retained;
 the previously observed Found New Hardware Wizard may appear.
 

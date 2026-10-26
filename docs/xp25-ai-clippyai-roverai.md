@@ -301,7 +301,9 @@ signer against the Python gateway, runs a live gateway against the OpenAI test
 double (authentication, single-use challenges, wrong keys, `store:false`, no
 body logging) and repeats the cross-build with import verification.
 
-Guest: `vm/ai_lab.py` boots a fresh overlay of the hash-verified engineering
+Guest: `vm/ai_lab.py` (set `XP25_MAIN_WORK` to the main checkout's `.work/` when
+running from another worktree; `tests/test_ai.py` reads the MinGW directory from
+`XP25_MINGW`) boots a fresh overlay of the hash-verified engineering
 image (`--mode up|mp|tcg`; MP uses the accepted two-vCPU parent
 `shell-userenv-combined-kvm-mp-02`, SHA-256 `d46fa4bf…73b8f`), stages the
 binaries into `C:\xp25` and a Startup fixture, attaches the frozen established

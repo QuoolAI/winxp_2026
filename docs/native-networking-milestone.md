@@ -85,7 +85,7 @@ Native timestamps can vary; bit-identical PE output is not claimed.
 
 ## Runtime evidence
 
-All guests use QEMU 8.2.2, i440fx 8.2, qemu32, 512 MiB, IDE/BIOS, standard VGA,
+All guests use QEMU 8.2, i440fx 8.2, qemu32, 512 MiB, IDE/BIOS, standard VGA,
 the source-built kernel/HAL and the previously verified native user-component
 set. The original desktop configuration had **no NIC**. RTL8139 was selected
 for this milestone and installed automatically from the existing guest's
@@ -163,7 +163,7 @@ and the native-build backing remains
 and five original helper files. The 21 existing host regression tests pass in
 `network-host-tests-01.log`.
 
-## Isolation and reproducibility from Ubuntu
+## Isolation and reproducibility from the Linux host
 
 `vm/isolated_network.py` runs under an unprivileged user/network namespace.
 Only loopback and a private TAP interface exist. There is no uplink, bridge,

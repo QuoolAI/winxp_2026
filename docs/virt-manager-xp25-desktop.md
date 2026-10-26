@@ -20,7 +20,7 @@ virt-manager --connect qemu:///system --show-domain-console XP25-Desktop
 virsh --connect qemu:///system start XP25-Desktop
 ```
 
-The inherited desktop account is `XP25`, with a blank password. The known Found
+The inherited desktop account is `XP25`; its credentials are kept outside the repository. The known Found
 New Hardware Wizard can appear; it was cancelled during verification. Keep the
 existing display settings; accelerated graphics remain unverified. Shut down
 through the Windows Start menu when finished.

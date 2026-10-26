@@ -96,7 +96,7 @@ SP3 guest, reported 13.00.9176, and compiled a 465-byte smoke-test object. The
 AMD64 version remains a resource inspection only. CL imports MSVCR70, USER32 and KERNEL32; MSVCR70 is
 present alongside the tools, but Windows host services are still required.
 
-The current host is Ubuntu 24.04 x86-64 with Python 3, native GCC, QEMU 8.2.2,
+The current host is an x86-64 Linux system with Python 3, native GCC, QEMU 8.2,
 SeaBIOS and privately extracted MinGW tools. The Linux host has no `cmd.exe`, Wine
 or PowerShell; the separate supplied XP SP3 guest now provides a native Windows
 command/compiler environment. PowerShell is not a prerequisite for

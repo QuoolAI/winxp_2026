@@ -328,7 +328,7 @@ are intact. [Commands, hashes, failures and runtime evidence](native-networking-
 
 Tracked launchers, source-pinned native build media, fresh-probe test media and
 packet/server logs make the networking process repeatable on the prepared
-Ubuntu host. Native SCM/Winreg RPC stubs and headers were generated in build
+Linux host. Native SCM/Winreg RPC stubs and headers were generated in build
 copies for Milestone 3. The installed SCM was not replaced. Eight extended SP3
 ntdll IPv4/IPv6 conversion exports remain absent; the matching original helper
 does not require them. Native Ws2_32 also lacks the SP3 Unicode resolver exports
@@ -528,7 +528,7 @@ kernel compilation still requires its original Windows toolchain environment.
 
 ## Supplied SP3 guest: 2026-10-18–19
 
-Installed the user-supplied ISO on a new 32 GiB disk using QEMU 8.2.2/KVM,
+Installed the user-supplied ISO on a new 32 GiB disk using QEMU 8.2/KVM,
 `pc-i440fx-8.2`, `qemu32`, one CPU, 512 MiB RAM, IDE and no NIC. All artifacts
 remain in `.work/xp-sp3-install-20261018/`. The ISO was attached read-only;
 no Microsoft download, source upload or public CI was used.
