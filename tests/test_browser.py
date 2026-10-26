@@ -44,8 +44,9 @@ class BrowserPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT/'.work') as d:
             out=Path(d);generate(out,pin,True)
             registry=(out/'associations.reg').read_text(encoding='utf-16')
-            self.assertIn('SoftwareRendering',registry)
-            self.assertIn('--disable-gpu',registry)
+            # The native launcher adds --disable-gpu from this DWORD; no browser
+            # command line with switches is stored in the registry.
+            self.assertIn('"SoftwareRendering"=dword:00000001',registry)
             self.assertIn('XP25.URL',registry)
             self.assertIn('opennewwindow',registry)
             self.assertNotIn('--single-argument',registry)

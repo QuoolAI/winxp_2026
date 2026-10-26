@@ -1,5 +1,27 @@
 # Milestone 7: browser integration and IE dependency audit
 
+**2026-10-27 follow-up:** the captured 150 watcher cancellation CHECK
+(`0x77b96f8`, error 995) is an NT 5.1 issuing-thread cancellation difference in
+Supermium's own `pwrp_k32.dll` and is fixed by a provenance-pinned, export-equal
+compatibility proxy (`components/browser/xp25_pwrp.c`), verified by a native probe
+on XP25 and the SP3 control and by an original-vs-proxy A/B test. Because no
+renderer sandbox exists before Windows 10, XP25 entry points now launch the
+browser with a SAFER Normal User token (`XP25Browser.exe`) — a live probe shows
+its file/registry boundaries enforced — and the image blocks Internet browsing by
+default. Shell integration and reduced-token rendering pass under KVM-UP/MP/TCG;
+the DevTools deep-regression matrix is still blocked (WebSocket timeout under
+host storage contention), and a separate `0x842214` handle-type CHECK, residual
+hangs and restart stability remain open. Milestone 7 is still unaccepted; no new
+image is produced. [Stability/security and watcher-fix evidence](browser-stability-security.md).
+
+**2026-10-26 follow-up:** active-renderer token tests fail isolation on both
+XP25 and original SP3; 144/150 are unsuitable for unrestricted Internet access.
+A 150 watcher cancellation CHECK is captured on both systems. Native desktop
+Help now has a reversible, guest-tested Trident-free viewer; legacy Help and
+shared IE libraries remain. No new image is accepted.
+[Stability/security evidence and limitations](browser-stability-security.md).
+The following is the retained earlier integration record.
+
 Worktree/branch: `xp25-browser`, based on `xp25-ai` at `26dd86f0f`.
 Private evidence: `.work/browser-20261025/` in that worktree (`W`).
 The frozen input is the accepted AI engineering image, SHA-256

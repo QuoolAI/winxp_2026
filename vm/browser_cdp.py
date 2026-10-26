@@ -73,6 +73,7 @@ def main():
     p.add_argument('--output',type=Path,required=True);p.add_argument('--https',action='store_true')
     p.add_argument('--eval');p.add_argument('--navigate');p.add_argument('--close-browser',action='store_true')
     p.add_argument('--persistence',action='store_true')
+    p.add_argument('--policy',action='store_true',help='require the image URL policy to block non-approved hosts')
     a=p.parse_args();out=a.output.resolve()
     if '.work' not in out.parts:p.error('private .work evidence required')
     os.environ['NO_PROXY']='*';os.environ['no_proxy']='*'
@@ -125,6 +126,12 @@ def main():
                 if valid:ok=not nav.get('errorText') and state.get('url')==url and any(d and d.get('protocol') in ['TLS 1.2','TLS 1.3'] for d in details)
                 else:ok=bool(nav.get('errorText','').startswith('net::ERR_CERT_') or any(e.get('errorText','').startswith('net::ERR_CERT_') for e in failed))
                 result['checks']['https_'+name]=ok
+        if a.policy:
+            result['policy']={}
+            # Not on URLAllowlist: Chromium must refuse before any network request.
+            for name,url in [('lab_subdomain','http://blocked.xp25.test:8080/local.html?case=policy-blocked'),('public_site','https://www.wikipedia.org/')]:
+                nav=pg.call('Page.navigate',{'url':url});result['policy'][name]=nav
+                result['checks']['policy_blocks_'+name]=nav.get('errorText')=='net::ERR_BLOCKED_BY_ADMINISTRATOR'
         browser.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':r'C:\xp25\browser\downloads','eventsEnabled':True})
         result['download_navigation']=pg.call('Page.navigate',{'url':'http://xp25.test:8080/download.txt'})
         # File writes can outlive the navigation response, especially under TCG.

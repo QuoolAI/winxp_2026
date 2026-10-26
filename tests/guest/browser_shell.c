@@ -21,7 +21,7 @@ static int link(LPCWSTR folder,LPCWSTR name){WCHAR file[MAX_PATH],target[MAX_PAT
  if(SUCCEEDED(h))h=IShellLinkW_QueryInterface(s,&IID_IPersistFile,(void **)&p);
  if(SUCCEEDED(h))h=IPersistFile_Load(p,file,STGM_READ);
  if(SUCCEEDED(h))h=IShellLinkW_GetPath(s,target,MAX_PATH,NULL,SLGP_RAWPATH);
- if(SUCCEEDED(h))ok=contains(target,L"\\Supermium\\chrome.exe")&&GetFileAttributesW(target)!=INVALID_FILE_ATTRIBUTES;
+ if(SUCCEEDED(h))ok=contains(target,L"\\XP25Browser\\XP25Browser.exe")&&GetFileAttributesW(target)!=INVALID_FILE_ATTRIBUTES;
  if(p)IPersistFile_Release(p);
  if(s)IShellLinkW_Release(s);
  return ok;
@@ -46,6 +46,8 @@ void WINAPI ShellProbeMain(void){WCHAR folder[MAX_PATH],value[512];HKEY k;DWORD 
  check("start_shortcut",SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_PROGRAMS,NULL,0,folder))&&link(folder,L"\\Supermium.lnk"));
  if(SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_APPDATA,NULL,0,folder))){lstrcatW(folder,L"\\Microsoft\\Internet Explorer\\Quick Launch");check("quick_launch_shortcut",link(folder,L"\\Supermium.lnk"));}else check("quick_launch_shortcut",0);
  if(RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Clients\\StartMenuInternet",0,KEY_READ,&k)==ERROR_SUCCESS){LONG e=RegQueryValueExW(k,NULL,NULL,&type,(BYTE *)value,&size);check("start_menu_browser",!e&&type==REG_SZ&&!lstrcmpiW(value,L"Supermium"));RegCloseKey(k);}else check("start_menu_browser",0);
+ {WCHAR p[MAX_PATH];int layout=0;if(SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_PROGRAM_FILES,NULL,0,p))){lstrcatW(p,L"\\Supermium\\pwrp_k32_sm.dll");layout=GetFileAttributesW(p)!=INVALID_FILE_ATTRIBUTES;}check("watch_proxy_layout",layout);}
+ size=sizeof(value);if(RegOpenKeyExW(HKEY_LOCAL_MACHINE,L"SOFTWARE\\Policies\\Supermium\\URLBlocklist",0,KEY_READ,&k)==ERROR_SUCCESS){LONG e=RegQueryValueExW(k,L"1",NULL,&type,(BYTE *)value,&size);check("internet_blocklist_policy",!e&&type==REG_SZ&&!lstrcmpW(value,L"*"));RegCloseKey(k);}else check("internet_blocklist_policy",0);
  check("ie_not_running",!ie_running());ZeroMemory(&os,sizeof(os));os.dwOSVersionInfoSize=sizeof(os);check("nt_51",GetVersionExW(&os)&&os.dwMajorVersion==5&&os.dwMinorVersion==1);
  {char b[128];DWORD n;wsprintfA(b,"XP25_BROWSER_SHELL_FAILURES=%d\r\n",failures);WriteFile(loghandle,b,lstrlenA(b),&n,NULL);}
  CoUninitialize();ExitProcess(failures?1:0);

@@ -1,5 +1,13 @@
 /* XP25 browser shell adapter. Native NT 5.1 APIs; no scripting engine.
  * The diagnostic command records process/module metadata only, never profile data.
+ *
+ * Supermium has no renderer sandbox before Windows 10, so every XP25 entry
+ * point starts it with SAFER's Normal User level: the Administrators group is
+ * deny-only and privileges other than change-notify are removed. Browser child
+ * processes inherit that token. This limits what a compromised browser can
+ * change on the system; it is not a per-renderer sandbox, and the user's own
+ * files and profile remain reachable. Launch fails closed without the token.
+ * BrowserMain is the console tool; LauncherMain is the windowed XP25Browser.exe.
  */
 #define UNICODE
 #define _UNICODE
@@ -12,6 +20,7 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <shlwapi.h>
+#include <winsafer.h>
 
 static HANDLE output;
 static void line(const char *s) { DWORD n; WriteFile(output,s,lstrlenA(s),&n,NULL); WriteFile(output,"\r\n",2,&n,NULL); }
@@ -26,15 +35,14 @@ static int safe_url(LPCWSTR s) {
     return 1;
 }
 static LPCWSTR launch_arguments(void);
-static int shortcut(LPCWSTR folder,LPCWSTR suffix,LPCWSTR target) {
+static int shortcut(LPCWSTR folder,LPCWSTR suffix,LPCWSTR target,LPCWSTR icon) {
     IShellLinkW *link=NULL; IPersistFile *pf=NULL; HRESULT hr; WCHAR path[MAX_PATH];
     if (lstrlenW(folder)+lstrlenW(suffix)>=MAX_PATH) return 1;
     lstrcpyW(path,folder);lstrcatW(path,suffix);
     hr=CoCreateInstance(&CLSID_ShellLink,NULL,CLSCTX_INPROC_SERVER,&IID_IShellLinkW,(void **)&link);
     if (SUCCEEDED(hr)) hr=IShellLinkW_SetPath(link,target);
-    if (SUCCEEDED(hr)) hr=IShellLinkW_SetArguments(link,launch_arguments());
     if (SUCCEEDED(hr)) hr=IShellLinkW_SetDescription(link,L"Supermium web browser for Windows XP25");
-    if (SUCCEEDED(hr)) hr=IShellLinkW_SetIconLocation(link,target,0);
+    if (SUCCEEDED(hr)) hr=IShellLinkW_SetIconLocation(link,icon,0);
     if (SUCCEEDED(hr)) hr=IShellLinkW_QueryInterface(link,&IID_IPersistFile,(void **)&pf);
     if (SUCCEEDED(hr)) hr=IPersistFile_Save(pf,path,TRUE);
     if(pf) IPersistFile_Release(pf);
@@ -50,8 +58,30 @@ static LPCWSTR launch_arguments(void) {
     return value==1?L"--no-first-run --disable-gpu --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme":
         L"--no-first-run --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme";
 }
+static HANDLE reduced_token(void) {
+    SAFER_LEVEL_HANDLE level=NULL;HANDLE token=NULL;DWORD error;
+    if(!SaferCreateLevel(SAFER_SCOPEID_USER,SAFER_LEVELID_NORMALUSER,SAFER_LEVEL_OPEN,&level,NULL))return NULL;
+    if(!SaferComputeTokenFromLevel(level,NULL,&token,0,NULL))token=NULL;
+    error=GetLastError();SaferCloseLevel(level);SetLastError(error);
+    return token;
+}
+/* Target is NULL for a plain launch, otherwise an already validated URL/path. */
+static int start_browser(LPCWSTR target) {
+    WCHAR program[MAX_PATH];static WCHAR command[4096];STARTUPINFOW si;PROCESS_INFORMATION pi;HANDLE token;DWORD error;
+    if(FAILED(SHGetFolderPathW(NULL,CSIDL_PROGRAM_FILES,NULL,0,program)))return 1;
+    if(lstrlenW(program)+24>=MAX_PATH)return ERROR_BUFFER_OVERFLOW;
+    lstrcatW(program,L"\\Supermium\\chrome.exe");
+    if(lstrlenW(program)+lstrlenW(launch_arguments())+(target?lstrlenW(target):0)+10>=4096)return ERROR_BUFFER_OVERFLOW;
+    lstrcpyW(command,L"\"");lstrcatW(command,program);lstrcatW(command,L"\" ");lstrcatW(command,launch_arguments());
+    if(target){lstrcatW(command,L" \"");lstrcatW(command,target);lstrcatW(command,L"\"");}
+    token=reduced_token();
+    if(!token){error=GetLastError();number("reduced_token_error",error);return error?(int)error:ERROR_ACCESS_DENIED;}
+    ZeroMemory(&si,sizeof(si));si.cb=sizeof(si);ZeroMemory(&pi,sizeof(pi));
+    if(!CreateProcessAsUserW(token,program,command,NULL,NULL,FALSE,0,NULL,NULL,&si,&pi)){error=GetLastError();CloseHandle(token);return error;}
+    CloseHandle(token);number("browser_pid",pi.dwProcessId);CloseHandle(pi.hThread);CloseHandle(pi.hProcess);return 0;
+}
 static int launch_browser(LPCWSTR target,int document) {
-    WCHAR program[MAX_PATH];static WCHAR command[4096];STARTUPINFOW si;PROCESS_INFORMATION pi;DWORD i,attrs;
+    DWORD i,attrs;
     if(!target || !target[0] || lstrlenW(target)>2048)return 87;
     for(i=0;target[i];i++)if(target[i]<32 || target[i]==L'"')return 87;
     if(document) {
@@ -60,27 +90,20 @@ static int launch_browser(LPCWSTR target,int document) {
         attrs=GetFileAttributesW(target);
         if(attrs==INVALID_FILE_ATTRIBUTES || (attrs&FILE_ATTRIBUTE_DIRECTORY))return ERROR_FILE_NOT_FOUND;
     } else if(!safe_url(target) || wcschr(target,L'\\'))return 87;
-    if(FAILED(SHGetFolderPathW(NULL,CSIDL_PROGRAM_FILES,NULL,0,program)))return 1;
-    if(lstrlenW(program)+24>=MAX_PATH)return ERROR_BUFFER_OVERFLOW;
-    lstrcatW(program,L"\\Supermium\\chrome.exe");
-    if(lstrlenW(program)+lstrlenW(launch_arguments())+lstrlenW(target)+10>=4096)return ERROR_BUFFER_OVERFLOW;
-    lstrcpyW(command,L"\"");lstrcatW(command,program);lstrcatW(command,L"\" ");
-    lstrcatW(command,launch_arguments());lstrcatW(command,L" \"");lstrcatW(command,target);lstrcatW(command,L"\"");
-    ZeroMemory(&si,sizeof(si));si.cb=sizeof(si);ZeroMemory(&pi,sizeof(pi));
-    if(!CreateProcessW(program,command,NULL,NULL,FALSE,0,NULL,NULL,&si,&pi))return GetLastError();
-    number("browser_pid",pi.dwProcessId);CloseHandle(pi.hThread);CloseHandle(pi.hProcess);return 0;
+    return start_browser(target);
 }
 static int shortcuts(void) {
-    WCHAR folder[MAX_PATH],program[MAX_PATH]; int failed=0;
+    WCHAR folder[MAX_PATH],program[MAX_PATH],launcher[MAX_PATH]; int failed=0;
     if (FAILED(SHGetFolderPathW(NULL,CSIDL_PROGRAM_FILES,NULL,0,program))) return 1;
+    lstrcpyW(launcher,program);lstrcatW(launcher,L"\\XP25Browser\\XP25Browser.exe");
     lstrcatW(program,L"\\Supermium\\chrome.exe");
-    if (GetFileAttributesW(program)==INVALID_FILE_ATTRIBUTES) return 1;
+    if (GetFileAttributesW(program)==INVALID_FILE_ATTRIBUTES || GetFileAttributesW(launcher)==INVALID_FILE_ATTRIBUTES) return 1;
     CoInitialize(NULL);
-    if (SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_DESKTOPDIRECTORY,NULL,0,folder))) failed|=shortcut(folder,L"\\Supermium.lnk",program);else failed=1;
-    if (SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_PROGRAMS,NULL,0,folder))) failed|=shortcut(folder,L"\\Supermium.lnk",program);else failed=1;
+    if (SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_DESKTOPDIRECTORY,NULL,0,folder))) failed|=shortcut(folder,L"\\Supermium.lnk",launcher,program);else failed=1;
+    if (SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_PROGRAMS,NULL,0,folder))) failed|=shortcut(folder,L"\\Supermium.lnk",launcher,program);else failed=1;
     if (SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_APPDATA,NULL,0,folder))) {
         lstrcatW(folder,L"\\Microsoft\\Internet Explorer\\Quick Launch");
-        CreateDirectoryW(folder,NULL);failed|=shortcut(folder,L"\\Supermium.lnk",program);
+        CreateDirectoryW(folder,NULL);failed|=shortcut(folder,L"\\Supermium.lnk",launcher,program);
     } else failed=1;
     SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,NULL,NULL);CoUninitialize();return failed;
 }
@@ -149,10 +172,22 @@ void WINAPI BrowserMain(void) {
         else if(equal(argv[1],L"open-shortcut")&&argc==3)rc=open_shortcut(argv[2]);
         else if(equal(argv[1],L"open-url")&&argc==3)rc=launch_browser(argv[2],0);
         else if(equal(argv[1],L"open-document")&&argc==3)rc=launch_browser(argv[2],1);
+        else if(equal(argv[1],L"launch")&&argc==2)rc=start_browser(NULL);
         else if(equal(argv[1],L"inventory")){inventory();rc=0;}
         else if(equal(argv[1],L"close")){EnumWindows(close_browser,0);rc=0;}
         else if(equal(argv[1],L"shell")&&argc==3){SHELLEXECUTEINFOW s;ZeroMemory(&s,sizeof(s));s.cbSize=sizeof(s);s.fMask=SEE_MASK_NOCLOSEPROCESS|SEE_MASK_FLAG_NO_UI;s.lpVerb=L"open";s.lpFile=argv[2];s.nShow=SW_SHOWNORMAL;if(ShellExecuteExW(&s)){rc=0;if(s.hProcess){number("shell_pid",GetProcessId(s.hProcess));CloseHandle(s.hProcess);}}else {rc=1;number("shell_error",GetLastError());}}
         else if(equal(argv[1],L"refresh")){SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,NULL,NULL);rc=0;}
     }
     number("browserctl_exit",rc);if(argv)LocalFree(argv);ExitProcess(rc);
+}
+
+/* Windowed entry for shortcuts and the Start menu: launch verbs only. */
+void WINAPI LauncherMain(void) {
+    int argc=0,rc=87;WCHAR **argv=CommandLineToArgvW(GetCommandLineW(),&argc);output=GetStdHandle(STD_OUTPUT_HANDLE);
+    if(argc==1)rc=start_browser(NULL);
+    else if(argc==3 && equal(argv[1],L"open-url"))rc=launch_browser(argv[2],0);
+    else if(argc==3 && equal(argv[1],L"open-document"))rc=launch_browser(argv[2],1);
+    else if(argc==3 && equal(argv[1],L"open-shortcut"))rc=open_shortcut(argv[2]);
+    if(argv)LocalFree(argv);
+    ExitProcess(rc);
 }
