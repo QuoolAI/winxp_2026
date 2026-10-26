@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from browser_tools import ROOT,TARGETS
+from browser_tools import ROOT,TARGETS,DLLS,check_exports,definition_exports
 from inspect_component import PE
 
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -22,8 +22,11 @@ def main():
     if 'XP25_BROWSER_NATIVE_RC=0' not in serial or 'XP25_BROWSER_NATIVE_WRAPPER=0' not in serial:
         raise ValueError('native build did not succeed')
     sources={k:v for k,v in manifest['files'].items() if k.startswith('browser/')}
+    names=sorted({Path(k).parts[1] for k in sources if k.endswith('.c')})
+    if not names or any(name not in TARGETS and name not in DLLS for name in names):raise ValueError('unrecognized staged native tools')
+    def binary(n):return n+('.dll' if n in DLLS else '.exe')
     files=['/nt/xp25/'+s for s in sources]
-    files+=['/nt/xp25/browser/'+n+'/obj/i386/'+n+'.exe' for n in TARGETS]
+    files+=['/nt/xp25/browser/'+n+'/obj/i386/'+binary(n) for n in names]
     files+=['/xpout/browser-01/native.log']
     out.mkdir(parents=True,exist_ok=False);extracted=out/'extracted'
     command=[sys.executable,str(ROOT/'vm/read_guest.py'),str(run/'disk.qcow2'),str(extracted),*files]
@@ -40,13 +43,17 @@ def main():
             target,name=forwarded.rsplit('.',1);resolve(target.lower()+'.dll',name,(*seen,(module,symbol)))
     report={'run':str(run),'source_manifest_sha256':sha(a.media/'manifest.json'),
             'source_files_verified':len(sources),'command':command,'native_build_exit':0,'tools':{}}
-    for name,(_,_,libs) in TARGETS.items():
-        exe=out/(name+'.exe');shutil.copy2(extracted/'nt/xp25/browser'/name/'obj/i386'/(name+'.exe'),exe)
+    for name in names:
+        libs=DLLS[name][4] if name in DLLS else TARGETS[name][2]
+        exe=out/binary(name);shutil.copy2(extracted/'nt/xp25/browser'/name/'obj/i386'/binary(name),exe)
         pe=PE(exe)
         for module,symbols in pe.imports().items():
             if module not in {lib+'.dll' for lib in libs}:raise ValueError('unexpected runtime '+module)
             for symbol in symbols:resolve(module,symbol)
         row=pe.inspect();row['guest_imports_resolved']=True
+        if name in DLLS:
+            definition=extracted/'nt/xp25/browser'/name/Path(DLLS[name][3]).name
+            check_exports(pe,definition_exports(definition));row['exports_match_definition']=True
         report['tools'][name]=row
         (out/(name+'-pe.json')).write_text(json.dumps(row,indent=2)+'\n')
     (out/'collect.json').write_text(json.dumps(report,indent=2)+'\n')

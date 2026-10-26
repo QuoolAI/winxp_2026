@@ -27,6 +27,10 @@ def main():
     p.add_argument('--media',type=Path,required=True);p.add_argument('--name',required=True)
     p.add_argument('--mode',choices=['up','mp','tcg'],required=True)
     p.add_argument('--memory',type=int,default=1024)
+    p.add_argument('--vga',choices=['std','cirrus','vmware'],default='std')
+    p.add_argument('--run-root',type=Path,default=ROOT/'.work/browser-20261025/runs')
+    p.add_argument('--root-suite',action='store_true',help='stage at volume root for an original SP3 control without C:\\xp25')
+    p.add_argument('--gdb',action='store_true',help='private UNIX GDB socket for a diagnostic overlay only')
     p.add_argument('--suite',type=Path)
     p.add_argument('--gateway',type=Path)
     a=p.parse_args()
@@ -35,7 +39,9 @@ def main():
     suite_path=a.suite.resolve() if a.suite else None
     gateway=a.gateway.resolve() if a.gateway else None
     if '.work' not in base.parts or '.work' not in iso.parts or base.stat().st_mode&0o222:p.error('private frozen base and private media required')
-    out=ROOT/'.work/browser-20261025/runs'/a.name;out.mkdir(parents=True,exist_ok=False)
+    run_root=a.run_root.resolve()
+    if not run_root.is_relative_to(ROOT/'.work') or not 256<=a.memory<=3072:p.error('private run root and 256..3072 MiB required')
+    out=run_root/a.name;out.mkdir(parents=True,exist_ok=False)
     os.chdir(out)
     actual=sha(base)
     if actual!=a.sha256:raise ValueError('base hash mismatch')
@@ -57,14 +63,17 @@ del "%USERPROFILE%\Start Menu\Programs\Startup\XP25BrowserSuite.cmd"
         suite_bytes=suite_bytes.replace(b'__PROVIDER_SECRET__',secret.encode())
         (out/'gateway-clients.json').write_text(json.dumps({'xp25':{'secret_hex':secret}})+'\n')
     (out/'browser-suite.cmd').write_bytes(suite_bytes)
-    (out/'XP25BrowserSuite.cmd').write_bytes(b'@call C:\\xp25\\browser-suite.cmd\r\n')
+    target='/XP25BrowserDiagSuite.cmd' if a.root_suite else '/xp25/browser-suite.cmd'
+    (out/'XP25BrowserSuite.cmd').write_bytes(('@call C:'+target.replace('/','\\')+'\r\n').encode())
     lab.run(['qemu-img','create','-f','qcow2','-F','qcow2','-b',base,'disk.qcow2'])
     with lab.partition(out/'disk.qcow2',True) as device:
-        for target,source in {'/xp25/browser-suite.cmd':out/'browser-suite.cmd','/Documents and Settings/XP25/Start Menu/Programs/Startup/XP25BrowserSuite.cmd':out/'XP25BrowserSuite.cmd'}.items():
+        for target,source in {target:out/'browser-suite.cmd','/Documents and Settings/XP25/Start Menu/Programs/Startup/XP25BrowserSuite.cmd':out/'XP25BrowserSuite.cmd'}.items():
             lab.run(['ntfscp','-t',device,source,target])
             if lab.run(['ntfscat',device,target])!=source.read_bytes():raise ValueError('staging mismatch')
-    (out/'inputs.json').write_text(json.dumps({'base':str(base),'base_sha256':actual,'media':str(iso),'media_sha256':sha(iso),'mode':a.mode,'mac':mac,'memory_mib':a.memory},indent=2)+'\n')
+    (out/'inputs.json').write_text(json.dumps({'base':str(base),'base_sha256':actual,'media':str(iso),'media_sha256':sha(iso),'mode':a.mode,'mac':mac,'memory_mib':a.memory,'vga':a.vga,'root_suite':a.root_suite,'suite_sha256':hashlib.sha256(suite_bytes).hexdigest()},indent=2)+'\n')
     command=['qemu-system-i386','-name',a.name,'-machine','pc-i440fx-8.2'+(',kernel-irqchip=on' if a.mode!='tcg' else ''),'-accel','tcg,thread=single' if a.mode=='tcg' else 'kvm','-cpu','qemu32','-m',str(a.memory),'-smp','2' if a.mode=='mp' else '1','-nodefaults','-nic','none','-vga','std','-display','none','-monitor','none','-qmp','unix:qmp.sock,server=on,wait=off','-serial','file:serial.log','-rtc','base=localtime','-drive','file=disk.qcow2,format=qcow2,if=ide,index=0','-drive','file='+str(iso)+',format=raw,readonly=on,if=ide,index=2,media=cdrom','-boot','order=c','-pidfile','qemu.pid','-no-reboot','-no-shutdown','-S']
+    command[command.index('-vga')+1]=a.vga
+    if a.gdb:command.extend(['-gdb','unix:gdb.sock,server=on,wait=off'])
     (out/'qemu-command.json').write_text(json.dumps(command,indent=2)+'\n')
     wrapper=['unshare','--user','--map-root-user','--net',sys.executable,str(ROOT/'vm/browser_network.py'),'qemu-command.json','--parent-netns',os.readlink('/proc/self/ns/net'),'--mac',mac,'--fixtures',str(ROOT/'components/browser')]
     if gateway:wrapper.extend(['--gateway',str(gateway)])

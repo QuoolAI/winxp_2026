@@ -2,6 +2,47 @@
 
 ## Current checkpoint
 
+2026-10-27, Milestone 7 watcher fix + containment (`xp25-browser`):
+**The first captured crash is fixed and the browser now runs reduced-privilege,
+but Milestone 7 is still unaccepted and no new image is produced.** The directory
+watcher CHECK (`chrome.dll` RVA `0x77b96f8`, error 995 in
+`file_path_watcher_win.cc:357`) is an NT 5.1 issuing-thread cancellation
+difference inside Supermium's own `pwrp_k32.dll`. A provenance-pinned proxy
+(`components/browser/xp25_pwrp.c` + generated `pwrp_k32.def`, all 1703 exports
+name/ordinal/forwarder-equal to the pinned original, which is kept as
+`pwrp_k32_sm.dll`) re-issues the IOCP directory watch from one persistent thread.
+A native `browser_watch` probe reports `failures=0` on XP25 KVM and the SP3
+control (32/32 concurrent exited-issuer watches complete; event/routine/error
+parity with `kernel32`), and an A/B test shows the CHECK firing only in
+original-wrapper blocks (2 vs 0 on XP25). XP25 entry points now launch `chrome.exe`
+with a SAFER Normal User token through `XP25Browser.exe`; a live probe shows the
+browser root and children denied admin-only file/registry writes (error 5), and
+the image blocks Internet browsing by default (`URLBlocklist=*`). Shell
+integration and reduced-token rendering of HTTP/HTML/HTM/URL/HTTPS pass under
+KVM-UP/KVM-MP/TCG. Still open and not faked: a separate `0x842214`
+shared-memory handle-type CHECK, residual hangs/restart stability, and the
+DevTools deep-regression matrix (its WebSocket timed out under ~98%-full-disk
+contention; frozen as failures). No CHECK removed, no API faked, no sandbox
+weakened, no IE DLL deleted, `Source/` unchanged. Host: 64 tests, 10 skips, no
+failures. [Evidence](browser-stability-security.md)
+
+2026-10-26, Milestone 7 stability/security follow-up (`xp25-browser`):
+**Acceptance fails; Supermium 144 and 150 are unsuitable for unrestricted
+Internet access on this NT 5.1 configuration.** An actual 150 shutdown crash
+on original SP3 and the same watcher assertion on XP25 identify a CHECK that
+rejects cancellation error 995. A native issuing-thread-exit test reproduces
+that legitimate NT API result. No fake-success API or security guard removal
+is applied. Matched short debug runs can pass, while unmonitored 144 MP exits
+abnormally and the 150 TCG close times out. Active-renderer trace/token tests
+on SP3 and XP25 fail protected file/registry boundaries; official 144 source
+skips renderer lockdown before Windows 10. A native Win32 desktop Help viewer
+and reversible Explorer resource integration are implemented, built with the
+original NT toolchain and tested on KVM/TCG; legacy Help recovery is rehearsed.
+Shared IE compatibility DLLs remain. No new accepted image is produced.
+[Detailed evidence and remaining work](browser-stability-security.md)
+
+### Earlier browser integration checkpoint
+
 2026-10-25/26, Milestone 7 (branch `xp25-browser`): **Supermium integration is
 implemented and preliminary XP25 browser/HTTPS tests pass; final acceptance is
 in progress.** Official x86 150.0.7871.255 R2.01 is hash-pinned. The native NT

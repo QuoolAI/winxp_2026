@@ -14,6 +14,7 @@ def main():
     p.add_argument('--prepared',type=Path,required=True);p.add_argument('--bridge',type=Path,required=True)
     p.add_argument('--shell-probe',type=Path,required=True);p.add_argument('--ai-probe',type=Path,required=True)
     p.add_argument('--wait-probe',type=Path,required=True,help='test-only five-second native Sleep fixture')
+    p.add_argument('--launch-probe',type=Path,required=True,help='test-only SAFER Normal User browser launcher')
     p.add_argument('--regression',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     a=p.parse_args();out=a.output.resolve()
     if '.work' not in out.parts:p.error('private .work output required')
@@ -22,7 +23,7 @@ def main():
     manifest=json.loads((a.prepared/'manifest.json').read_text())
     for relative,digest in manifest['files'].items():
         if sha(media/relative)!=digest:raise ValueError('prepared media changed')
-    for path,name in [(a.bridge,'bridge.exe'),(a.shell_probe,'browser_shell.exe'),(a.ai_probe,'ai_probe.exe'),(a.wait_probe,'wait.exe')]:shutil.copy2(path,media/name)
+    for path,name in [(a.bridge,'bridge.exe'),(a.shell_probe,'browser_shell.exe'),(a.ai_probe,'ai_probe.exe'),(a.wait_probe,'wait.exe'),(a.launch_probe,'browser_launch.exe')]:shutil.copy2(path,media/name)
     for path in a.regression.iterdir():
         if path.is_file():shutil.copy2(path,media/path.name)
         else:shutil.copytree(path,media/path.name)
@@ -40,6 +41,13 @@ if errorlevel 1 goto regress
 D:\browser_shell.exe > COM1
 echo XP25_BROWSER_SHELL_EXIT=%ERRORLEVEL% > COM1
 D:\browserctl.exe inventory > C:\xp25\browser\before.txt
+rem Test-only approved hosts for the HTTPS cases (exact names the gateway tunnels).
+rem The packaged image's policy permits only local files, internal pages and xp25.test.
+reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 101 /d ".example.com" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 102 /d ".www.example.com" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 103 /d ".expired.badssl.com" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 104 /d ".wrong.host.badssl.com" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 105 /d ".self-signed.badssl.com" /f >nul
 rem Test-only system proxy: the packaged image retains its original settings.
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer /d "10.25.0.1:3128" /f >nul
@@ -64,11 +72,11 @@ ping -n 12 127.0.0.1 >nul
 start "" /b cmd.exe /c D:\sample.cmd
 start "" /b D:\bridge.exe
 echo XP25_BROWSER_CDP_STARTING > COM1
-start "" /wait "C:\Program Files\Supermium\chrome.exe" --no-first-run --disable-gpu --user-data-dir=C:\xp25\browser\TestProfile --remote-debugging-port=9222 --proxy-server=http://10.25.0.1:3128 --proxy-bypass-list="xp25.test;localhost;127.0.0.1;10.25.0.1" --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme --enable-logging --log-file=C:\xp25\browser\test-chrome.log http://xp25.test:8080/local.html
+D:\browser_launch.exe --no-first-run --disable-gpu --user-data-dir=C:\xp25\browser\TestProfile --remote-debugging-port=9222 --proxy-server=http://10.25.0.1:3128 --proxy-bypass-list="xp25.test;localhost;127.0.0.1;10.25.0.1" --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme --enable-logging --log-file=C:\xp25\browser\test-chrome.log http://xp25.test:8080/local.html
 echo XP25_BROWSER_PROCESS_EXIT=%ERRORLEVEL% > COM1
 D:\browserctl.exe inventory > C:\xp25\browser\after.txt
 echo XP25_BROWSER_PERSISTENCE_STARTING > COM1
-start "" /wait "C:\Program Files\Supermium\chrome.exe" --no-first-run --disable-gpu --user-data-dir=C:\xp25\browser\TestProfile --remote-debugging-port=9222 --proxy-server=http://10.25.0.1:3128 --proxy-bypass-list="xp25.test;localhost;127.0.0.1;10.25.0.1" --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme http://xp25.test:8080/local.html
+D:\browser_launch.exe --no-first-run --disable-gpu --user-data-dir=C:\xp25\browser\TestProfile --remote-debugging-port=9222 --proxy-server=http://10.25.0.1:3128 --proxy-bypass-list="xp25.test;localhost;127.0.0.1;10.25.0.1" --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme http://xp25.test:8080/local.html
 echo XP25_BROWSER_REOPEN_EXIT=%ERRORLEVEL% > COM1
 :regress
 call D:\compat-regress.cmd

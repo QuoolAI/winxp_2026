@@ -6,7 +6,37 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
-## Browser modernization checkpoint, 2026-10-25/26
+## Browser watcher fix and containment checkpoint, 2026-10-27
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| XP25 pwrp_k32 proxy, `browser_watch` probe, XP25 KVM + original SP3 | `failures=0` both: exited-issuer IOCP watches complete with the proxy (32/32 concurrent) where `kernel32`/original return error 995; event/routine/error parity with `kernel32`. | `.work/browser-fix-20261026/collect-fab150-xp25-up-01`, `collect-fab150-sp3-up-01` |
+| Supermium 150 watcher CHECK, A/B original-vs-proxy, XP25 KVM 2 GB | `0x77b96f8` fires in an original-wrapper block (first+second chance) and in no proxy block (2 vs 0). Residual: one proxy-block hang; guest later wedged and was frozen. | `.work/browser-fix-20261026/fab150-xp25-up-01-ab-report.json`, `runs/fab150-xp25-up-01/failure.json` |
+| Reduced-privilege launch (SAFER Normal User), Supermium 150 MP KVM 2 GB | Browser root and children denied admin-only file+registry writes (error 5) under launcher and shell-association launch; renderers observed; page rendered. Not a renderer sandbox: user profile still writable, no UIPI on NT 5.1. | `.work/browser-fix-20261026/runs/fcontain150-mp-01` |
+| Install-only image (proxy + launcher + Internet policy), XP25 UP KVM | Normal shutdown; rejects `javascript:`/extra-arg/non-HTML (87) with no browser launched. | `.work/browser-fix-20261026/runs/finstall150-01` |
+| Supermium 150 shell + reduced-token rendering, KVM-UP / KVM-MP / TCG | 13 shell/association/policy checks pass; HTTP/HTML/HTM/URL/HTTPS rendered (5 receipts/mode). DevTools deep-regression (nav/tabs/certs/download/persistence) `Not tested`: CDP WebSocket timed out under ~98%-full-disk contention; guests frozen as failures. | `.work/browser-fix-20261026/matrix-150-01`, `fix-summary.json` |
+
+Internet browsing is disabled by default in the experimental image
+(`URLBlocklist=*`, local/internal/lab allowlist only). No renderer sandbox exists
+on NT 5.1; containment is process-level. No CHECK removed, no API faked, no shared
+IE DLL deleted, no new image accepted.
+[Watcher fix, containment method and exact limits](browser-stability-security.md)
+
+## Browser stability/security checkpoint, 2026-10-26
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| Supermium 150, matched original SP3/XP25 KVM, 2 GB | SP3 root shutdown crashes; XP25 Cirrus captures the same watcher CHECK/error 995 in network service. Short repeated passes do not establish stability. | `.work/browser-stability-20261026/control150-capture-01`, `xp25150-cirrus-capture-01` |
+| Supermium 150, XP25 TCG, 2 GB | First close times out; no JS receipt. | `runs/bdiag150-xp25-tcg-01` under the same evidence root |
+| Supermium 144, XP25 MP/KVM, 2 GB, unmonitored | Three abnormal root exits; two of three JS receipts. Debugger run instead times out. | `runs/bplain144-xp25-mp-01`, `runs/bdiag144-xp25-mp-01` |
+| Supermium 144 executing renderers on SP3 and XP25 | Primary/main-thread token boundary tests fail; isolation is not acceptable. Both 144 and 150 are unsuitable for unrestricted Internet access. | `runs/btrace144-sp3-up-01`, `runs/btrace144-xp25-up-01` |
+| Native desktop Help | Original NT compiler builds; real Start-menu launch on XP25 KVM; 14 GUI-control tests pass on SP3 KVM and XP25 TCG without MSHTML/JScript/VBScript. Original Help recovery works in a new overlay. | `native-08`, `runs/native-help-up-01`, `runs/help-contract-xp25-tcg-01`, `runs/native-help-rollback-up-01` |
+
+No shared IE DLL is removed. No new engineering image is accepted. Full browser,
+HTTPS, application and AI regression acceptance remains incomplete.
+[Failure analysis, security method and exact limits](browser-stability-security.md)
+
+## Earlier browser modernization checkpoint, 2026-10-25/26
 
 Official Supermium x86 150.0.7871.255 R2.01 passes preliminary single-vCPU
 KVM page, JavaScript, tab, download and HTTPS certificate cases with software

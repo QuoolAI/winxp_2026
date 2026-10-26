@@ -3,6 +3,12 @@ import json
 from pathlib import Path
 
 CLASSIC='--no-first-run --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme'
+LAUNCHER=r'"C:\Program Files\XP25Browser\XP25Browser.exe"'
+# Supermium cannot sandbox renderers on NT 5.1, so the experimental image keeps
+# unrestricted Internet browsing disabled. Only local files, internal pages and
+# the private lab host load; an administrator adds approved hosts explicitly.
+URL_BLOCKLIST=['*']
+URL_ALLOWLIST=['file://*','chrome://*','chrome-extension://*','devtools://*','about:blank','.xp25.test']
 
 def installation_suite():
     """Install-only Startup fixture for a fresh browser_lab overlay."""
@@ -25,7 +31,6 @@ shutdown.exe -s -t 10
 
 def generate(out,pin,software_rendering=False):
     lines=['Windows Registry Editor Version 5.00',''];snapshots=[]
-    launch='"C:\\Program Files\\Supermium\\chrome.exe" '+(CLASSIC+(' --disable-gpu' if software_rendering else ''))
     # The native adapter validates one target and builds only fixed browser
     # arguments. It avoids XP's --single-argument quote bug and flag injection.
     adapter='"C:\\Program Files\\XP25Browser\\browserctl.exe" '
@@ -62,19 +67,26 @@ def generate(out,pin,software_rendering=False):
     lines.extend(['[-HKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\IEXPLORE.EXE]',''])
     key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet\Supermium',{None:'Supermium'})
     key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet\Supermium\DefaultIcon',{None:r'C:\Program Files\Supermium\chrome.exe,0'})
-    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet\Supermium\shell\open\command',{None:launch})
+    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet\Supermium\shell\open\command',{None:LAUNCHER})
+    snap('HKLM',r'Software\Policies\Supermium')
+    lines.extend([r'[-HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium]',''])
+    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium\URLBlocklist',{str(i+1):v for i,v in enumerate(URL_BLOCKLIST)})
+    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium\URLAllowlist',{str(i+1):v for i,v in enumerate(URL_ALLOWLIST)})
     policy=r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'
     snap('HKCU',policy);key('HKEY_CURRENT_USER\\'+policy,{'NoInternetIcon':1,'NoActiveDesktop':1})
     for view in ['NewStartPanel','ClassicStartMenu']:
         path='Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\HideDesktopIcons\\'+view
         snap('HKCU',path);key('HKEY_CURRENT_USER\\'+path,{'{871C5380-42A0-1069-A2EA-08002B30309D}':1})
     snap('HKLM',r'Software\XP25\Browser')
-    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\XP25\Browser',{'Name':'Supermium','Version':pin['version'],'Release':pin['tag'],'PackageSHA256':pin['sha256'],'Path':r'C:\Program Files\Supermium\chrome.exe','SoftwareRendering':int(software_rendering),'UpdateMode':'Read-only host check; verified package and explicit approval required'})
+    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\XP25\Browser',{'Name':'Supermium','Version':pin['version'],'Release':pin['tag'],'PackageSHA256':pin['sha256'],'Path':r'C:\Program Files\Supermium\chrome.exe','SoftwareRendering':int(software_rendering),'UpdateMode':'Read-only host check; verified package and explicit approval required',
+        'RendererSandbox':'Not available: Supermium disables renderer sandboxing before Windows 10','Containment':'SAFER Normal User token for XP25 entry points',
+        'InternetPolicy':'Blocked except local files, internal pages and approved hosts','WatchCompatibility':'XP25 pwrp_k32 proxy (thread-agnostic directory watches)'})
     (out/'associations.reg').write_bytes(('\r\n'.join(lines)+'\r\n').encode('utf-16'))
     cmd=['@echo off','setlocal','set B=%ProgramFiles%\\XP25Browser','set P=%ProgramFiles%\\Supermium',
          'if exist "%B%\\installed.ok" exit /b 0','if exist "%P%\\chrome.exe" exit /b 80',
          'mkdir "%B%" 2>nul','copy /y "%~dp0browserctl.exe" "%B%\\browserctl.exe" >nul','if errorlevel 1 exit /b 1',
-         'copy /y "%~dp0rollback.cmd" "%B%\\rollback.cmd" >nul','if errorlevel 1 exit /b 1']
+         'copy /y "%~dp0rollback.cmd" "%B%\\rollback.cmd" >nul','if errorlevel 1 exit /b 1',
+         'copy /y "%~dp0XP25Browser.exe" "%B%\\XP25Browser.exe" >nul','if errorlevel 1 exit /b 1']
     rollback=['@echo off','setlocal','set B=%ProgramFiles%\\XP25Browser','set FAILED=0']
     for i,(root,path) in enumerate(snapshots):
         cmd.extend(['"%B%\\browserctl.exe" key-save '+root+' "'+path+'" '+str(i),'if errorlevel 1 exit /b 1'])

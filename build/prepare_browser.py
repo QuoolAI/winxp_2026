@@ -34,11 +34,23 @@ def verified_package(package, pin):
         if 'Supermium/chrome.exe' not in z.namelist():raise ValueError('missing browser')
 
 
+def install_watch_proxy(media,proxy):
+    """Keep the pinned original wrapper byte-for-byte as pwrp_k32_sm.dll and put
+    the XP25 forwarding proxy in its place (see components/browser/xp25_pwrp.c)."""
+    from pwrp_proxy import ORIGINAL_SHA256
+    original=media/'Supermium/pwrp_k32.dll';renamed=media/'Supermium/pwrp_k32_sm.dll'
+    if sha(original)!=ORIGINAL_SHA256:raise ValueError('package pwrp_k32.dll is not the pinned Supermium wrapper')
+    if renamed.exists():raise ValueError('pwrp_k32_sm.dll already present')
+    original.rename(renamed);shutil.copy2(proxy,original)
+    return {'proxy':'Supermium/pwrp_k32.dll','proxy_sha256':sha(original),'original':'Supermium/pwrp_k32_sm.dll','original_sha256':sha(renamed)}
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--package',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--browserctl',type=Path,required=True)
+    p.add_argument('--launcher',type=Path,required=True,help='windowed XP25Browser.exe for shortcuts and the Start menu')
+    p.add_argument('--pwrp-proxy',type=Path,help='XP25 pwrp_k32.dll; the original wrapper is kept as pwrp_k32_sm.dll')
     p.add_argument('--pin',type=Path,default=ROOT/'components/browser/release.json')
     p.add_argument('--download',action='store_true')
     p.add_argument('--software-rendering',action='store_true',help='verified engineering VGA profile only')
@@ -57,14 +69,15 @@ def main():
     excluded=[]
     for launcher in (media/'Supermium').glob('*.cmd'):
         excluded.append(str(launcher.relative_to(media)));launcher.unlink()
-    shutil.copy2(a.browserctl,media/'browserctl.exe')
+    shutil.copy2(a.browserctl,media/'browserctl.exe');shutil.copy2(a.launcher,media/'XP25Browser.exe')
+    compat=install_watch_proxy(media,a.pwrp_proxy) if a.pwrp_proxy else None
     from browser_config import generate,installation_suite
     generate(media,pin,a.software_rendering)
     (out/'install-suite.cmd').write_bytes(installation_suite())
     for name in ('local.html',):
         src=ROOT/'components/browser'/name
         shutil.copy2(src,media/name)
-    manifest={'pin':pin,'package':str(package),'package_sha256':sha(package),'software_rendering':a.software_rendering,'excluded_portable_launchers':excluded,'install_suite_sha256':sha(out/'install-suite.cmd'),'files':{str(f.relative_to(media)):sha(f) for f in sorted(media.rglob('*')) if f.is_file()},'redistribution_approved':False}
+    manifest={'pin':pin,'package':str(package),'package_sha256':sha(package),'software_rendering':a.software_rendering,'excluded_portable_launchers':excluded,'watch_compatibility':compat,'install_suite_sha256':sha(out/'install-suite.cmd'),'files':{str(f.relative_to(media)):sha(f) for f in sorted(media.rglob('*')) if f.is_file()},'redistribution_approved':False}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     cmd=['genisoimage','-quiet','-J','-joliet-long','-r','-V','XP25BROWSER','-o',str(out/'browser.iso'),str(media)]
     (out/'commands.json').write_text(json.dumps([cmd],indent=2)+'\n')

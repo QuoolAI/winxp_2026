@@ -71,8 +71,8 @@ def client(run,namespace,phase,extra):
     return result,str(out/'result.json')
 
 def execute(a,mode):
-    name=a.prefix+'-'+mode;run=ROOT/'.work/browser-20261025/runs'/name
-    command=[sys.executable,str(ROOT/'vm/browser_lab.py'),'--base',str(a.base),'--sha256',a.sha256,'--media',str(a.media/'browser-tests.iso'),'--suite',str(a.media/'suite.cmd'),'--name',name,'--mode',mode,'--gateway',str(a.gateway)]
+    name=a.prefix+'-'+mode;run=a.run_root/name
+    command=[sys.executable,str(ROOT/'vm/browser_lab.py'),'--base',str(a.base),'--sha256',a.sha256,'--media',str(a.media/'browser-tests.iso'),'--suite',str(a.media/'suite.cmd'),'--name',name,'--mode',mode,'--gateway',str(a.gateway),'--run-root',str(a.run_root),'--memory',str(a.memory)]
     if not a.resume:
         with (a.output/(mode+'-launch.log')).open('w') as f:subprocess.run(command,stdout=f,stderr=subprocess.STDOUT,check=True)
     else:
@@ -94,7 +94,7 @@ def execute(a,mode):
         if previous:
             _,f,report['browser']=max(previous,key=lambda row:row[0]);browser_evidence=str(f)
         else:
-            report['browser'],browser_evidence=client(run,namespace,'cdp-browser',['--https'])
+            report['browser'],browser_evidence=client(run,namespace,'cdp-browser',['--https','--policy'])
         wait_until(run,lambda:'XP25_BROWSER_PERSISTENCE_STARTING' in serial(run),'browser relaunch',120)
         time.sleep(4)
         status(run,'profile_and_settings_persistence')
@@ -161,7 +161,9 @@ def main():
     p.add_argument('--prefix',required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--mode',choices=['up','mp','tcg'],action='append')
     p.add_argument('--resume',action='store_true')
-    a=p.parse_args();a.base=a.base.resolve();a.media=a.media.resolve();a.gateway=a.gateway.resolve();a.output=a.output.resolve()
+    p.add_argument('--run-root',type=Path,default=ROOT/'.work/browser-20261025/runs')
+    p.add_argument('--memory',type=int,default=1024)
+    a=p.parse_args();a.base=a.base.resolve();a.run_root=a.run_root.resolve();a.media=a.media.resolve();a.gateway=a.gateway.resolve();a.output=a.output.resolve()
     if not a.output.is_relative_to(ROOT/'.work'):p.error('private .work output required')
     a.output.mkdir(parents=True,exist_ok=False)
     # Processes keep cwd isolated even while QMP observers operate concurrently.
@@ -169,7 +171,7 @@ def main():
     results=[]
     for mode in modes:
         # Each child owns its cwd. This coordinator can safely launch all modes.
-        command=[sys.executable,__file__,'--base',str(a.base),'--sha256',a.sha256,'--media',str(a.media),'--gateway',str(a.gateway),'--prefix',a.prefix,'--output',str(a.output/mode),'--worker',mode]
+        command=[sys.executable,__file__,'--base',str(a.base),'--sha256',a.sha256,'--media',str(a.media),'--gateway',str(a.gateway),'--prefix',a.prefix,'--output',str(a.output/mode),'--run-root',str(a.run_root),'--memory',str(a.memory),'--worker',mode]
         if a.resume:command.append('--resume')
         with (a.output/(mode+'.log')).open('w') as f:
             process=subprocess.Popen(command,stdout=f,stderr=subprocess.STDOUT)
@@ -187,7 +189,8 @@ if __name__=='__main__':
     if '--worker' in sys.argv:
         index=sys.argv.index('--worker');mode=sys.argv[index+1];del sys.argv[index:index+2]
         parser=argparse.ArgumentParser()
-        for arg in ['base','media','gateway','output']:parser.add_argument('--'+arg,type=Path,required=True)
+        for arg in ['base','media','gateway','output','run_root']:parser.add_argument('--'+arg.replace('_','-'),type=Path,required=True)
+        parser.add_argument('--memory',type=int,required=True)
         parser.add_argument('--sha256',required=True);parser.add_argument('--prefix',required=True)
         parser.add_argument('--resume',action='store_true')
         args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=False)
