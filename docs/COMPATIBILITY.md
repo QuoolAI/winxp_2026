@@ -6,6 +6,17 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## XP25-AI remote access through Guacamole, 2026-10-26
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| XP25-AI rebuilt (libvirt KVM, overlay on image-05, no NIC, VNC loopback + password, USB tablet) | 11/11 offline gates; `oem` probe pass; network gates not applicable | `.work/vm-rebuild-20261026/results` |
+| MEA web → Guacamole 1.6.0/guacd (Fargate) → relay → SSH-over-SSM tunnel → QEMU VNC, system Chromium 156 | Pass: Start menu by mouse, Notepad text by keyboard, reconnect into the same session, seat held and released | `.work/guacamole-remote-20261026/e2e-02` |
+| Windows shortcuts from the browser (Alt+F4) | Not delivered as a shortcut in the headless test | same |
+| Clipboard, audio, other browsers, mobile | Not tested | — |
+
+[Record](xp25-ai-remote-access.md)
+
 ## Interactive XP25-Winlogon and XP25-AI VMs, 2026-10-25
 
 | Configuration | Result | Evidence |

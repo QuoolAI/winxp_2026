@@ -11,6 +11,15 @@ overlay, and the image is opened read-only.
 
 (Update, 2026-10-25: see [xp25-vm-configuration.md](xp25-vm-configuration.md) for its name, address and branding.)
 
+**Update, 2026-10-26:** XP25-AI was rebuilt on a fresh overlay with the same configuration, and is now reachable
+through Mise En Abyme's Guacamole ([xp25-ai-remote-access.md](xp25-ai-remote-access.md)). Since then:
+- the network adapter is removed;
+- VNC uses a fixed loopback port with a password;
+- a USB tablet provides absolute pointing;
+- autostart is enabled.
+
+The table below describes the 2026-10-25 definition.
+
 It was started with `virsh start` and is left **running**. It logged on to the
 `XP25` desktop by itself and shows the ClippyAI shortcut. The recurring Found New
 Hardware Wizard for the standard VGA controller was cancelled, as on

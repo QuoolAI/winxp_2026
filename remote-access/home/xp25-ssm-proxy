@@ -1,0 +1,66 @@
+#!/usr/bin/python3
+"""SSH ProxyCommand for the XP25 tunnel: open an AWS-StartSSHSession Session
+Manager session to the relay and hand it to AWS's session-manager-plugin, which
+then carries SSH's stdin/stdout. It does what `aws ssm start-session` does,
+with only the Python standard library, so the tunnel account needs neither the
+AWS CLI nor boto3.
+
+usage (ssh_config): ProxyCommand /usr/local/lib/xp25-tunnel/xp25-ssm-proxy %h
+Environment: AWS_REGION, AWS_SHARED_CREDENTIALS_FILE ([default] profile).
+Nothing secret is printed; errors name only the failing step."""
+import configparser, datetime, hashlib, hmac, json, os, sys, urllib.error, urllib.request
+
+PLUGIN = os.environ.get('XP25_SSM_PLUGIN', '/usr/local/sessionmanagerplugin/bin/session-manager-plugin')
+
+
+def credentials():
+    path = os.environ.get('AWS_SHARED_CREDENTIALS_FILE', '/etc/xp25-tunnel/aws-credentials')
+    c = configparser.ConfigParser()
+    if not c.read(path) or 'default' not in c:
+        raise SystemExit(f'xp25-ssm-proxy: no [default] credentials in {path}')
+    d = c['default']
+    return d['aws_access_key_id'], d['aws_secret_access_key'], d.get('aws_session_token')
+
+
+def start_session(region, request):
+    """POST AmazonSSM.StartSession with a Signature Version 4 signature."""
+    key_id, secret, token = credentials()
+    host = f'ssm.{region}.amazonaws.com'
+    body = json.dumps(request).encode()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    amz_date, day = now.strftime('%Y%m%dT%H%M%SZ'), now.strftime('%Y%m%d')
+    headers = {'content-type': 'application/x-amz-json-1.1', 'host': host, 'x-amz-date': amz_date,
+               'x-amz-target': 'AmazonSSM.StartSession'}
+    if token:
+        headers['x-amz-security-token'] = token
+    signed = ';'.join(sorted(headers))
+    canonical = '\n'.join(['POST', '/', '', ''.join(f'{k}:{headers[k]}\n' for k in sorted(headers)), signed,
+                           hashlib.sha256(body).hexdigest()])
+    scope = f'{day}/{region}/ssm/aws4_request'
+    to_sign = '\n'.join(['AWS4-HMAC-SHA256', amz_date, scope, hashlib.sha256(canonical.encode()).hexdigest()])
+    k = ('AWS4' + secret).encode()
+    for part in (day, region, 'ssm', 'aws4_request'):
+        k = hmac.new(k, part.encode(), hashlib.sha256).digest()
+    signature = hmac.new(k, to_sign.encode(), hashlib.sha256).hexdigest()
+    headers['authorization'] = f'AWS4-HMAC-SHA256 Credential={key_id}/{scope}, SignedHeaders={signed}, Signature={signature}'
+    req = urllib.request.Request(f'https://{host}/', data=body, method='POST', headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r), f'https://{host}'
+    except urllib.error.HTTPError as e:
+        detail = json.loads(e.read() or b'{}')
+        raise SystemExit(f"xp25-ssm-proxy: StartSession refused ({e.code} {detail.get('__type', '')}: {detail.get('message', detail.get('Message', ''))})")
+
+
+def main():
+    if len(sys.argv) != 2 or not sys.argv[1].startswith('i-'):
+        raise SystemExit('usage: xp25-ssm-proxy INSTANCE-ID')
+    region = os.environ.get('AWS_REGION', 'us-west-2')
+    request = {'Target': sys.argv[1], 'DocumentName': 'AWS-StartSSHSession', 'Parameters': {'portNumber': ['22']}}
+    response, endpoint = start_session(region, request)
+    print(f"xp25-ssm-proxy: session {response['SessionId']} opened", file=sys.stderr, flush=True)
+    os.execv(PLUGIN, [PLUGIN, json.dumps(response), region, 'StartSession', '', json.dumps(request), endpoint])
+
+
+if __name__ == '__main__':
+    main()

@@ -2,6 +2,34 @@
 
 ## Current checkpoint
 
+2026-10-26, XP25-AI remote access (branch `xp25-ai`): **the rebuilt XP25-AI VM
+is usable from a browser through Mise En Abyme's existing Guacamole, by any
+verified Newbie user, one at a time; a live end-to-end test passed.**
+
+- **VM.** XP25-AI was rebuilt on a fresh overlay of the accepted image-05
+  (`ec22f45b…`, unchanged) with the QuoolAI configuration: 11/11 offline gates.
+  - The network adapter is removed.
+  - VNC is on a fixed loopback port with a password.
+  - A USB tablet gives absolute pointing.
+  - Autostart is enabled.
+  - The previous overlay is kept.
+- **MEA.** Guacamole there is MEA's embedded backend: its UI is not public, and
+  its lifecycle extension admits only MEA desktop leases. A "shared desktop"
+  feature was therefore added to MEA (one seat, normal lease rules, outside the
+  EC2 cap). It was built on the live release once that was pushed, tested on
+  PostgreSQL 17.6 and deployed.
+- **Tunnel.** A t4g.nano relay EC2 in the MEA VPC accepts VNC only from the
+  Guacamole task. The home host keeps an SSH reverse tunnel to it, carried over
+  SSM Session Manager. No inbound ports are open anywhere.
+- **Verified.**
+  - The public site to XP25-AI: mouse, keyboard, disconnect and reconnect into
+    the same session, the single seat, release and the second user. guacd's own
+    logs show it.
+  - The tunnel key cannot open a shell, a TTY, another listen address or a
+    local forward.
+- Not done: MFA for MEA sign-in (MEA has none).
+- [Record](xp25-ai-remote-access.md), [operations](../remote-access/README.md)
+
 2026-10-25, interactive VM configuration (branch `xp25-ai`): **XP25-Winlogon and
 XP25-AI run at the same time, each with its own address and name, and System
 Properties shows QuoolAI with the full "Windows XP 25th Anniversary Edition".**

@@ -1,5 +1,10 @@
 # XP25-Winlogon and XP25-AI configuration (2026-10-25)
 
+**Update, 2026-10-26:** XP25-AI was rebuilt on a fresh image-05 overlay with this same
+procedure (11/11 offline gates), and its network adapter was then removed for remote
+access ([xp25-ai-remote-access.md](xp25-ai-remote-access.md)). The two VMs therefore no
+longer share `XP25-Isolated`. The network results below describe 2026-10-25.
+
 This record covers the second configuration pass on the two interactive libvirt
 VMs, XP25-Winlogon and XP25-AI. It continues
 [xp25-winlogon-oem-branding.md](xp25-winlogon-oem-branding.md) and
