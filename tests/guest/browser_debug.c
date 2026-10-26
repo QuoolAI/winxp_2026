@@ -19,6 +19,44 @@ static WCHAR command[4096],tag[20],profile[MAX_PATH],chrome_log[MAX_PATH];static
 static void write_line(HANDLE file,const char *s){DWORD n;WriteFile(file,s,lstrlenA(s),&n,NULL);WriteFile(file,"\r\n",2,&n,NULL);}
 static void log_line(const char *s){write_line(log_file,s);}
 static BROWSER_PROCESS *find(DWORD pid){DWORD i;for(i=0;i<used;i++)if(processes[i].pid==pid && processes[i].process)return &processes[i];return NULL;}
+typedef LONG (WINAPI *QUERY_OBJECT)(HANDLE,ULONG,PVOID,ULONG,PULONG);
+static QUERY_OBJECT nt_query_object;
+/* Read one child's command line into out (wide). Mirrors command_line() but returns the text. */
+static int read_command_line(HANDLE process,WCHAR *out,DWORD cap){
+ typedef LONG (WINAPI *QUERY)(HANDLE,ULONG,PVOID,ULONG,PULONG);QUERY query;DWORD basic[6],peb[9],params[18],length;SIZE_T got;
+ query=(QUERY)GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"NtQueryInformationProcess");
+ if(!query || query(process,0,basic,sizeof(basic),NULL))return 0;
+ if(!ReadProcessMemory(process,(void *)(UINT_PTR)basic[1],peb,sizeof(peb),&got) || !ReadProcessMemory(process,(void *)(UINT_PTR)peb[4],params,sizeof(params),&got))return 0;
+ length=params[16]&0xffff;if(length>(cap-1)*2)length=(cap-1)*2;
+ if(!ReadProcessMemory(process,(void *)(UINT_PTR)params[17],out,length,&got))return 0;
+ out[length/2]=0;return 1;
+}
+/* Decisive origin test: what NT object does a child's inherited handle VALUE name,
+ * queried from the debugger at a given moment? If a field-trial Section handle reads
+ * as a Section at child creation but a File at the TakeHandleOfType CHECK, it was
+ * inherited then closed and its value reused; if it is never a Section, it never
+ * inherited. Nothing is modified in the child. */
+static void probe_handle(BROWSER_PROCESS *p,const WCHAR *cmd,const WCHAR *flag,const char *label,const char *when){
+ const WCHAR *q=wcsstr(cmd,flag);DWORD val=0;HANDLE dup=NULL,src;char type[80]="<invalid>",text[256];DWORD err=0;
+ if(!q)return;
+ q+=lstrlenW(flag);while(*q>=L'0'&&*q<=L'9'){val=val*10+(DWORD)(*q-L'0');q++;}
+ /* The debug-event process handle may lack PROCESS_DUP_HANDLE; open one that has it. */
+ src=OpenProcess(PROCESS_DUP_HANDLE,FALSE,p->pid);if(!src)src=p->process;
+ if(DuplicateHandle(src,(HANDLE)(UINT_PTR)val,GetCurrentProcess(),&dup,0,FALSE,DUPLICATE_SAME_ACCESS)){
+  BYTE buf[1024];ULONG got=0;USHORT *us=(USHORT *)buf;
+  if(nt_query_object && nt_query_object(dup,2,buf,sizeof(buf),&got)>=0 && us[0]){
+   WCHAR *name=*(WCHAR **)(buf+4);int len=us[0]/2,i;if(len>79)len=79;for(i=0;i<len;i++)type[i]=(char)name[i];type[len]=0;}
+  CloseHandle(dup);
+ }else{err=GetLastError();lstrcpyA(type,"<nodup>");}
+ if(src!=p->process)CloseHandle(src);
+ wsprintfA(text,"FIELDTRIAL_PROBE when=%s cycle=%lu pid=%lu %s value=%lu type=%s dup_error=%lu is_section=%d",when,cycle,p->pid,label,val,type,err,!lstrcmpA(type,"Section"));log_line(text);write_line(console,text);
+}
+static void probe_inherited(BROWSER_PROCESS *p,const char *when){
+ static WCHAR cmd[4096];if(!read_command_line(p->process,cmd,4096))return;
+ if(!wcsstr(cmd,L"--type=gpu-process") && !wcsstr(cmd,L"--type=utility") && !wcsstr(cmd,L"--type=renderer"))return;
+ probe_handle(p,cmd,L"--field-trial-handle=","field_trial",when);
+ probe_handle(p,cmd,L"--pseudonymization-salt-handle=","pseudo_salt",when);
+}
 static int in_ntdll(BROWSER_PROCESS *p,LPVOID address){
  MEMORY_BASIC_INFORMATION info;WCHAR path[512];DWORD i,start=0;
  if(!VirtualQueryEx(p->process,address,&info,sizeof(info)))return 0;
@@ -68,7 +106,7 @@ static void exception(BROWSER_PROCESS *p,DEBUG_EVENT *event){
   if(words[0]<=frame || words[0]>frame+0x100000)break;
   frame=words[0];
  }
- memory(p);command_line(p);
+ memory(p);command_line(p);probe_inherited(p,"exception");
  if(total_dumps>=8 || p->dumps>=2)return;
  total_dumps++;p->dumps++;
  wsprintfW(path,L"C:\\xp25\\browserdiag\\%sc%lu-p%lu-t%lu-e%08lx-f%lu.stack",tag,cycle,p->pid,event->dwThreadId,r->ExceptionCode,event->u.Exception.dwFirstChance);
@@ -134,7 +172,7 @@ static int run_cycle(void){
   }else if(event.dwDebugEventCode==LOAD_DLL_DEBUG_EVENT){if(p)module(p,event.u.LoadDll.lpBaseOfDll);if(event.u.LoadDll.hFile)CloseHandle(event.u.LoadDll.hFile);
   }else if(event.dwDebugEventCode==EXCEPTION_DEBUG_EVENT && p){
    DWORD code=event.u.Exception.ExceptionRecord.ExceptionCode;DWORD address=(DWORD)(UINT_PTR)event.u.Exception.ExceptionRecord.ExceptionAddress;
-   if(code==EXCEPTION_BREAKPOINT && !p->initial_break && in_ntdll(p,(LPVOID)(UINT_PTR)address)){p->initial_break=1;wsprintfA(text,"INITIAL_LOADER_BREAK pid=%lu address=%08lx",p->pid,address);log_line(text);command_line(p);memory(p);}
+   if(code==EXCEPTION_BREAKPOINT && !p->initial_break && in_ntdll(p,(LPVOID)(UINT_PTR)address)){p->initial_break=1;wsprintfA(text,"INITIAL_LOADER_BREAK pid=%lu address=%08lx",p->pid,address);log_line(text);command_line(p);probe_inherited(p,"loader_break");memory(p);}
    else {status=DBG_EXCEPTION_NOT_HANDLED;
     if(code!=0x406d1388){if(code==EXCEPTION_ACCESS_VIOLATION || code==EXCEPTION_ILLEGAL_INSTRUCTION || code==EXCEPTION_BREAKPOINT || !event.u.Exception.dwFirstChance)exception(p,&event);
      else {wsprintfA(text,"FIRST_CHANCE cycle=%lu pid=%lu code=%08lx address=%08lx",cycle,p->pid,code,address);log_line(text);}}
@@ -180,7 +218,7 @@ void WINAPI DebugMain(void){DWORD errors=0;int argc=0,plain=0,snapshot=0;WCHAR *
  if(argc==5 && (plain || !lstrcmpW(argv[1],L"debug"))){DWORD hold;if(!parse_number(argv[2],1,40,&cycles) || !parse_number(argv[3],10,300,&hold) || !parse_tag(argv[4]))ExitProcess(87);hold_ms=hold*1000;}
  else if(argc>2 || (argc==2 && !plain && !snapshot))ExitProcess(87);
  if(argv)LocalFree(argv);
- console=GetStdHandle(STD_OUTPUT_HANDLE);CreateDirectoryW(L"C:\\xp25",NULL);CreateDirectoryW(L"C:\\xp25\\browserdiag",NULL);
+ console=GetStdHandle(STD_OUTPUT_HANDLE);nt_query_object=(QUERY_OBJECT)GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"NtQueryObject");CreateDirectoryW(L"C:\\xp25",NULL);CreateDirectoryW(L"C:\\xp25\\browserdiag",NULL);
  wsprintfW(profile,L"C:\\xp25\\browserdiag\\%sProfile",tag);wsprintfW(chrome_log,L"C:\\xp25\\browserdiag\\%schrome.log",tag);
  wsprintfW(log_path,snapshot?L"C:\\xp25\\browserdiag\\snapshot.log":L"C:\\xp25\\browserdiag\\%sevents.log",tag);
  log_file=CreateFileW(log_path,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_ALWAYS,0,NULL);if(log_file==INVALID_HANDLE_VALUE)ExitProcess(4);

@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'build'))
 from browser_ab_report import block
 from browser_config import URL_ALLOWLIST, generate
-from browser_diagnostic_media import watch_ab_suite
-from browser_tools import definition_exports, forwarder_modules
+from browser_diagnostic_media import watch_ab_suite, containment_suite, inherit_suite
+from browser_tools import definition_exports, forwarder_modules, TARGETS
 from prepare_browser import install_watch_proxy
 from pwrp_proxy import DEF, ORIGINAL_SHA256, proxy_def
 
@@ -108,6 +108,43 @@ class WatchAbTests(unittest.TestCase):
         self.assertIsNone(rows['exceptions'][1]['module'])
         self.assertEqual(rows['abnormal_exits'][0]['meaning'], 'crashpad_snapshot_failed')
 
+
+class DiagnosticToolingTests(unittest.TestCase):
+    def test_inherit_and_containment_suites_install_then_probe(self):
+        inh = inherit_suite()
+        self.assertIn('call D:\\install.cmd', inh)
+        self.assertIn('D:\\browser_inherit.exe "C:\\Program Files\\Supermium"', inh)
+        self.assertLess(inh.index('install.cmd'), inh.index('browser_inherit.exe'))
+        con = containment_suite()
+        self.assertIn('D:\\browser_sandbox.exe', con)
+        self.assertIn('XP25Browser.exe', con)
+
+    def test_inherit_and_watch_probes_are_registered_targets(self):
+        for name in ('browser_inherit', 'browser_watch', 'browser_launch'):
+            self.assertIn(name, TARGETS)
+
+    def test_app_event_reader_parses_application_error_records(self):
+        import struct
+        from read_app_events import records
+        # One synthetic EVENTLOGRECORD: source "Application Error", two strings.
+        source = 'Application Error\x00'.encode('utf-16le')
+        strings = 'chrome.exe\x00150.0.7871.255\x00'.encode('utf-16le')
+        string_offset = 56 + len(source)
+        length = string_offset + len(strings) + 4
+        rec = bytearray(length)
+        struct.pack_into('<I', rec, 0, length)
+        rec[4:8] = b'LfLe'
+        struct.pack_into('<I', rec, 8, 7)          # record number
+        struct.pack_into('<I', rec, 20, 1000)      # event id
+        struct.pack_into("<H", rec, 26, 2)          # NumStrings (offset 26)
+        struct.pack_into('<I', rec, 36, string_offset)
+        rec[56:56+len(source)] = source
+        rec[string_offset:string_offset+len(strings)] = strings
+        rows = list(records(bytes(rec)))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['source'], 'Application Error')
+        self.assertEqual(rows[0]['event_id'], 1000)
+        self.assertIn('chrome.exe', rows[0]['strings'])
 
 if __name__ == '__main__':
     unittest.main()

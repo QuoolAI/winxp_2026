@@ -22,7 +22,8 @@ TARGETS={'browserctl':('components/browser/browserctl.c','BrowserMain',['kernel3
          'XP25Help':('components/help/native_help.c','HelpMain',['kernel32','user32','gdi32','shell32','msvcrt']),
          'browser_iocancel':('tests/guest/browser_iocancel.c','IoCancelMain',['kernel32','user32','msvcrt']),
          'browser_watch':('tests/guest/browser_watch.c','WatchMain',['kernel32','user32','shell32','msvcrt']),
-         'browser_launch':('tests/guest/browser_launch.c','LaunchMain',['kernel32','user32','advapi32','msvcrt'])}
+         'browser_launch':('tests/guest/browser_launch.c','LaunchMain',['kernel32','user32','advapi32','msvcrt']),
+         'browser_inherit':('tests/guest/browser_inherit.c','InheritMain',['kernel32','user32','shell32','msvcrt'])}
 # Browser-scoped DLLs: (source, entry, stdcall argument bytes, definition, libraries).
 DLLS={'pwrp_k32':('components/browser/xp25_pwrp.c','Xp25PwrpEntry',12,'components/browser/pwrp_k32.def',['kernel32'])}
 # The NT 5.1 librarian accepts module.name forwarders only when an import

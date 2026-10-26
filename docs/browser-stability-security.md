@@ -351,3 +351,123 @@ TCG. Outstanding: the `0x842214` shared-memory handle-type CHECK, residual
 hangs/restart stability, and the DevTools deep-regression matrix on contention-free
 storage. Host tests: 64 run, 10 private-input skips, no failures
 (`X/all-host-tests-01.log`).
+
+## Handle-type CHECK (0x842214) investigation, 2026-10-27
+
+Evidence root `.work/browser-fix-20261026/` (`X`). This continues the watcher-fix
+checkpoint above and does **not** change acceptance: Milestone 7 stays unaccepted.
+
+### Exact assertion, stack, process and handle
+
+The `0x842214` crash is `base::win::TakeHandleOfType(handle, "Section")` failing
+its `CHECK_EQ(*type_name, object_type_name)` (`base/win/scoped_handle.cc:77`). The
+reliable in-process minidump (`X/collect-fab150-sp3-up-01/dprox1-c4-p2064-*.dmp`,
+captured during the watcher A/B run, so the XP25 pwrp_k32 proxy was installed and
+is not implicated) gives the full frame chain:
+
+```
+TakeHandleOfType                               base\win\scoped_handle.cc:77
+base::shared_memory::Deserialize               base\memory\shared_memory_switch.cc:244
+base::shared_memory::ReadOnlySharedMemoryRegionFrom  shared_memory_switch.cc:396
+base::FieldTrialList::CreateTrialsInChildProcess     base\metrics\field_trial.cc:656
+content::InitializeFieldTrialAndFeatureList          content\child\field_trial.cc:37
+content::ContentMainRunnerImpl::Run / RunContentProcess / ContentMain / ChromeMain
+```
+
+The faulting process is consistently the **gpu-process** child. It is parsing its
+`--field-trial-handle=<value>,i,...` switch: `i` means the field-trial read-only
+shared-memory **Section** is passed by handle **inheritance**, and `Deserialize`
+calls `TakeHandleOfType(Uint32ToHandle(value), "Section")` directly, trusting the
+inherited value. In the dump the registers are `eax=7 ecx=4` — `len("Section")`
+vs an actual type-name length of 4 — and the stack holds the wide string `"File"`
+and the handle value `0x72c` (1836), the child's own `--field-trial-handle=1836`.
+So handle value 1836 in the gpu child is a **File**, not the field-trial Section.
+A second XP25 capture (`X/runs/fftdebug-xp25-01`, gpu pid 2020, value 828) agrees:
+the field-trial handle value is not a valid Section at the CHECK.
+
+### Origin: not the compat proxy, not XP25, not basic progwrp inheritance
+
+`tests/guest/browser_inherit.c` reproduces Chromium's launch pattern
+(`base/process/launch_win.cc`) against the installed progwrp: a read-only Section
+is marked inheritable and listed in a `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, then
+`CreateProcessW` runs with `bInheritHandles=TRUE` and `EXTENDED_STARTUPINFO_PRESENT`;
+the child reports the NT type each inherited handle **value** names (via
+`NtQueryObject`, as `GetObjectTypeName` does). On **both** XP25 KVM and the stock
+SP3 control the listed Section's value is preserved and reads as `Section` 6/6, and
+the child exits 0 (`X/runs/finherit-{xp25,sp3}-up-02`, `X/crash-842214-summary.json`).
+So progwrp's handle-list inheritance preserves a Section's value and type in
+isolation. The one deviation observed is that the **unlisted** event also inherits
+(6/6): progwrp does **not** restrict inheritance to the listed set, unlike real
+Windows. That over-inheritance is a latent correctness/security gap but does not by
+itself displace the field-trial value (inherited handles keep their own values), and
+the isolated listed-Section case works, so it is not demonstrated to be the cause.
+
+The crash reproduces on **stock, unmodified SP3** (`X/collect-fab150-sp3-up-01`),
+so it is not an XP25 modification. It is intermittent (absent from 3 of the most
+recent debug runs). The conclusion is that `0x842214` is a Supermium/Chromium
+gpu-process handle-lifetime defect on NT 5.1 — the field-trial Section's inherited
+handle is not valid as a Section by the time the gpu child reads it — and the
+protective CHECK correctly catches it.
+
+### No safe compat-layer fix; not patched
+
+Unlike the watcher CHECK (fixed cleanly inside progwrp's own `ReadDirectoryChangesW`),
+`0x842214` has no correct fix at the pwrp_k32 compatibility layer: the defect is in
+the browser's own child-launch/handle handling, and the only ways to suppress the
+crash would be to modify `chrome.dll` (not our code) or disable/weaken the CHECK —
+both forbidden, and the CHECK is a genuine type-confusion guard worth keeping. The
+debugger-side handle probe (`tests/guest/browser_debug.c`, `FIELDTRIAL_PROBE`) could
+not duplicate child handles reliably (`ERROR_INVALID_HANDLE` from the debug process
+handle), so it did not settle whether the Section was never inherited or inherited
+then closed and its value reused; the in-process minidump remains the authoritative
+evidence. No CHECK is removed, no handle result is faked, and the over-inheritance
+gap is documented rather than "fixed" speculatively. This remains an open,
+characterized defect.
+
+## Stability, restart and DevTools regression on KVM, 2026-10-27
+
+With the watcher proxy and reduced-token launcher installed and the host disk no
+longer saturated (~21 GB free, versus the ~98%-full contention of the earlier
+checkpoint), the full browser regression matrix was re-run on the frozen install
+base (`X/runs/finstall150-01`, SHA-256 `06fbba27…6b6da07`) via
+`vm/browser_matrix.py`. Evidence: `X/matrix-150-02`, `X/matrix-150-02-summary.json`.
+
+**KVM single-vCPU (up) and two-vCPU (mp) both pass the entire functional
+regression.** The DevTools-driven browser checks all pass in each mode — modern
+JavaScript, local HTML over HTTP and `file://`, multiple tabs, TLS 1.2/1.3 to a
+valid host, and rejection of expired (`ERR_CERT_DATE_INVALID`), wrong-hostname and
+untrusted certificates; the download completes; and the default Internet policy
+blocks both an unapproved lab subdomain and a public site
+(`policy_blocks_lab_subdomain`, `policy_blocks_public_site` — `URLBlocklist=*`).
+**Profile and appearance-setting persistence across a browser restart now pass**
+(`profile_persists`, `appearance_setting_persists`) — the failure recorded at the
+earlier checkpoint. Shell/association checks, the reduced-token launcher rendering
+of HTTP/HTML/HTM/URL/HTTPS, the 55+7 AI probe cases, and a normal guest-requested
+shutdown all pass. The only non-passing check is `full_regression_coverage`, the
+harness's explicit marker that four probe cases remain `not_tested`
+(`login_transition`, `legacy_games`, `security_mitigations`, `shutdown`); it is a
+coverage gap, not a browser failure.
+
+This resolves the earlier DevTools WebSocket timeout as **host storage contention,
+not a browser defect**: with disk headroom the CDP connection and the full
+scripted session succeed on KVM. The watcher proxy's persistent I/O worker shows
+no cleanup problem across these repeated launch/navigate/restart/shutdown cycles
+(and the `browser_watch` probe independently completes 32/32 concurrent
+exited-issuer watches); no watcher CHECK occurs in any of these runs.
+
+**TCG remains timing-limited.** Under single-threaded TCG emulation the browser
+still renders the shell and all five ShellExecute document types (four JavaScript
+receipts in `X/runs/fmatrix150-02-tcg`), but the DevTools CDP calls exceeded the
+45-second per-call timeout and the automated deep regression did not complete;
+this is harness/emulation slowness, not a browser crash (the same image passes
+fully on KVM). The CDP timeout is now configurable (`XP25_CDP_TIMEOUT`,
+`vm/browser_cdp.py`), and `vm/browser_matrix.py` raises it to 240 s for TCG; a
+re-run under that longer budget is recorded in `X/matrix-150-03`. The failed TCG
+worker left its guest running (the harness detaches guests), so it was frozen with
+a `failure.json`, not left orphaned.
+
+Milestone 7 is **not** promoted: `full_regression_coverage` is still incomplete by
+design (the four `not_tested` cases), the `0x842214` handle-type CHECK remains an
+open intermittent defect, renderer sandboxing does not exist on NT 5.1 (the image
+keeps Internet access disabled by default), and no new accepted or Internet-safe
+image is produced.
