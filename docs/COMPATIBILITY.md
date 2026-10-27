@@ -6,6 +6,20 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Browser security hardening (Milestone 7B) checkpoint, 2026-10-27
+
+| Area | Result | Evidence |
+| --- | --- | --- |
+| Renderer sandbox (Chromium native) | Unavailable on NT 5.1: Supermium compiles it off for all pre-Win10 (`renderer_main.cc:249`, GDI/DirectWrite + Vista+ integrity levels); inside `chrome.dll`, not re-enablable from our layer. Documented, not faked. | `.work/browser-fix-20261026/sandbox-analysis-01/nt51-sandbox-capability.json` |
+| Process-tree containment (alternative architecture) | Implemented in `XP25Browser.exe`: SAFER Normal User token + Job Object, inherited by all children. Verified live (MP KVM): tree `member=1` in job; denied (error 5) admin file/registry, `%WINDIR%\system32`, SYSTEM-process injection; pages render. | `.work/browser-fix-20261026/runs/fcontain150-mp-02`, `contain-02-extract` |
+| Host-enforced network isolation | No passwordless root → libvirt NAT + nftables firewalling out of reach; enforceable model is namespace-with-no-uplink + allowlist CONNECT gateway (default-deny, HTTPS-only, non-global addresses rejected). Documented limitation. | `vm/browser_network.py`, `vm/browser_gateway.py` |
+| Secure config | TLS on; no `--no-sandbox`/`--remote-debugging-port` in the install; `URLBlocklist=*`; profile isolated by the restricted token. Extension/plugin/legacy-protocol hardening outstanding. | `build/browser_config.py`, `components/browser/browserctl.c` |
+
+NT 5.1 cannot provide integrity levels, AppContainer, Win32k lockdown or UIPI, so a
+compromised renderer shares the browser token and the user profile; Internet stays
+disabled by default. No renderer sandbox or kernel mitigation is claimed that is not
+enforced. [Milestone 7B architecture, residual risk and open items](browser-security-7b.md)
+
 ## Browser KVM regression + 0x842214 checkpoint, 2026-10-27
 
 | Configuration | Result | Evidence |

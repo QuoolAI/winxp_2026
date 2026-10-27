@@ -2,6 +2,27 @@
 
 ## Current checkpoint
 
+2026-10-27, Milestone 7B security hardening (`xp25-browser`): **Renderer isolation
+investigated and a verified process-tree containment architecture implemented;
+Milestone 7B unaccepted.** Supermium compiles its per-renderer sandbox off on all
+pre-Win10 Windows (`renderer_main.cc:249`; GDI/DirectWrite + Vista+ integrity-level
+dependency), inside `chrome.dll` — not re-enablable from our layer. NT 5.1 offers no
+integrity levels/AppContainer/Win32k-lockdown/UIPI, so XP25 contains the **whole
+browser tree** from `XP25Browser.exe`: a SAFER Normal User restricted token (admin
+deny-only, privileges = SeChangeNotify) plus a Job Object (active-process + memory
+caps, no breakaway, clean teardown), inherited by every renderer/GPU/utility child.
+Verified live (MP KVM): the tree is `member=1` in the job and is denied, with
+`error 5`, admin file/registry writes, `%WINDIR%\system32` writes, and SYSTEM-process
+injection — while pages still render. Residual risk documented (shared token; no
+UIPI/integrity on NT 5.1), so Internet stays disabled by default. Phase 1
+host-enforced egress = namespace-with-no-uplink + allowlist CONNECT gateway (no
+passwordless root, so libvirt/nftables firewalling is out of reach — documented);
+existing libvirt networks and XP25-AI untouched. Secure config (Phase 4): TLS on,
+no `--no-sandbox`/`--remote-debugging-port` in the install, `URLBlocklist=*`,
+profile isolated by the token. No check disabled, no API faked, no unavailable
+mitigation claimed; `Source/` unchanged. Host tests 70, 10 skipped, no failures.
+[Architecture and evidence](browser-security-7b.md)
+
 2026-10-27, Milestone 7 stability + 0x842214 investigation (`xp25-browser`):
 **On KVM the browser now passes the full functional regression; two defects are
 characterized, one fixed and one open; Milestone 7 stays unaccepted.** Re-running

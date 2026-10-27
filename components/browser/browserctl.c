@@ -65,9 +65,26 @@ static HANDLE reduced_token(void) {
     error=GetLastError();SaferCloseLevel(level);SetLastError(error);
     return token;
 }
+/* NT 5.1 containment job for the whole browser tree. Only limits that are safe
+ * tree-wide are set: an active-process cap and total-memory cap bound a runaway
+ * or compromised renderer, DIE_ON_UNHANDLED_EXCEPTION avoids a wedged error
+ * dialog, and no breakaway flag is set so children cannot escape the job. UI
+ * restrictions (clipboard/desktop/handles) are deliberately NOT applied because
+ * the browser root needs desktop/GDI access on NT 5.1; per-renderer UI lockdown
+ * is a Chromium-broker capability that Supermium disables before Windows 10. */
+static HANDLE contain_job(void) {
+    HANDLE job=CreateJobObjectW(NULL,NULL);JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
+    if(!job)return NULL;
+    ZeroMemory(&info,sizeof(info));
+    info.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_ACTIVE_PROCESS|JOB_OBJECT_LIMIT_JOB_MEMORY|JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
+    info.BasicLimitInformation.ActiveProcessLimit=96;
+    info.JobMemoryLimit=(SIZE_T)1536*1024*1024;
+    if(!SetInformationJobObject(job,JobObjectExtendedLimitInformation,&info,sizeof(info))){CloseHandle(job);return NULL;}
+    return job;
+}
 /* Target is NULL for a plain launch, otherwise an already validated URL/path. */
 static int start_browser(LPCWSTR target) {
-    WCHAR program[MAX_PATH];static WCHAR command[4096];STARTUPINFOW si;PROCESS_INFORMATION pi;HANDLE token;DWORD error;
+    WCHAR program[MAX_PATH];static WCHAR command[4096];STARTUPINFOW si;PROCESS_INFORMATION pi;HANDLE token,job;DWORD error;
     if(FAILED(SHGetFolderPathW(NULL,CSIDL_PROGRAM_FILES,NULL,0,program)))return 1;
     if(lstrlenW(program)+24>=MAX_PATH)return ERROR_BUFFER_OVERFLOW;
     lstrcatW(program,L"\\Supermium\\chrome.exe");
@@ -77,7 +94,16 @@ static int start_browser(LPCWSTR target) {
     token=reduced_token();
     if(!token){error=GetLastError();number("reduced_token_error",error);return error?(int)error:ERROR_ACCESS_DENIED;}
     ZeroMemory(&si,sizeof(si));si.cb=sizeof(si);ZeroMemory(&pi,sizeof(pi));
-    if(!CreateProcessAsUserW(token,program,command,NULL,NULL,FALSE,0,NULL,NULL,&si,&pi)){error=GetLastError();CloseHandle(token);return error;}
+    /* Create suspended so the browser is placed in the job before it spawns any
+     * child; children then join the job and inherit the restricted token. */
+    if(!CreateProcessAsUserW(token,program,command,NULL,NULL,FALSE,CREATE_SUSPENDED,NULL,NULL,&si,&pi)){error=GetLastError();CloseHandle(token);return error;}
+    job=contain_job();
+    if(job && !AssignProcessToJobObject(job,pi.hProcess))number("contain_job_assign_error",GetLastError());
+    else if(!job)number("contain_job_error",GetLastError());
+    ResumeThread(pi.hThread);
+    /* The job has no KILL_ON_JOB_CLOSE, so it persists with the browser tree once
+     * every handle here closes and is destroyed when the tree exits. */
+    if(job)CloseHandle(job);
     CloseHandle(token);number("browser_pid",pi.dwProcessId);CloseHandle(pi.hThread);CloseHandle(pi.hProcess);return 0;
 }
 static int launch_browser(LPCWSTR target,int document) {

@@ -10,7 +10,7 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <wchar.h>
-static HANDLE output;static PSID admin_sid,system_sid,restricted_sid;static DWORD explorer_pid;static WCHAR profile[MAX_PATH];
+static HANDLE output;static PSID admin_sid,system_sid,restricted_sid;static DWORD explorer_pid,system_pid;static WCHAR profile[MAX_PATH];
 static WCHAR command[4096];static BYTE token_data[16384];
 static void line(const char *s){DWORD n;WriteFile(output,s,lstrlenA(s),&n,NULL);WriteFile(output,"\r\n",2,&n,NULL);}
 static int setup(void){
@@ -37,12 +37,18 @@ static int boundary(HANDLE token,DWORD pid,const char *kind){
  /* Informational: what the token can still reach. The user's own profile is
   * expected to stay writable; opening the unrestricted shell for injection
   * rights is the NT 5.1 cross-process boundary (no UIPI or integrity levels). */
- {DWORD user_error=0,shell_error=0;HANDLE shell;
+ {DWORD user_error=0,shell_error=0,sys_file_error=0,sys_inject_error=0;HANDLE shell,sysproc,sysfile;WCHAR sys[MAX_PATH];
   wsprintfW(path,L"%s\\xp25-boundary-p%lu.tmp",profile,pid);
   file=CreateFileW(path,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_TEMPORARY|FILE_FLAG_DELETE_ON_CLOSE,NULL);user_error=file==INVALID_HANDLE_VALUE?GetLastError():0;if(file!=INVALID_HANDLE_VALUE)CloseHandle(file);
   shell=explorer_pid?OpenProcess(PROCESS_VM_WRITE|PROCESS_VM_OPERATION|PROCESS_CREATE_THREAD,FALSE,explorer_pid):NULL;shell_error=shell?0:(explorer_pid?GetLastError():ERROR_NOT_FOUND);if(shell)CloseHandle(shell);
+  /* Protected system file: a renderer must not write under %WINDIR%\\system32. */
+  GetSystemDirectoryW(sys,MAX_PATH);wsprintfW(path,L"%s\\xp25-sysboundary-p%lu.tmp",sys,pid);
+  sysfile=CreateFileW(path,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_TEMPORARY|FILE_FLAG_DELETE_ON_CLOSE,NULL);sys_file_error=sysfile==INVALID_HANDLE_VALUE?GetLastError():0;if(sysfile!=INVALID_HANDLE_VALUE)CloseHandle(sysfile);
+  /* Privileged SYSTEM process: a renderer must not open it for code injection. */
+  sysproc=system_pid?OpenProcess(PROCESS_VM_WRITE|PROCESS_VM_OPERATION|PROCESS_CREATE_THREAD,FALSE,system_pid):NULL;sys_inject_error=sysproc?0:(system_pid?GetLastError():ERROR_NOT_FOUND);if(sysproc)CloseHandle(sysproc);
   if(impersonated && !RevertToSelf())ExitProcess(70);
-  wsprintfA(text,"REACHABLE pid=%lu kind=%s user_profile_write=%u user_profile_error=%lu shell_injection_rights=%u shell_error=%lu",pid,kind,user_error==0,user_error,shell_error==0,shell_error);line(text);}
+  wsprintfA(text,"REACHABLE pid=%lu kind=%s user_profile_write=%u user_profile_error=%lu shell_injection_rights=%u shell_error=%lu",pid,kind,user_error==0,user_error,shell_error==0,shell_error);line(text);
+  wsprintfA(text,"PRIVBOUNDARY pid=%lu kind=%s system_file_write=%u system_file_error=%lu system_pid=%lu system_inject=%u system_inject_error=%lu",pid,kind,sys_file_error==0,sys_file_error,system_pid,sys_inject_error==0,sys_inject_error);line(text);}
  wsprintfA(text,"BOUNDARY pid=%lu kind=%s file_write=%u file_error=%lu registry_write=%u registry_error=%lu",pid,kind,file_error==0,file_error,reg_error==0,reg_error);line(text);
  if(!file_error && !reg_error)return 2;
  return file_error==ERROR_ACCESS_DENIED && reg_error==ERROR_ACCESS_DENIED?1:0;
@@ -72,7 +78,8 @@ void WINAPI SandboxMain(void){
  HANDLE snapshot,own,restricted;PROCESSENTRY32W entry;SID_AND_ATTRIBUTES disabled,restriction;DWORD count=0;char text[1024];int error;output=GetStdHandle(STD_OUTPUT_HANDLE);
  if(!GetEnvironmentVariableW(L"USERPROFILE",profile,MAX_PATH))ExitProcess(8);
  snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);entry.dwSize=sizeof(entry);
- if(snapshot!=INVALID_HANDLE_VALUE && Process32FirstW(snapshot,&entry))do{if(!lstrcmpiW(entry.szExeFile,L"explorer.exe"))explorer_pid=entry.th32ProcessID;}while(Process32NextW(snapshot,&entry));
+ if(snapshot!=INVALID_HANDLE_VALUE && Process32FirstW(snapshot,&entry))do{if(!lstrcmpiW(entry.szExeFile,L"explorer.exe"))explorer_pid=entry.th32ProcessID;
+  if(!system_pid && (!lstrcmpiW(entry.szExeFile,L"services.exe")||!lstrcmpiW(entry.szExeFile,L"winlogon.exe")||!lstrcmpiW(entry.szExeFile,L"lsass.exe")))system_pid=entry.th32ProcessID;}while(Process32NextW(snapshot,&entry));
  if(snapshot!=INVALID_HANDLE_VALUE)CloseHandle(snapshot);
  error=setup();wsprintfA(text,"BOUNDARY_SETUP=%d",error);line(text);if(error)ExitProcess(2);
  if(boundary(NULL,GetCurrentProcessId(),"baseline")!=2)ExitProcess(3);

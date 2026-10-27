@@ -146,5 +146,38 @@ class DiagnosticToolingTests(unittest.TestCase):
         self.assertEqual(rows[0]['event_id'], 1000)
         self.assertIn('chrome.exe', rows[0]['strings'])
 
+class ContainmentArchitectureTests(unittest.TestCase):
+    def test_launcher_applies_restricted_token_and_job(self):
+        src = (ROOT / 'components/browser/browserctl.c').read_text()
+        # Restricted token via SAFER, launched suspended, placed in a job, then resumed.
+        self.assertIn('SAFER_LEVELID_NORMALUSER', src)
+        self.assertIn('CreateJobObjectW', src)
+        self.assertIn('AssignProcessToJobObject', src)
+        self.assertIn('CREATE_SUSPENDED', src)
+        self.assertLess(src.index('AssignProcessToJobObject'), src.index('ResumeThread'))
+        # No breakaway and no kill-on-close so the tree stays contained and survives the launcher.
+        self.assertNotIn('JOB_OBJECT_LIMIT_BREAKAWAY_OK', src)
+        self.assertNotIn('JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK', src)
+        # Still fails closed without the restricted token.
+        self.assertIn('if(!token){', src)
+        self.assertNotIn('CreateProcessW(', src)
+
+    def test_negative_probe_checks_privileged_boundaries(self):
+        src = (ROOT / 'tests/guest/browser_sandbox.c').read_text()
+        self.assertIn('PRIVBOUNDARY', src)
+        self.assertIn('GetSystemDirectoryW', src)        # protected system-file write test
+        self.assertIn('system_inject', src)              # SYSTEM-process injection test
+        self.assertIn('services.exe', src)
+
+    def test_sandbox_capability_analysis_states_renderer_sandbox_unavailable(self):
+        import json
+        a = ROOT / '.work/browser-fix-20261026/sandbox-analysis-01/nt51-sandbox-capability.json'
+        if not a.exists():
+            self.skipTest('private sandbox analysis not present')
+        d = json.loads(a.read_text())
+        self.assertIn('renderer_main.cc', d['why_renderer_sandbox_disabled']['source'])
+        self.assertEqual(d['nt51_capability_matrix']['integrity_levels_low_IL'][:11], 'UNAVAILABLE')
+        self.assertIn('process-tree containment', d['xp25_containment_architecture']['model'])
+
 if __name__ == '__main__':
     unittest.main()

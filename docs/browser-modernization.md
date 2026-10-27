@@ -12,7 +12,9 @@ default. Shell integration and reduced-token rendering pass under KVM-UP/MP/TCG;
 the DevTools deep-regression matrix is still blocked (WebSocket timeout under
 host storage contention), and a separate `0x842214` handle-type CHECK, residual
 hangs and restart stability remain open. Milestone 7 is still unaccepted; no new
-image is produced. [Stability/security and watcher-fix evidence](browser-stability-security.md).
+image is produced. [Stability/security and watcher-fix evidence](browser-stability-security.md). Milestone 7B
+security hardening (renderer-isolation analysis, process-tree containment, network
+isolation architecture) is in [browser-security-7b.md](browser-security-7b.md).
 
 **2026-10-26 follow-up:** active-renderer token tests fail isolation on both
 XP25 and original SP3; 144/150 are unsuitable for unrestricted Internet access.
