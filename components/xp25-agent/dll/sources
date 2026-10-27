@@ -1,0 +1,21 @@
+# Entries outside this directory are compiled through local wrapper files that
+# build/prepare_ai.py generates (build.exe accepts only sources in this directory).
+TARGETNAME=xp25agent
+TARGETPATH=obj
+TARGETTYPE=DYNLINK
+DLLDEF=xp25agent.def
+DLLENTRY=_DllMainCRTStartup
+UMTYPE=windows
+USE_MSVCRT=1
+MSC_WARNING_LEVEL=/W4 /WX /wd4201
+C_DEFINES=-DWIN32 -DNT -DUNICODE -D_UNICODE -DWINVER=0x0501 -D_WIN32_WINNT=0x0501 -D_WIN32_IE=0x0600
+SOURCES=dllmain.c ..\runtime\xp25_base.c ..\runtime\xp25_json.c ..\runtime\xp25_agent.c ..\runtime\xp25_win.c \
+        ..\runtime\xp25_msagent.c ..\llm\xp25_sha256.c ..\llm\xp25_llm.c ..\llm\xp25_offline.c ..\llm\xp25_http.c \
+        ..\llm\xp25_provider_win.c ..\permissions\xp25_policy.c ..\ipc\xp25_ipc_win.c ..\tools\win_tools.c \
+        ..\tools\win_system.c ..\tools\win_process.c ..\tools\win_service.c ..\tools\win_cmd.c \
+        ..\tools\win_eventlog.c ..\tools\win_network.c ..\tools\win_registry.c ..\tools\win_files.c \
+        ..\tools\win_search.c ..\..\roverai\indexer\rover_index.c ..\..\roverai\indexer\rover_win.c \
+        ..\..\roverai\search\rover_query.c xp25agent.rc
+TARGETLIBS=$(SDK_LIB_PATH)\kernel32.lib $(SDK_LIB_PATH)\user32.lib $(SDK_LIB_PATH)\gdi32.lib $(SDK_LIB_PATH)\advapi32.lib \
+           $(SDK_LIB_PATH)\shell32.lib $(SDK_LIB_PATH)\ole32.lib $(SDK_LIB_PATH)\oleaut32.lib $(SDK_LIB_PATH)\ws2_32.lib \
+           $(SDK_LIB_PATH)\iphlpapi.lib $(SDK_LIB_PATH)\crypt32.lib $(SDK_LIB_PATH)\psapi.lib

@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "language_id": 1033,
+  "edition_name": "Windows XP 25th Anniversary Edition",
+  "system_properties_label": "Windows XP\r\n25th Anniversary Edition",
+  "about_application": "Windows XP25",
+  "start_menu_help": "XP25 &Help",
+  "login_header": "Windows XP 25th Anniversary Edition",
+  "preserve_start_button": true,
+  "preserve_registry_product_name": true
+}

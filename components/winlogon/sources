@@ -1,0 +1,11 @@
+TARGETNAME=winlogon
+TARGETPATH=obj
+TARGETTYPE=PROGRAM
+UMTYPE=windows
+UMENTRY=winmain
+USE_MSVCRT=1
+MSC_WARNING_LEVEL=/W4 /WX
+C_DEFINES=-DWIN32 -DNT -DXP25_PRODUCTION_WINLOGON=1
+SOURCES=main.c state.c security.c gina.c session.c session_engine.c session_native.c policy.c policy_native.c notify.c bootkey.c bootkey_codec.c environment.c winlogon.rc
+UMLIBS=$(SDK_LIB_PATH)\user32.lib $(SDK_LIB_PATH)\advapi32.lib $(SDK_LIB_PATH)\secur32.lib $(SDK_LIB_PATH)\userenv.lib
+LINKER_STACKCOMMITSIZE=0x11000

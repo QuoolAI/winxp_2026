@@ -2,6 +2,341 @@
 
 ## Current checkpoint
 
+2026-10-25, interactive VM configuration (branch `xp25-ai`): **XP25-Winlogon and
+XP25-AI run at the same time, each with its own address and name, and System
+Properties shows QuoolAI with the full "Windows XP 25th Anniversary Edition".**
+
+- **System Properties.** The reviewed `sysdm.cpl` branding step widens the
+  General page's Computer lines from 110 to 124 DLU and the page from 256 to
+  270 DLU. No control moves, and the other five branded files are unchanged.
+  - Installed offline on both VMs.
+  - The `oem` probe checks text fit, overlaps, all seven tabs and fit at
+    96/120/144 DPI; all 19 cases pass on both.
+- **XP25-AI branding.** Same OEM file, Help and Support copy and backups as XP25-Winlogon.
+- **DHCP.** The single-address dynamic range let dnsmasq hold only one lease
+  ("no leases left"). A second range, `.20`–`.29`, was added with a live and
+  persistent `net-update`, which restarted only that network's dnsmasq.
+  - The VMs hold `10.25.0.12` and `10.25.0.13`, ping each other, see each
+    other's NetBIOS names, and cannot reach outside addresses.
+- **Computer names.** `XP25-WINLOGON` and `XP25-AI`, set with `SetComputerNameExA`.
+  - WMI rename fails on the Winlogon image (`0x80041004`).
+  - The independent Winlogon does not copy `NV Hostname` to `Hostname` at
+    startup, as the original does. The active value is set directly instead.
+- **Preserved and verified.** Frozen images, other domains, xp25-sp3,
+  activation data, the 22 Winlogon components and the AI binaries are unchanged.
+  Each VM passes 16 offline gates.
+- **Rehearsals.** All of this was rehearsed on disposable overlays. One
+  rehearsal had an unexplained restart that did not recur and is kept with
+  `failure.json`.
+- [Configuration record](xp25-vm-configuration.md)
+
+The previous entry follows.
+
+2026-10-25, interactive VMs (branch `xp25-ai`): **XP25-Winlogon now carries the
+QuoolAI OEM branding, and a disposable XP25-AI VM is running in virt-manager.**
+
+- **XP25-Winlogon.** The third-party `OEMINFO.INI` (`a1052310…`) was
+  replaced offline on the VM's own writable disk with `[General]
+  Manufacturer=QuoolAI / Model=Windows XP 25th Anniversary Edition`
+  (`7760193a…`). Before that, a guest-requested shutdown was confirmed and the
+  backups were made in the guest and on the host. There was no OEM logo.
+  - Help and Support's copy of the values (`HelpSvc\OEMInfo`) was updated with `reg.exe`.
+  - The new `oem` probe passes 15 of 16 cases. The 22 XP25 components, the branding
+    and licensing files, and every other System Properties text are unchanged.
+  - The model line is clipped to "Windows XP 25th Anniversary": 179 px of text in a
+    165 px field. Fitting it needs either a shorter value or a wider line in
+    XP25's branded `sysdm.cpl`, so it was left as specified.
+  - The whole procedure, including restore, was rehearsed first on a disposable overlay.
+  - [OEM record](xp25-winlogon-oem-branding.md)
+- **XP25-AI.** A new libvirt domain whose disk is an overlay on the verified AI
+  image-05 (`ec22f45b…`). It auto-logs on to the desktop (screenshot evidence
+  only). Other domains, xp25-sp3, the default network and image-05 are unchanged;
+  `XP25-Isolated` gained one reservation, `.13`.
+  - The single-address DHCP range lets only one of these VMs hold a lease at a
+    time, so XP25-AI has no IP while XP25-Winlogon runs.
+  - [VM record](virt-manager-xp25-ai.md)
+
+The Milestone 6 entry follows.
+
+2026-10-25, Milestone 6 (branch `xp25-ai`): **ClippyAI, RoverAI and the shared
+XP25 agent runtime pass guest acceptance under KVM (1 and 2 vCPUs) and TCG,
+and the experimental QCOW2 is verified.** Native `/W4 /WX` build 10 passes
+62/62 guest cases in each mode on the accepted engineering image (original
+Winlogon, native Explorer and UserEnv): desktop, Explorer Search redirect,
+RoverAI index/watcher/search, ClippyAI tools, approvals and troubleshooting
+workflow, and OpenAI Responses requests through the authenticated gateway to a
+test double. The full established regression suite exits 0 and every run ends
+with a guest-requested shutdown. `XP25-AI-Engineering.qcow2` (SHA-256
+`ec22f45b67af19f584eb6ca0a286e943731298543aa1b910eab6ff42674bee2a`) boots
+independently and passes the same 62 cases. Guest runs of builds 04–08 found
+and fixed: user-scope DPAPI error 1783 on the engineering images (keys now go
+to Credential Manager), share consent asked for earlier offline results, two
+index-store races including a stale overwrite by the background indexer, and
+a runaway-process rule that missed single-threaded loops on multiprocessors.
+No real OpenAI call was made (no key or uplink in the isolated lab).
+[Architecture, security model, evidence, failures and limits](xp25-ai-clippyai-roverai.md)
+
+The following entry describes the Winlogon checkpoint this branch is based on.
+
+2026-10-25, Winlogon desktop and session continuation from `67de708ed`:
+**the independent NT 5.1 Winlogon now starts the original Explorer with Luna
+and runs the session lifecycle.** Licensing admission is decided by the installed
+`licdll.dll` COMLicenseAgent using SP3 Setup's own `Activationrequired` sequence
+(`Initialize(0xC475,1,NULL)`, status 0, `WPALeft == INT_MAX`); its ABI is
+re-verified against the DLL's type library at runtime and nothing is forced.
+Guest debugging found and fixed missing Winlogon duties: permanent font load
+(userinit otherwise blocks in `win32k`), `WlxWin31Migrate`, logoff process-exit
+wait, per-user system parameters, `Win+L`/`Ctrl+Shift+Esc`, status-message
+removal, the MSGINA theme handoff and crash-recovery identity races.
+
+Final native build 10, SHA-256
+`e3a9cdca26ab7af5ae5b225d647c94be0dc34aa4f7428e025ddf3b3c3becdf93`, passes 18
+gates (authentication, admission, Explorer identity, four regression probes with
+Luna active, lock/unlock, Task Manager, Windows Security, Explorer crash
+recovery, logoff with no remaining user processes, re-logon, 17-case isolated
+network probe) and a guest-requested shutdown under single-vCPU KVM and
+two-vCPU KVM and TCG, plus a desktop restart cycle. A standalone engineering
+image with only this Winlogon (`XP25-Winlogon-Engineering.qcow2`, SHA-256
+`0df7fc05b0b965941f4c488894ce200adcd44d91acf4bf28f93f7a445d30c51c`) passes the same
+18 gates in an independent boot proof. Source, reference images and user VMs are
+unchanged. Known gaps: Terminal
+Services session state (`qwinsta` shows `Conn`, no user), unthemed logon desktop
+and post-logoff GINA edits that accept input but do not paint, no Welcome
+screen, Fast User Switching, event sounds or Group Policy processing. Build 04
+failed the native compiler (C4701) and is retained; all 41 host tests pass.
+[Licensing evidence, duties, builds, matrix and gaps](winlogon-desktop-session.md)
+
+The following earlier entries describe their respective historical inputs.
+
+2026-10-24, policy/session continuation from `8e4bdba7c`: **real NT 5.1
+activation-key protection initialization now runs; licensing admission remains
+blocked.** The supplied linked kernel contains the service in prebuilt
+`systime.obj`; three original-host calls establish its two-output ABI. The new
+Winlogon calls that real service and preserves failures. A typed, fail-closed
+policy interface isolates the remaining unavailable activation/OEM/initialization
+decision. No WMI observation or test double authorizes production admission.
+
+The working profile/environment code now uses a shared session coordinator,
+with explicit doubles confined to a separate test executable and a production
+compile guard. All 40 host tests pass; 31 session scenarios / 528 assertions
+also pass under sanitizers and in an authenticated original-host XP25 process.
+That control passes actual token/profile/environment, file/HKCU, source
+Explorer/Luna/Start/folder, networking and service checks, then normal shutdown.
+
+A freshly compiled native `/W4 /WX` Winlogon, SHA-256
+`120a9ddebcf610a060a8aac6d42ee01f9308e1deb8b34560f26e8d230b7030d1`,
+boots in disposable verified-engineering UP KVM, MP KVM and TCG overlays. All
+three authenticate, validate the SID hive/environment and clean up on policy
+error 120; live resource readback confirms cleanup. Signed-out GINA power-off
+passes under UP KVM, MP KVM and TCG; GINA restart under MP returns to MSGINA.
+These limited power results do not establish desktop logoff or full lifecycle.
+
+**Custom-Winlogon Explorer/Luna remains unaccepted.** Post-shell security,
+lock/unlock/logoff, shell crash recovery and the full replacement regression
+matrix remain incomplete. No accepted image is generated; Source, recovery
+executables, prior images and persistent user VM definitions are preserved.
+[Policy findings, code, native test/build hashes and exact limitations](winlogon-policy-session-contract.md)
+
+2026-10-24, fresh Winlogon runtime verification: **the exact latest input
+failed the native compiler** (`WlSessionActive` undefined; zero-key branch leaves
+`read_stored_key` unused under `/W4 /WX`). Both failures are retained. A corrected
+fresh native build links successfully, restores real SYSKEY handling, preserves
+the guarded GINA shell implementation and fixes environment ownership and false
+success paths. No older Winlogon binary is used.
+
+A new single-vCPU KVM overlay of the hash-verified latest standalone engineering
+image installs only that new executable. Actual LSA wrong-password failures and
+successful status/substatus 0/0, token SID/LUID/type/session, correct profile hive
+and environment, two initialization/cleanup cycles and live cleared ownership
+are recorded. The matching native PDB resolves the admission call stack.
+**Shell admission remains blocked by the implementation gap in product-activation
+orchestration (`wl_session_policy`, error 120), not an activation-server error.**
+GINA shell activation, Explorer/Luna and full desktop/lifecycle acceptance are
+not reached; MP/TCG are not run for this revision. No new engineering image is
+made. All 38 host checks pass and Source/reference images/user VMs are preserved.
+[Exact-source build failures, fresh binary hash and actual guest evidence](winlogon-runtime-verification.md)
+
+2026-10-24, Milestone 5 continued: **GINA environment merge and recoverable
+pre-shell initialization failure now work in the native replacement.** Two
+real authentication/profile/environment/cleanup cycles pass in disposable
+single-vCPU KVM, two-vCPU KVM and TCG overlays. A read-only capture confirms
+matching Winlogon/kernel checksums and cleared token/profile/environment/GINA
+ownership. CSC's machine-lifetime Startup worker is retained instead of being
+joined during user rollback; the first failed matrix and diagnosis are saved.
+The native `/W4 /WX` build and all 38 host checks pass, including 24 environment
+cases and a sanitizer run. The incoming forced-success/zero-SYSKEY edits were
+saved privately and restored to the committed checks before building.
+
+**Desktop acceptance remains blocked at `activation_policy_contract_unresolved`
+(error 120).** Original licensing orchestration is still unavailable. GINA
+shell activation, userinit/Explorer/Luna, full lock/logoff/power and replacement
+security/application/network/service acceptance remain incomplete. No new
+standalone image is produced; prior verified images and user VMs are preserved.
+[Exact changes, native hashes, failures, coverage and reproduction](winlogon-session-recovery.md)
+
+2026-10-24: [Winlogon licensing/activation investigation](winlogon-activation-investigation.md)
+records the absent original orchestration source and unresolved COM, OEM,
+kernel, registry-state and shell-admission contracts. No licensing state or
+activation check was changed, removed or forced to succeed; activation
+compatibility remains unresolved.
+
+2026-10-24, Milestone 5 continuation: **native Winlogon now prepares and cleans
+up an authenticated local user's profile.** New code loads UserEnv's profile,
+checks its actual hive against the token SID, builds and validates the user
+environment and releases both resources before token closure on rejected
+startup. Fresh-account profile creation is demonstrated in one-vCPU KVM,
+two-vCPU KVM and TCG disposable boot replacements. The actual SP3 NONAME profile
+manager ordinal is corrected after recording a genuine error-127 failure.
+Thirty-eight host checks pass, including thirteen environment parsing cases.
+
+The guest still stops at `activation_policy_contract_unresolved`, error 120,
+before GINA shell activation, userinit or Explorer. Activation enforcement has
+not been removed or made to return fabricated success. Licensing-preserving
+orchestration, GPO/GINA environment integration and the full desktop/session
+lifecycle remain incomplete. There is no accepted replacement desktop or new
+engineering image. The original-host fixture control passes two full suites
+and normal shutdown; reference sources/images and user VMs are preserved.
+[Profile-stage implementation and evidence](native-winlogon.md)
+
+2026-10-24, Milestone 5: **independent Winlogon initialization and console
+authentication implemented; replacement desktop not accepted.** New native C
+builds successfully with the existing NT toolchain. Disposable single-vCPU KVM,
+two-vCPU KVM and TCG guests register the real USER/CSRSS logon process, create
+secure desktops, complete LSASS's actual stored startup-key exchange, wait for
+SAM, register trusted LSA, negotiate original MSGINA 1.4 and invoke Startup
+notifications. Wrong passwords are rejected, SAS interruption returns without
+launching a shell, and valid existing credentials pass GINA and primary-token,
+LUID, session and logon-SID validation. Separate KVM/TCG debugger captures show
+real LSA success. These are authentication-core results, not completed logins.
+
+The precise next boundary is `session.c:wl_session_start`, error 120 before
+profile/shell activation. Original Winlogon's integrated WPA/OEMBIOS/mutex and
+activation-key orchestration remains unaccounted for; no licensing check or
+activation result is bypassed. Profile/policy/environment, Explorer/Luna,
+lock/logoff/power lifecycle, hostile-client security tests and full replacement
+regressions remain incomplete. No replacement standalone image was generated.
+The previous verified engineering image remains current. Recovery to the exact
+original host passes two complete existing suites and normal guest shutdown.
+All 277,863 source files remain hash-identical; 37 host checks pass.
+[Implementation, failures, recovery and reproduction](native-winlogon.md)
+
+2026-10-24: **original Explorer and UserEnv pass independently and together**
+under one-vCPU KVM, two-vCPU KVM and TCG. Explorer's first exception identifies
+a wrong SP1 private SHLWAPI call; one source call-site fix uses the installed
+SP3 descriptor provider. UserEnv's fatal Winlogon failure is a demonstrated
+stack imbalance from four misbound private ordinals, corrected without changing
+original implementation bytes or Winlogon/security checks. The earlier
+0x0100ced1 exception is also handled in a working SP3 control and is not suppressed.
+Both components are rebuilt in disposable native Windows guests. All nine
+integration runs pass full regression, interactive session, live-component,
+fresh-profile and normal-shutdown gates. Three missing UserEnv implementations
+still forward to unchanged original SP3 code.
+A new standalone 32-GiB engineering QCOW2 passes sector comparison and a separate
+KVM cold boot with both full suites, lock/unlock, Notepad readback and confirmed
+guest shutdown. Previous images, all source files and user VM definitions are
+preserved. Thirty-five host checks pass. A clean installation ISO and complete
+independent reconstruction remain separate milestones.
+[Debugging, hashes, matrix, recovery and reproduction](native-explorer-userenv.md)
+
+2026-10-23: **original Regsvc and MSGINA pass individual integration.** Each is
+added alone on a frozen verified parent and passes KVM, two-vCPU KVM and TCG,
+including live module identity, real Winreg RPC lifecycle/negative checks,
+authentication failure/success, lock/unlock, Explorer/Luna, legacy/installer
+fixtures, networking and fresh service/guest shutdown. Original recovery copies
+and captured NT 5.1/x86/2600/SP3/product/licensing identity are preserved.
+
+Original Explorer now compiles after generating original BrowseUI/Shdocvw import
+libraries and building its original support libraries. Shell startup crashes in
+its disposable integration test; it is not promoted. A deterministic UserEnv
+adapter pins the full SP3 ordinal map and delegates three unavailable bodies to
+unchanged original SP3 UserEnv. All fifteen process-only export/profile checks
+pass, but Winlogon boot integration fails with `c0000005`/STOP `c000021a` in the
+three configurations. The working installed UserEnv and Explorer remain active.
+No Winlogon/security/licensing workaround is introduced. The Winlogon investigation
+documents missing source, host contracts and implementation acceptance stages.
+
+A reproducible private preinstalled engineering disk packages the accepted
+SCM/SMSS/Regsvc/MSGINA desktop with its prior kernel, networking and branding.
+It is not a clean Windows Setup ISO; authorized media/license provenance remains
+pending, and no licensed-distribution or source-completeness claim is made.
+Thirty-three host checks pass. [Evidence, failures, recovery and reproduction](native-component-extensions.md)
+
+2026-10-23: **`XP25-Anniversary` is registered for interactive virt-manager use.**
+Its independent, sector-verified disk copies the newest frozen branded desktop,
+`brand-final-tcg-01` (2026-10-24 00:00:23 UTC). KVM uses its original one-vCPU
+qemu32/512 MiB/i440fx/IDE/VGA/RTL8139 profile and original UP kernel/HAL. A unique
+MAC and `.11` DHCP reservation avoid sharing `XP25-Desktop`'s MAC/IP; guest
+files and registry/boot settings are not patched. Desktop, native-kernel live
+checksum, all established probes, branding/installer fixtures, networking and
+normal shutdown pass. Sixteen critical files, captured identity values, source
+chain hashes and existing guests are preserved. The VM is shut off with
+autostart disabled; its loopback VNC console is ready for the user to start.
+[Configuration and evidence](virt-manager-xp25-anniversary.md)
+
+2026-10-23: **XP25 visible branding passes the recorded guest matrix.** System
+Properties, About Windows, graphical login and the Start menu carry XP25 names
+on separate disposable overlays. Display strings are configurable and en-US
+only; NT 5.1/x86/build 2600/SP3, product type, API reporting, registry ProductName
+and captured licensing identity remain unchanged. Luna, original SCM/SMSS and
+all established regressions pass under one-vCPU KVM, two-vCPU KVM and TCG, with
+Calculator, Notepad, Win32/MSI fixture installers, reauthentication, networking
+and normal shutdown. Original UI recovery copies and offline restore evidence
+are retained. Source/reference hashes and existing libvirt guests are preserved.
+Twenty-eight host checks pass. This is resource branding of installed UI
+binaries, not additional original-source component reconstruction or a general
+compatibility claim. [Audit, limitations, evidence and recovery](branding.md)
+
+2026-10-23, Milestone 3: **original SCM reconstruction passes.** Native
+`services.exe` replaces SP3 SCM in disposable KVM, two-vCPU KVM and TCG guests.
+All established probes, fourteen real service-management observations, live SCM
+image identification, interactive logoff/login, Notepad and guest shutdown pass.
+A running fixture receives `SERVICE_CONTROL_SHUTDOWN`; the original SCM remains
+in host and guest recovery copies. Independent native rebuilds succeed without
+an SCM implementation patch. [Evidence and reproduction](native-components-milestone.md)
+
+Original SMSS was then integrated alone on the frozen SCM checkpoints and passes
+the same three configurations. At that checkpoint Regsvc, Msgina and UserEnv
+were unintegrated candidates, and Explorer's private libraries were unresolved;
+the extension checkpoint above supersedes those statuses.
+The new full source inventory retains the original 277,863-file SHA-256 manifest.
+Winlogon and two executive C sources remain absent; full OS reconstruction and
+source completeness are not established. `XP25-Desktop` and existing guests are
+preserved. Generated component manifests and all artifacts remain private.
+
+2026-10-23: **`XP25-Desktop` is registered in system libvirt for interactive
+virt-manager use.** Its independent disposable disk is sector-identical before
+boot to the newest verified desktop checkpoint, `network-native-kvm-mp-02`
+(18:35:27 UTC), and has no reference backing chain. The original two-vCPU
+qemu32/512 MiB/i440fx/IDE/standard-VGA/RTL8139 profile is retained, with a
+loopback VNC console and the isolated libvirt DHCP/DNS network. Explorer/Luna
+and all four regression probes pass in the registered VM. Guest-requested
+shutdown is recorded; the VM is left shut off with autostart disabled, ready
+for the user to start. Existing guests and reference images are preserved.
+[Configuration, commands and verification](virt-manager-xp25-desktop.md)
+
+2026-10-23, Milestone 2: **native networking passes.** The original NT 5.1
+`net/tcpip/winsock` helper builds with the native Microsoft toolchain and fixes
+the SP3 helper's missing ntdll imports without a kernel/parser extension.
+Fresh KVM, two-vCPU KVM and TCG clones pass IPv4 parsing, TCP/UDP loopback,
+RTL8139 initialization, DHCP, controlled DNS and isolated HTTP. Desktop,
+file/registry, pointer, session, Notepad and normal-shutdown regressions pass.
+An independently rebuilt helper passes ten consecutive network runs, a real
+guest-requested warm reboot and the full suite again; a separate cold-boot
+child also passes. Public Internet access remains disabled by a private network
+namespace with no uplink or default route. Source and frozen reference images
+are intact. [Commands, hashes, failures and runtime evidence](native-networking-milestone.md)
+
+Tracked launchers, source-pinned native build media, fresh-probe test media and
+packet/server logs make the networking process repeatable on the prepared
+Linux host. Native SCM/Winreg RPC stubs and headers were generated in build
+copies for Milestone 3. The installed SCM was not replaced. Eight extended SP3
+ntdll IPv4/IPv6 conversion exports remain absent; the matching original helper
+does not require them. Native Ws2_32 also lacks the SP3 Unicode resolver exports
+GetAddrInfoW, FreeAddrInfoW and GetNameInfoW. Other virtual NICs, IPv6, TLS,
+games and sustained network/security testing remain unverified.
+
+### Preserved Milestone 1 checkpoint
+
 2026-10-23: **the source-kernel desktop milestone succeeds under KVM.** A fresh
 clone loads XP25KRNL.EXE with compiled checksum `0x33bcdb`, reaches graphical
 login, authenticates XP25, loads Explorer/Luna, passes registry and filesystem
@@ -28,9 +363,10 @@ Kernel32 compile/link using the supplied native tools. Its independent fresh
 boot also reaches Explorer/Luna and passes the pointer/session probes and
 normal shutdown. This pipeline requires the prepared native build
 copy and four supplied executive objects; it is not a complete C/ASM OS rebuild.
-The source-guest UDP probe still fails (10022) because SP3 wshtcpip needs
-`RtlIpv4StringToAddressExW`. Networking, games, accelerated graphics and sustained
-stability remain unverified. The protected SP3 reference installation is intact.
+At this earlier checkpoint the source-guest UDP probe failed (10022) because
+SP3 wshtcpip needed `RtlIpv4StringToAddressExW`; Milestone 2 above resolves that
+specific failure with the original helper. Games, accelerated graphics and
+sustained stability remain unverified. The protected SP3 reference is intact.
 
 ### Earlier investigation checkpoints
 
@@ -192,7 +528,7 @@ kernel compilation still requires its original Windows toolchain environment.
 
 ## Supplied SP3 guest: 2026-10-18–19
 
-Installed the user-supplied ISO on a new 32 GiB disk using QEMU 8.2.2/KVM,
+Installed the user-supplied ISO on a new 32 GiB disk using QEMU 8.2/KVM,
 `pc-i440fx-8.2`, `qemu32`, one CPU, 512 MiB RAM, IDE and no NIC. All artifacts
 remain in `.work/xp-sp3-install-20261018/`. The ISO was attached read-only;
 no Microsoft download, source upload or public CI was used.
@@ -294,13 +630,14 @@ ReactOS core is not substituted for Microsoft's kernel, Winlogon or services.
 
 1. Windows guest/media, native compiler execution and x86 kernel linking are now
    established. The APIC readback failure and subsequent version mismatches are
-   resolved for the recorded desktop configuration. UDP loopback still fails
-   at a newer SP3 Winsock-helper dependency.
+   resolved for the recorded desktop configuration. Native Winsock helper
+   integration resolves the historical UDP failure; the recorded isolated
+   networking matrix passes.
 2. Original Winlogon and two executive C files are missing, with additional
    licensing/font-driver references and literal gaps. The earlier SCM absence
    finding checked the wrong path: `base/screg/sc/server` contains the original
-   services target. Its native build is not yet verified. No substitute OS core
-   was adopted.
+   services target. Its native build and runtime matrix now pass, followed by
+   original SMSS. No substitute OS core was adopted.
 3. Four source kernels are linked, with boot-video/debugger dependencies built.
    The checked ACPI APIC HAL and matching NTFS build and boot to a verified user
    desktop. A complete custom OS rebuild remains blocked by missing original
@@ -313,8 +650,9 @@ ReactOS core is not substituted for Microsoft's kernel, Winlogon or services.
    April 1, 2026. EC2 remains a platform/driver feasibility blocker.
    [AWS requirements](https://docs.aws.amazon.com/vm-import/latest/userguide/prerequisites.html)
 
-Next native milestone: validate the reproducible build pipeline and integrate
-additional matching original components using the staged plan in the desktop record.
+Next native work: assess the compiled Regsvc/Msgina/UserEnv candidates with
+component-specific compatibility tests, account for UserEnv's SP3 export gaps,
+and build Explorer's remaining original private library dependencies.
 Game fixtures, accelerated graphics, hardware and security validation remain
 outstanding. The supplied SP3 guest and linked source kernels have separate
 evidence; a full custom OS rebuild is still incomplete.

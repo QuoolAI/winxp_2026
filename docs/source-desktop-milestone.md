@@ -1,5 +1,9 @@
 # Source-kernel desktop milestone — 2026-10-23
 
+The later [Milestone 2 networking record](native-networking-milestone.md)
+resolves the networking failure preserved below using the original native
+Winsock helper. This page retains the original desktop checkpoint.
+
 The original NT 5.1 x86 kernel reaches an authenticated XP25 Explorer/Luna
 desktop under QEMU/KVM. The recorded guest passes file/registry checks, saves
 and reopens a Notepad document, and shuts down normally. This is a source-kernel
@@ -11,7 +15,7 @@ All evidence paths below are relative to `.work/boot-debug-20261022/`.
 
 ## Verified configuration and evidence
 
-QEMU 8.2.2, pc-i440fx-8.2, KVM, qemu32, one vCPU, 512 MiB RAM, BIOS/IDE,
+QEMU 8.2, pc-i440fx-8.2, KVM, qemu32, one vCPU, 512 MiB RAM, BIOS/IDE,
 standard VGA, ACPI APIC HAL and no network adapter. `matrix27.py` creates a
 fresh disposable child of the frozen `matched-hal-preboot.qcow2` image, stages
 the recorded inputs and starts QEMU with debugger/serial/QMP capture.
@@ -87,7 +91,7 @@ ntdll export RtlIpv4StringToAddressExW. Login, games, security and shutdown are
 explicitly outside that probe's coverage; the separate records above establish
 login/shutdown. Networking is not claimed to work.
 
-## Reproduce from Ubuntu
+## Reproduce from the Linux host
 
 The supplied native toolchain and prepared `C:\nt` copy remain in the frozen
 build-host chain. This recipe requires that prepared copy and its generated

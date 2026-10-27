@@ -52,11 +52,12 @@ def import_symbols(text, expected_dlls=ALLOWED_DLLS):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
-    parser.add_argument("--probe", choices=("xp", "pointer", "session"), default="xp",
-                        help="standard, pointer compatibility, or interactive-session checks")
+    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem"), default="xp",
+                        help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
                         help="local XP SDK import libraries; read only, never copied to output")
+    parser.add_argument("--userenv-reference", type=Path, help="private SP3 UserEnv export contract for the userenv probe")
     args = parser.parse_args()
     output = args.output.resolve()
     protected = (REPO / "Source").resolve()
@@ -71,12 +72,33 @@ def main():
             parser.error("missing tool: " + name)
         tools[key] = str(value)
     output.mkdir(parents=True, exist_ok=False)
+    contract = None
+    if args.probe == 'userenv':
+        if not args.userenv_reference or not args.userenv_reference.resolve().is_relative_to(REPO / '.work'):
+            parser.error('userenv probe requires a private SP3 reference')
+        from inspect_component import PE
+        from userenv_sp3_compat import exports
+        names, ordinals = exports(PE(args.userenv_reference))
+        if len(names) != 49 or ordinals.keys() != set(range(100, 210)):
+            parser.error('unreviewed UserEnv contract')
+        header = output / 'userenv_contract.h'
+        header.write_text('static const struct {const char *name; WORD ordinal;} userenv_exports[] = {\n' +
+                          ''.join('    {"' + n + '",' + str(o) + '},\n' for n,o in sorted(names.items())) + '};\n')
+        contract = {'reference_sha256': digest(args.userenv_reference), 'header_sha256': digest(header)}
     stem = args.probe + "_probe"
     source = REPO / ("tests/guest/" + stem + ".c")
     executable = output / (stem + ".exe")
     expected_dlls = ALLOWED_DLLS if args.probe == "xp" else {"kernel32.dll", "user32.dll"}
-    if args.probe == "session":
+    if args.probe in ("session", "service", "branding", "regsvc", "gina", "userenv", "profile", "shell", "oem"):
         expected_dlls = expected_dlls | {"advapi32.dll"}
+    elif args.probe == "network":
+        expected_dlls |= {"advapi32.dll", "ws2_32.dll", "iphlpapi.dll"}
+    if args.probe == 'shell':
+        expected_dlls |= {'shell32.dll'}
+    if args.probe == 'profile':
+        expected_dlls |= {'netapi32.dll'}
+    if args.probe in ("branding", "oem"):
+        expected_dlls |= {"gdi32.dll"}
     command = [tools["cc"], "-Os", "-Wall", "-Wextra", "-Werror", "-ffreestanding",
                "-fno-builtin", "-fno-stack-protector", "-nostdlib",
                "-Wl,--entry,_ProbeMain@0", "-Wl,--subsystem,console:5.1",
@@ -85,11 +107,21 @@ def main():
                "-lkernel32", "-luser32"]
     if args.probe == "xp":
         command += ["-ladvapi32", "-lws2_32"]
-    elif args.probe == "session":
+    elif args.probe in ("session", "service", "branding", "regsvc", "gina", "userenv", "profile", "shell", "oem"):
         command += ["-ladvapi32"]
+    elif args.probe == "network":
+        command += ["-ladvapi32", "-lws2_32", "-liphlpapi"]
+    if args.probe in ("branding", "oem"):
+        command += ["-lgdi32"]
+    if args.probe == 'shell':
+        command += ['-lshell32']
+    if args.probe == 'profile':
+        command += ['-lnetapi32']
+    if contract:
+        command += ['-I', str(output)]
     result = {"schema": 1, "started_utc": datetime.now(timezone.utc).isoformat(),
               "status": "failed", "guest_execution": "not_attempted",
-              "source_sha256": digest(source), "command": command, "tools": {}}
+              "source_sha256": digest(source), "command": command, "tools": {}, "additional_contract": contract}
     environment = {**os.environ, "LC_ALL": "C"}
     try:
         for key, path in tools.items():
