@@ -2,6 +2,25 @@
 
 ## Current checkpoint
 
+2026-10-27, Milestone 7A offline integration — GPU investigation + stability
+(`xp25-browser`): **No GPU configuration avoids the intermittent 0x842214 CHECK;
+single-vCPU stability is clean; the accepted offline image is NOT produced this
+session (host memory). Milestone 7A unaccepted, browser stays experimental.** An
+A/B (12 cycles each, XP25 KVM) showed `--disable-gpu` (default, still spawns a
+gpu-process) hit 0x842214 zero times, while `--in-process-gpu` removed the
+gpu-process but **relocated** the CHECK to utility/renderer children (14 hits);
+both rendered 12/12 pages with clean root exits. So 0x842214 is in the field-trial
+Section handle inheritance common to all child types, intermittent, sometimes
+non-fatal (spare child) and sometimes fatal (root) — no GPU config avoids it.
+Kept `--disable-gpu` software rendering (rejected `--in-process-gpu`); no assertion
+suppressed, no handle faked, kernel unchanged. Single-vCPU KVM **20/20
+launch/navigate/close cycles PASS** (0 failed, 20 JS receipts); two-vCPU 20-cycle
+loop **NOT TESTED** (a ~26 GB non-browser VM saturated host RAM; MP full regression
+passed earlier). Accepted offline `XP25-Supermium-Offline.qcow2` **NOT TESTED/NOT
+PRODUCED** (needs install+package+cold-boot boots; memory pressure) — recipe +
+experimental designation documented. Committed locally, not pushed (7A).
+[GPU investigation, stability and status](browser-offline-7a.md)
+
 2026-10-27, Milestone 7B security hardening (`xp25-browser`): **Renderer isolation
 investigated and a verified process-tree containment architecture implemented;
 Milestone 7B unaccepted.** Supermium compiles its per-renderer sandbox off on all

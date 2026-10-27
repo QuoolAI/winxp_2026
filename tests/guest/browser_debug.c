@@ -15,7 +15,7 @@
 static HANDLE log_file,console;
 typedef struct {DWORD pid;HANDLE process;DWORD initial_break,dumps;} BROWSER_PROCESS;
 static BROWSER_PROCESS processes[128];static DWORD used,active,total_dumps,cycle;
-static WCHAR command[4096],tag[20],profile[MAX_PATH],chrome_log[MAX_PATH];static BYTE stack_data[16384];static DWORD cycles=3,hold_ms=30000;
+static WCHAR command[4096],tag[20],profile[MAX_PATH],chrome_log[MAX_PATH];static BYTE stack_data[16384];static DWORD cycles=3,hold_ms=30000;static LPCWSTR gpu_flags=L"--disable-gpu";
 static void write_line(HANDLE file,const char *s){DWORD n;WriteFile(file,s,lstrlenA(s),&n,NULL);WriteFile(file,"\r\n",2,&n,NULL);}
 static void log_line(const char *s){write_line(log_file,s);}
 static BROWSER_PROCESS *find(DWORD pid){DWORD i;for(i=0;i<used;i++)if(processes[i].pid==pid && processes[i].process)return &processes[i];return NULL;}
@@ -121,7 +121,7 @@ static void exception(BROWSER_PROCESS *p,DEBUG_EVENT *event){
  FlushFileBuffers(log_file);
 }
 static void browser_command(void){
- wsprintfW(command,L"\"C:\\Program Files\\Supermium\\chrome.exe\" --no-first-run --disable-gpu --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme --user-data-dir=%s --enable-logging --log-file=%s http://xp25.test:8080/local.html?cycle=%lu%s%s",profile,chrome_log,cycle,tag[0]?L"&run=":L"",tag);
+ wsprintfW(command,L"\"C:\\Program Files\\Supermium\\chrome.exe\" --no-first-run %s --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme --user-data-dir=%s --enable-logging --log-file=%s http://xp25.test:8080/local.html?cycle=%lu%s%s",gpu_flags,profile,chrome_log,cycle,tag[0]?L"&run=":L"",tag);
 }
 static BOOL CALLBACK close_window(HWND window,LPARAM value){DWORD pid;GetWindowThreadProcessId(window,&pid);if(pid==(DWORD)value)PostMessageW(window,WM_CLOSE,0,0);return TRUE;}
 static int run_plain_cycle(void){
@@ -215,7 +215,8 @@ static int parse_tag(LPCWSTR s){
 void WINAPI DebugMain(void){DWORD errors=0;int argc=0,plain=0,snapshot=0;WCHAR **argv=CommandLineToArgvW(GetCommandLineW(),&argc),log_path[MAX_PATH];
  if(argc>=2 && !lstrcmpW(argv[1],L"plain"))plain=1;
  if(argc==2 && !lstrcmpW(argv[1],L"snapshot"))snapshot=1;
- if(argc==5 && (plain || !lstrcmpW(argv[1],L"debug"))){DWORD hold;if(!parse_number(argv[2],1,40,&cycles) || !parse_number(argv[3],10,300,&hold) || !parse_tag(argv[4]))ExitProcess(87);hold_ms=hold*1000;}
+ if((argc==5||argc==6) && (plain || !lstrcmpW(argv[1],L"debug"))){DWORD hold;if(!parse_number(argv[2],1,40,&cycles) || !parse_number(argv[3],10,300,&hold) || !parse_tag(argv[4]))ExitProcess(87);hold_ms=hold*1000;
+  if(argc==6){if(!lstrcmpW(argv[5],L"gpuproc"))gpu_flags=L"--disable-gpu";else if(!lstrcmpW(argv[5],L"inprocgpu"))gpu_flags=L"--disable-gpu --in-process-gpu";else if(!lstrcmpW(argv[5],L"nocompositegpu"))gpu_flags=L"--disable-gpu --in-process-gpu --disable-gpu-compositing";else ExitProcess(87);}}
  else if(argc>2 || (argc==2 && !plain && !snapshot))ExitProcess(87);
  if(argv)LocalFree(argv);
  console=GetStdHandle(STD_OUTPUT_HANDLE);nt_query_object=(QUERY_OBJECT)GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"NtQueryObject");CreateDirectoryW(L"C:\\xp25",NULL);CreateDirectoryW(L"C:\\xp25\\browserdiag",NULL);

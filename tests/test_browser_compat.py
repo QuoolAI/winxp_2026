@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'build'))
 from browser_ab_report import block
 from browser_config import URL_ALLOWLIST, generate
-from browser_diagnostic_media import watch_ab_suite, containment_suite, inherit_suite
+from browser_diagnostic_media import watch_ab_suite, containment_suite, inherit_suite, gpu_ab_suite, stability_suite
 from browser_tools import definition_exports, forwarder_modules, TARGETS
 from prepare_browser import install_watch_proxy
 from pwrp_proxy import DEF, ORIGINAL_SHA256, proxy_def
@@ -178,6 +178,28 @@ class ContainmentArchitectureTests(unittest.TestCase):
         self.assertIn('renderer_main.cc', d['why_renderer_sandbox_disabled']['source'])
         self.assertEqual(d['nt51_capability_matrix']['integrity_levels_low_IL'][:11], 'UNAVAILABLE')
         self.assertIn('process-tree containment', d['xp25_containment_architecture']['model'])
+
+class OfflineDiagnosticTests(unittest.TestCase):
+    def test_gpu_ab_suite_compares_two_gpu_profiles(self):
+        suite = gpu_ab_suite(12, 40)
+        self.assertIn('debug 12 40 gpuproc gpuproc', suite)
+        self.assertIn('debug 12 40 inprocgpu inprocgpu', suite)
+        self.assertLess(suite.index('install.cmd'), suite.index('browser_debug'))
+        with self.assertRaises(ValueError):
+            gpu_ab_suite(0, 40)
+
+    def test_stability_suite_runs_unmonitored_plain_loop(self):
+        suite = stability_suite(20, 25)
+        self.assertIn(r'D:\browser_debug.exe plain 20 25 stab gpuproc', suite)
+        self.assertIn('browser_shell.exe', suite)
+        self.assertIn('shutdown.exe', suite)
+
+    def test_debug_harness_gpu_profiles_are_a_fixed_allowlist(self):
+        src = (ROOT / 'tests/guest/browser_debug.c').read_text()
+        self.assertIn('--in-process-gpu', src)
+        self.assertIn('gpu_flags', src)
+        # Only the three named profiles map to flag strings; anything else is rejected.
+        self.assertIn('else ExitProcess(87)', src)
 
 if __name__ == '__main__':
     unittest.main()

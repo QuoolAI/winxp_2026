@@ -1,5 +1,12 @@
 # Milestone 7: browser integration and IE dependency audit
 
+**2026-10-27 (Milestone 7A offline):** no GPU configuration avoids the intermittent
+`0x842214` CHECK (`--in-process-gpu` removes the gpu-process but relocates the CHECK
+to utility/renderer children); `--disable-gpu` software rendering kept. Single-vCPU
+KVM 20-cycle launch/navigate/close stability passes; the accepted offline image is
+not produced this session (host memory) and the browser stays experimental. See
+[browser-offline-7a.md](browser-offline-7a.md).
+
 **2026-10-27 follow-up:** the captured 150 watcher cancellation CHECK
 (`0x77b96f8`, error 995) is an NT 5.1 issuing-thread cancellation difference in
 Supermium's own `pwrp_k32.dll` and is fixed by a provenance-pinned, export-equal

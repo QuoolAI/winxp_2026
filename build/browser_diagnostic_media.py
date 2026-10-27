@@ -9,6 +9,37 @@ import subprocess
 
 ROOT=Path(__file__).resolve().parents[1]
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def stability_suite(cycles,hold):
+    """Unmonitored repeated launch/navigate/close loop (no debugger observer), in the
+    shipping --disable-gpu software-rendering config. A root exit != 0 in a cycle is a
+    critical crash (reported as failed cycles); 0x842214 frequency is read afterward
+    from the guest Application event log. Shell-integration checks run first."""
+    if not 1 <= cycles <= 40 or not 10 <= hold <= 300:
+        raise ValueError('cycles 1..40 and hold 10..300 required')
+    rows = [r'@echo off', r'mkdir C:\xp25 2>nul', r'mkdir C:\xp25\browserdiag 2>nul',
+            r'call D:\install.cmd > C:\xp25\browserdiag\install.log 2>&1',
+            r'echo XP25_DIAGNOSTIC_INSTALL_EXIT=%ERRORLEVEL% > COM1', r'if errorlevel 1 goto done',
+            r'D:\browser_shell.exe > COM1', r'echo XP25_STABILITY_SHELL_EXIT=%ERRORLEVEL% > COM1',
+            r'D:\browser_debug.exe plain %d %d stab gpuproc > COM1' % (cycles, hold),
+            r'echo XP25_STABILITY_PLAIN_EXIT=%ERRORLEVEL% > COM1',
+            r':done', r'del "%USERPROFILE%\Start Menu\Programs\Startup\XP25BrowserSuite.cmd"',
+            r'echo XP25_DIAGNOSTIC_DONE > COM1', r'D:\wait.exe', r'shutdown.exe -s -t 5']
+    return '\n'.join(rows) + '\n'
+
+def gpu_ab_suite(cycles,hold):
+    """Compare the GPU-process config (default --disable-gpu, which still spawns a
+    separate gpu-process) against --in-process-gpu (no separate gpu-process), over
+    equal debugger blocks, to see whether the 0x842214 gpu-process CHECK is avoided
+    while pages keep rendering."""
+    if not 1<=cycles<=40 or not 10<=hold<=300:raise ValueError('cycles 1..40 and hold 10..300 required')
+    rows=[r'@echo off',r'mkdir C:\xp25 2>nul',r'mkdir C:\xp25\browserdiag 2>nul',
+          r'call D:\install.cmd > C:\xp25\browserdiag\install.log 2>&1',r'echo XP25_DIAGNOSTIC_INSTALL_EXIT=%ERRORLEVEL% > COM1',r'if errorlevel 1 goto done']
+    for tag in ('gpuproc','inprocgpu'):
+        rows+=[r'D:\browser_debug.exe debug %d %d %s %s > COM1'%(cycles,hold,tag,tag),
+               'echo XP25_GPUAB_%s_EXIT=%%ERRORLEVEL%% > COM1'%tag.upper()]
+    rows+=[':done',r'del "%USERPROFILE%\Start Menu\Programs\Startup\XP25BrowserSuite.cmd"','echo XP25_DIAGNOSTIC_DONE > COM1',r'D:\wait.exe','shutdown.exe -s -t 5']
+    return '\n'.join(rows)+'\n'
+
 def inherit_suite():
     """Install the browser, then characterize progwrp's PROC_THREAD_ATTRIBUTE_HANDLE_LIST
     handle inheritance against the installed pwrp_k32.dll/pwrp_k32_sm.dll."""
@@ -59,7 +90,7 @@ def watch_ab_suite(cycles,hold):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ['prepared','native','output']:p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--mode',choices=['debug','plain','watch-ab','containment','inherit'],required=True)
+    p.add_argument('--mode',choices=['debug','plain','watch-ab','containment','inherit','gpu-ab','stability'],required=True)
     p.add_argument('--cycles',type=int,default=5,help='watch-ab: cycles per block')
     p.add_argument('--hold',type=int,default=45,help='watch-ab: seconds before close; Chromium reclaims idle pool workers after 30')
     a=p.parse_args();out=a.output.resolve()
@@ -69,7 +100,7 @@ def main():
         if sha(a.prepared/'media'/name)!=digest:raise ValueError('prepared file changed: '+name)
     out.mkdir(parents=True,exist_ok=False);media=out/'media'
     shutil.copytree(a.prepared/'media',media,copy_function=lambda src,dst:subprocess.run(['cp','--reflink=always',src,dst],check=True) and dst)
-    for name in ['browser_debug','browser_sandbox','browser_iocancel','browserctl']+(['browser_watch'] if a.mode=='watch-ab' else [])+(['browser_shell'] if a.mode=='containment' else [])+(['browser_inherit'] if a.mode=='inherit' else []):
+    for name in ['browser_debug','browser_sandbox','browser_iocancel','browserctl']+(['browser_watch'] if a.mode=='watch-ab' else [])+(['browser_shell'] if a.mode=='containment' else [])+(['browser_inherit'] if a.mode=='inherit' else [])+(['browser_shell'] if a.mode=='stability' else []):
         shutil.copy2(a.native/(name+'.exe'),media/(name+'.exe'))
     if a.mode=='watch-ab':
         (media/'xp25compat').mkdir();shutil.copy2(a.native/'pwrp_k32.dll',media/'xp25compat/pwrp_k32.dll')
@@ -101,6 +132,8 @@ shutdown.exe -s -t 5
     if a.mode=='watch-ab':suite=watch_ab_suite(a.cycles,a.hold)
     if a.mode=='containment':suite=containment_suite()
     if a.mode=='inherit':suite=inherit_suite()
+    if a.mode=='gpu-ab':suite=gpu_ab_suite(a.cycles,a.hold)
+    if a.mode=='stability':suite=stability_suite(a.cycles,a.hold)
     (out/'suite.cmd').write_bytes(suite.replace('\n','\r\n').encode())
     command=['genisoimage','-quiet','-J','-joliet-long','-r','-o',str(out/'diagnostic.iso'),str(media)]
     subprocess.run(command,check=True)
