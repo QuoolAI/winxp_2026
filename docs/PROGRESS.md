@@ -2,6 +2,30 @@
 
 ## Current checkpoint
 
+2026-10-28, Milestone 7A offline integration — MP stability + accepted-form image
+produced (`xp25-browser`): **Two-vCPU stability now PASS and the offline image is
+produced and cold-boot verified; the browser still carries the experimental
+designation (intermittent 0x842214).** The earlier "two-vCPU blocked by host
+contention" note was wrong and is corrected: the `fstab-mp-01/02/03` early-boot
+halts were an operator base-image error — `--mode mp` (−smp 2) was run against the
+**UP** image `ec22f45b`, whose uniprocessor HAL BSODs under two vCPUs (reproduced
+with ~26 GB host RAM free in `fstab-mp-03`). On the correct **MP kernel/HAL base**
+`582d551d` (the base `finstall150-01` and the passing `matrix-150-02` used),
+**`fstab-mp-04` = 20/20 clean launch/navigate/close cycles** (`root_code=0`, 0
+non-zero process exits across 157, **0** `0x842214`/CHECK/crash), 15/15 shell checks,
+genuine guest shutdown. The offline image was then built one guest at a time:
+fresh clean install (`offline-install-01`, MP base, clean media `prepared-150-05`,
+`XP25_IMAGE_INSTALL_EXIT=0`, launcher rejects script/extra-arg/non-HTML = 87, clean
+shutdown) → `package_browser_image.py` (**292 installed file hashes + installed.ok
+re-verified**, convert/check/compare) → standalone **`XP25-Browser-Experimental.qcow2`**
+(3,591,766,016 B, no backing file, SHA-256 `6cad84c6c39e056e24bb84165665e0c47bbf13ec1e433d0de43c3b37a63b101f`,
+manifest `experimental_unaccepted`) → cold-boot (`offline-coldboot-01`, fresh overlay,
+no reinstall) **15/15 shell cases, 0 failures**, clean guest shutdown — independence
+proven. `0x842214` fired 0 times in this loop and cold boot but is unresolved, so the
+image stays **experimental**, not Internet-safe/accepted (per the milestone). All
+frozen bases read-only; other agents' VMs and the live `XP25-AI` untouched; committed
+locally, not pushed (7A). [GPU investigation, stability and status](browser-offline-7a.md)
+
 2026-10-27, Milestone 7A offline integration — GPU investigation + stability
 (`xp25-browser`): **No GPU configuration avoids the intermittent 0x842214 CHECK;
 single-vCPU stability is clean; the accepted offline image is NOT produced this

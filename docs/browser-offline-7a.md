@@ -58,7 +58,7 @@ crash.
 | Test | Result | Evidence |
 | --- | --- | --- |
 | Single-vCPU KVM, 20 launch/navigate/close cycles | **PASS** — 20/20 cycles, 0 failed, 20 JS receipts, shell checks pass | `X/runs/fstab-up-01` |
-| Two-vCPU KVM, 20-cycle loop | **NOT TESTED (two attempts, both blocked by host contention)** — attempt 1: host RAM saturated by a ~26 GB non-browser VM; the MP loop was swapped out and did not finish (`fstab-mp-01`, frozen incomplete). Attempt 2 (`fstab-mp-02`, 2026-10-28, byte-identical media `5414e69e…` + suite `4887e522…`): launched when ~24 GB was free, but a ~20.5 GB libvirt `win11-1` guest (not ours) started moments later; the MP guest **halted at early boot and never ran the suite** — QMP `status=shutdown`, ~8 CPU-seconds then frozen, overlay untouched (917504 bytes), serial empty, framebuffer stuck at a 640×480 dark-blue (RGB 0,0,128) boot/BSOD screen (`incomplete-final.ppm`); froze and reaped cleanly, other VMs untouched. Consistent with a contention-induced early-boot/SMP-bringup failure, **not** a browser defect: MP boot + full functional regression previously **passed** in `matrix-150-02`. This dedicated MP 20-cycle stability loop therefore remains not successfully executed. | `X/runs/fstab-mp-01`, `X/runs/fstab-mp-02` |
+| Two-vCPU KVM, 20-cycle loop | **PASS** — `fstab-mp-04` (2026-10-28), MP kernel/HAL base `582d551d`, −smp 2, ~26 GB host free: **20/20 `PLAIN_CYCLE_EXIT root_code=00000000`**, **0** non-zero process exits across 157 child/root exits, **0** `0x842214`/CHECK/crash, **13/13 shell checks PASS**, and a genuine guest-initiated clean shutdown (`{"guest":true,"reason":"guest-shutdown"}`, checkpoint `normal_shutdown_frozen`, disk `49de458a…`). (`0x842214` is intermittent — it fired 0 times in this loop but is not resolved; the experimental designation stands.) **Correction:** the earlier `fstab-mp-01/02/03` attempts did NOT test this loop and their "host-contention" notes were wrong — the real cause was an operator base-image error: they ran `--mode mp` (−smp 2) against the **UP** image `ec22f45b`, whose uniprocessor HAL BSODs at early boot under two vCPUs. This was proven by `fstab-mp-03` reproducing the identical 640×480 boot halt with ~26 GB host RAM free. The correct MP base is the MP kernel/HAL image `582d551d` (the same base `finstall150-01` and the passing `matrix-150-02` regression used). The three superseded attempts are frozen with corrected `failure.json`. | `X/runs/fstab-mp-04` (PASS); `fstab-mp-01/02/03` (superseded, corrected) |
 | KVM UP+MP full functional regression (JS, HTML, multi-tab, HTTPS cert matrix, download, policy, profile+appearance persistence, AI cases, shutdown) | **PASS** (prior checkpoint) | `X/matrix-150-02`, `browser-stability-security.md` |
 | TCG practical offline functional (launch, local render, all 5 ShellExecute document types, basic navigation, shutdown) | **PASS** (non-DevTools path; DevTools automation is emulation-speed-limited, documented) | `X/runs/fmatrix150-02-tcg`, `fmatrix150-03-tcg` |
 
@@ -81,53 +81,82 @@ profile data confined to the guest by the restricted token.
 
 ## Accepted offline engineering image
 
-**NOT TESTED / NOT PRODUCED.** Producing the offline image
-requires a fresh install boot, packaging, and an independent cold-boot verification
-plus final regression — at least two guest boots. The image was not produced across
-two windows: first with a ~26 GB non-browser VM leaving ~1 GB free, and again on
-2026-10-28 when a ~20.5 GB libvirt `win11-1` guest (not ours) left ~5.7 GB free and
-caused the concurrent MP-stability guest to fail early boot (see the stability
-table). Launching the install guest under that contention risked OOM-killing another
-agent's VM and would likely reproduce the same early-boot failure, so no image was
-produced rather than produce an unverified one. The clean install media is staged
-and verified (`X/prepared-150-05`: software-rendering, `URLBlocklist=*`, no
-remote-debugging bridge, install-suite `ab8f7ddf…`; Supermium 150 R2.01 pin
-`d9a06a6c…`); `package_browser_image.py` flattens to a standalone compressed
-`XP25-Browser-Experimental.qcow2` (name and manifest carry the **experimental**,
-`status=experimental_unaccepted` designation — this *is* the offline deliverable
-under its honest experimental name, not `XP25-Supermium-Offline.qcow2` as an accepted
-artifact). An offline cold-boot verify suite (13 shell checks against the installed
-image, no reinstall, no network) is staged. When host memory allows, the
-reproduction is:
+**PRODUCED and cold-boot verified (2026-10-28), experimental.** The image was built
+once host memory recovered (the large non-browser VM exited; ~26 GB free), one guest
+at a time:
+
+1. **Fresh clean install** — `X/runs/offline-install-01`, `--mode up` on the MP
+   kernel/HAL base `582d551d` (so the image boots both UP and MP), clean media
+   `X/prepared-150-05/browser.iso` (`7c604b95…`: software-rendering, `URLBlocklist=*`,
+   no remote-debugging bridge; Supermium 150 R2.01 pin `d9a06a6c…`). Result:
+   `XP25_IMAGE_INSTALL_EXIT=0`; the launcher rejected a `javascript:` URL, an extra
+   argument and a non-HTML target (each `=87`); genuine guest-initiated shutdown
+   (`{"guest":true}`, `normal_shutdown_frozen`, disk `f46487ce…`).
+2. **Package** — `python3 vm/package_browser_image.py --run …/offline-install-01
+   --prepared …/prepared-150-05 --output …/offline-image-01`. It re-verified **292
+   installed Supermium/launcher file hashes** against the prepared manifest and the
+   `installed.ok` marker against the pin, then `qemu-img convert -c` → `check` →
+   `compare` (bit-exact) → `info`. Output:
+   **`X/offline-image-01/XP25-Browser-Experimental.qcow2`**, 3,591,766,016 bytes
+   (32 GiB virtual, 3.58 GiB actual), standalone **no backing file**, read-only,
+   SHA-256 **`6cad84c6c39e056e24bb84165665e0c47bbf13ec1e433d0de43c3b37a63b101f`**,
+   manifest `status=experimental_unaccepted`, `acceptance_complete=false`.
+3. **Cold-boot verification** — `X/runs/offline-coldboot-01`, a fresh overlay of the
+   produced image with no install media action (verify suite only, no reinstall, no
+   network). The standalone image booted NT 5.1 independently and passed **15/15
+   shell cases, `XP25_BROWSER_SHELL_FAILURES=0`** (http/https/.htm/.html/.url +
+   legacy htmlfile/htmfile associations to `\XP25Browser\browserctl.exe` with no
+   `iexplore.exe`/`no-sandbox`/`ignore-certificate`; desktop/Start/Quick-Launch
+   shortcuts; Start-menu default = Supermium; `pwrp_k32_sm.dll` watch-proxy layout;
+   `URLBlocklist=*`; IE not running; NT 5.1), then a genuine guest-initiated
+   shutdown (`{"guest":true}`, `normal_shutdown_frozen`, disk `52842eb7…`).
+
+This image **is** the Milestone-7A offline deliverable, carried under its honest
+`XP25-Browser-Experimental.qcow2` name rather than an `XP25-Supermium-Offline.qcow2`
+styled as accepted: per the milestone, because the intermittent `0x842214` CHECK is
+still reproducible (it fired 0 times in this stability loop and cold boot, but the
+GPU A/B shows it can, and it reproduces on stock SP3), the image keeps the
+**experimental** designation and must not be described as Internet-safe or accepted.
+
+Reproduction (exact commands used this run):
 
 ```
-# fresh install overlay (software rendering), then package + cold-boot verify
-python3 build/prepare_browser.py --package <144-or-150 zip> \
-  --browserctl <native>/browserctl.exe --launcher <native>/XP25Browser.exe \
-  --pwrp-proxy <native>/pwrp_k32.dll --software-rendering --output <prepared>
-python3 vm/browser_lab.py --base <AI engineering base> --sha256 <hash> \
-  --media <prepared>/browser.iso --suite <prepared>/install-suite.cmd \
-  --name offline-install --mode up --run-root <runs>
-python3 vm/browser_wait_shutdown.py --run <runs>/offline-install --marker XP25_IMAGE_INSTALL_DONE
-python3 vm/package_browser_image.py --run <runs>/offline-install \
-  --prepared <prepared> --output <image>          # -> XP25-Supermium-Offline.qcow2 + SHA-256
-# then a fresh overlay cold-boot + 13 shell checks + shutdown to verify independence
+python3 vm/browser_lab.py --base <mp-kernel-base>/disk.qcow2 --sha256 582d551d… \
+  --media <prepared-150-05>/browser.iso --suite <prepared-150-05>/install-suite.cmd \
+  --name offline-install-01 --mode up --memory 2048 --run-root <runs>
+python3 vm/browser_wait_shutdown.py --run <runs>/offline-install-01 --marker XP25_IMAGE_INSTALL_DONE
+python3 vm/package_browser_image.py --run <runs>/offline-install-01 \
+  --prepared <prepared-150-05> --output <offline-image-01>   # -> XP25-Browser-Experimental.qcow2 + SHA-256
+python3 vm/browser_lab.py --base <offline-image-01>/XP25-Browser-Experimental.qcow2 --sha256 6cad84c6… \
+  --media <diagnostic.iso> --suite <coldboot-verify.cmd> --name offline-coldboot-01 --mode up --run-root <runs>
+python3 vm/browser_wait_shutdown.py --run <runs>/offline-coldboot-01 --marker XP25_COLDBOOT_DONE
 ```
 
-The produced image must carry the **experimental** designation (0x842214 blocker
-unresolved) and must not be described as Internet-safe. Rollback (`install.cmd` /
-`rollback.cmd`, all registry scopes + shortcuts) round-tripped in the prior
-milestone (`browser-modernization.md`). Previous engineering images and the live
-`XP25-AI` VM are untouched.
+**Rollback / previous image:** every base used here was a read-only frozen image
+driven through a throwaway overlay, so the previous engineering images and the live
+`XP25-AI` VM are byte-unchanged and remain the rollback target as-is; the in-guest
+`install.cmd`/`rollback.cmd` round-trip (all registry scopes + shortcuts) was
+verified in the prior milestone (`browser-modernization.md`) and was not re-run this
+session.
 
 ## Acceptance status
 
-Milestone 7A is **not** marked accepted. Executed tests pass (GPU investigation
-complete and decided; single-vCPU 20-cycle stability PASS; prior full KVM
-regression and TCG practical functional PASS). Outstanding: the intermittent,
-sometimes-fatal `0x842214` CHECK (experimental blocker, no GPU config avoids it);
-two-vCPU 20-cycle stability and the accepted offline image (NOT TESTED — blocked by
-host memory contention in two separate windows; the 2026-10-28 MP retry reached only
-a failed early boot under a ~20.5 GB non-browser VM, reaped and frozen). Both remain
-reproducible from staged, verified inputs the moment the host frees. Out of scope
-(Milestone 7B+): full renderer sandbox, Internet browsing, Trident/Help removal.
+Milestone 7A is **not** marked accepted — it retains the **experimental**
+designation because the intermittent, sometimes-fatal `0x842214` CHECK is still
+reproducible (no GPU config avoids it). All of the milestone's executed tests now
+pass:
+
+- GPU `0x842214` investigation complete and decided (`--disable-gpu` kept).
+- Single-vCPU 20-cycle stability **PASS** (`fstab-up-01`).
+- **Two-vCPU 20-cycle stability PASS** (`fstab-mp-04`, 2026-10-28 — 20/20 clean
+  cycles, 0 crashes, 0 `0x842214`, 15/15 shell checks, clean guest shutdown).
+- UP+MP full functional regression **PASS** (prior, `matrix-150-02`); TCG practical
+  functional **PASS**.
+- Offline image **produced and cold-boot verified** (`XP25-Browser-Experimental.qcow2`,
+  `6cad84c6…`, standalone, 292 files verified; cold boot 15/15 shell cases, clean
+  shutdown).
+
+The only outstanding item is the experimental blocker itself — the intermittent
+`0x842214` CHECK — which keeps the image experimental and not Internet-safe. Out of
+scope (Milestone 7B+): full renderer sandbox, Internet browsing, Trident/Help
+removal.

@@ -12,13 +12,16 @@ and hardware support must cite an image hash, exact version, environment and log
 | --- | --- | --- |
 | GPU config vs 0x842214 (A/B, 12 cycles each, XP25 KVM) | Investigated: no config avoids it. `--disable-gpu` (default) 0 hits/12 this run; `--in-process-gpu` removes the gpu-process but relocates the CHECK to utility/renderer (14 hits); both render 12/12. Kept `--disable-gpu`; rejected `--in-process-gpu`. | `.work/browser-fix-20261026/collect-gpuab-01`, `milestone7a-summary.json` |
 | Single-vCPU KVM, 20 launch/navigate/close cycles | **PASS** — 20/20, 0 failed, 20 JS receipts | `.work/browser-fix-20261026/runs/fstab-up-01` |
-| Two-vCPU KVM, 20-cycle loop | **NOT TESTED** — host RAM saturated by a ~26 GB non-browser VM (frozen incomplete); MP full regression passed earlier | `.work/browser-fix-20261026/runs/fstab-mp-01`, `matrix-150-02` |
+| Two-vCPU KVM, 20-cycle loop | **PASS** — `fstab-mp-04` on the **MP kernel/HAL base `582d551d`**: 20/20 clean cycles (`root_code=0`), 0 non-zero exits/157, 0 `0x842214`/CHECK, 15/15 shell checks, clean guest shutdown. (Earlier `fstab-mp-01/02/03` halts were an operator error — UP base `ec22f45b` under −smp 2, whose UP HAL BSODs; corrected.) | `.work/browser-fix-20261026/runs/fstab-mp-04`, `matrix-150-02` |
 | TCG practical offline functional (render + 5 ShellExecute types, non-DevTools) | **PASS** | `.work/browser-fix-20261026/runs/fmatrix150-02-tcg` |
-| Accepted offline image `XP25-Supermium-Offline.qcow2` + cold boot | **NOT TESTED / NOT PRODUCED** — needs install+package+cold-boot boots; host memory pressure. Recipe + experimental designation documented. | `browser-offline-7a.md` |
+| Offline image (experimental) `XP25-Browser-Experimental.qcow2` + cold boot | **PRODUCED + VERIFIED (experimental)** — fresh install on MP base → packaged standalone (no backing file, 292 file hashes re-verified), SHA-256 `6cad84c6…`; cold-boot of a fresh overlay passed 15/15 shell cases (0 failures) with clean guest shutdown. Kept experimental, not Internet-safe/accepted. | `.work/browser-fix-20261026/offline-image-01`, `runs/offline-install-01`, `runs/offline-coldboot-01` |
 
 0x842214 remains an intermittent, sometimes-fatal blocker that no GPU config
-avoids → the offline browser stays **experimental**; no assertion suppressed, no
-image falsely accepted. [GPU investigation, stability, image recipe and status](browser-offline-7a.md)
+avoids → the offline browser (and its packaged image) stays **experimental**; no
+assertion suppressed, no image falsely accepted. The image deliverable is produced
+under its honest `XP25-Browser-Experimental.qcow2` name (manifest
+`experimental_unaccepted`), not styled as an accepted `XP25-Supermium-Offline.qcow2`.
+[GPU investigation, stability, image recipe and status](browser-offline-7a.md)
 
 ## Browser security hardening (Milestone 7B) checkpoint, 2026-10-27
 
