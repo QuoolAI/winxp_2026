@@ -23,12 +23,18 @@ global IP `104.20.23.154`, 264 proxy pkts, clean shutdown); **negative** — pca
 denied at the gateway, nft dropped 23 guest off-service + 12 IPv6 packets. An earlier
 run (`b7net-01`) caught and fixed my own too-strict DHCP rule — which incidentally
 proved the firewall genuinely enforces. Acceptance 1–3, 6, 7 met and host-verified;
-`XP25-AI` and other agents' VMs untouched. Still experimental/not Internet-safe: no
-NT 5.1 renderer sandbox, intermittent `0x842214`. Not re-tested this session:
-browser-process containment on the 7A image (PASS prior `fcontain150-mp-02`,
-launcher/`browserctl.c` unchanged), single-vCPU/TCG network paths, and the full
-DevTools regression over the gateway (PASS prior `matrix-150-02`). Committed locally,
-not pushed. [secure Internet browsing — architecture and evidence](browser-security-7b.md)
+`XP25-AI` and other agents' VMs untouched. **Criterion 4 (browser-process containment)
+re-verified PASS on the 7A image** (`b7cont-01`): all 6 browser processes (root + 2
+renderer + 2 utility + gpu) denied system32/SYSTEM-inject/admin-file/registry (error
+5); baseline process could, known-restricted could not — admin/SYSTEM boundary (SAFER
++ Job), not a renderer sandbox. **Secure-config regression matrix**: MP = OS+isolation
++positive HTTPS all PASS; UP = OS+isolation PASS, positive browser nav NOT demonstrated
+(single-vCPU cold-start too slow, UI-bound >130s, proven on MP); TCG practical = OS
++15/15 shell checks+isolation PASS (browser nav impractical under emulation). Still
+experimental/not Internet-safe: no NT 5.1 renderer sandbox, intermittent `0x842214`.
+Not re-run this session: full DevTools functional regression over the gateway (PASS
+prior `matrix-150-02`). Committed locally, not pushed.
+[secure Internet browsing — architecture and evidence](browser-security-7b.md)
 
 2026-10-28, Milestone 7A offline integration — MP stability + accepted-form image
 produced (`xp25-browser`): **Two-vCPU stability now PASS and the offline image is

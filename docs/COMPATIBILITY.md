@@ -23,8 +23,10 @@ renderer sandbox; intermittent `0x842214`).
 | Unapproved host / LAN / host services / other VMs / metadata | **PASS (blocked)** — 0 packets leave `10.25.0.0/24` (pcap); no default route; non-allowlisted denied at gateway | `b7net-03/network.pcap`, `gw-run-01.log` |
 | Unauthorized DNS / IPv6 bypass | **PASS (blocked)** — only `xp25.test` local DNS; nft drops IPv6 (counter 12) and guest off-service pkts (counter 23) | `b7net-03/nft-counters.txt` |
 | Gateway-down ⇒ no Internet (fail-closed) | **PASS** — sole egress is the gateway socket | design; `b7net-01` |
-| Browser-process containment (SAFER token + Job Object) on 7A image | **NOT RE-TESTED this session** — PASS previously (`fcontain150-mp-02`); launcher/`browserctl.c` unchanged | `fcontain150-mp-02` |
-| Single-vCPU and TCG network paths; full DevTools functional regression over the gateway | **NOT TESTED this session** (MP only); functional regression PASS previously | `matrix-150-02` |
+| Browser-process containment (SAFER token + Job Object) on 7A image | **PASS (re-verified)** — `b7cont-01`: all 6 browser processes (root+2 renderer+2 utility+gpu) denied system32/SYSTEM-inject/admin-file/registry (error 5); baseline could, known-restricted could not. Admin/SYSTEM boundary only, not a renderer sandbox. | `.work/browser-7b-20261028/runs/b7cont-01` |
+| Regression matrix (secure config): single-vCPU (UP) | **PASS (OS + isolation)** — clean boot/shutdown, 0 off-subnet leak; approved-HTTPS browser nav NOT demonstrated on UP (single-vCPU cold-start too slow, UI-bound >130s; proven on MP) | `b7net-up-01` |
+| Regression matrix (secure config): TCG practical (non-DevTools) | **PASS** — clean boot/shutdown, 15/15 shell checks, 0 off-subnet leak, nft drops; browser nav impractical under emulation | `b7tcg-01` |
+| Full DevTools functional regression over the gateway | **NOT RE-RUN this session** — PASS previously | `matrix-150-02` |
 
 Details, architecture, firewall rules, gateway hardening and rollback:
 [secure Internet browsing — architecture and evidence](browser-security-7b.md)

@@ -67,17 +67,39 @@ stays disabled.
 | **Negative**: gateway unavailable ⇒ no Internet | **PASS** — fail-closed by construction (sole egress is the gateway socket) | design + `b7net-01` (DHCP-bug run showed zero egress) |
 | Direct-IP / DNS-rebinding bypass | **PASS** — literal-IP CONNECT rejected; allowlisted-name→non-global resolution rejected | `gw-test-02.log` |
 
+### Browser-process containment re-verified on the 7A image (criterion 4)
+`b7cont-01` (2026-10-28, 7A image, MP, `--firewall`) launched the browser through the
+SAFER-token + Job-Object `XP25Browser.exe` launcher and ran the `browser_sandbox`
+probe over the whole tree (`SANDBOX_PROCESS_COUNT=6`: root + 2 renderers + 2
+utility + gpu). **Every one of the 6 processes was denied** system-file write, SYSTEM
+process injection, admin file write and admin registry write — all `error=5`
+(`PRIVBOUNDARY ... system_file_error=5 ... system_inject_error=5`, `BOUNDARY ...
+file_error=5 registry_error=5`). The probe's own `baseline` process could do those
+(so the denials are real, not environmental) and its `known_restricted` reference was
+denied everything, validating the check. **Honest limit:** the browser processes can
+still write their *own* user profile and open *peer user* processes
+(`user_profile_write=1`, `shell_injection_rights=1`) — containment is at the
+**admin/SYSTEM boundary (SAFER Normal User + Job Object)**, **not** a per-renderer
+sandbox. Contained, not "fully sandboxed." Evidence: `X7b/runs/b7cont-01/serial.log`.
+
+### Regression matrix (secure network config) — UP / MP / TCG
+| Mode | OS boot + clean shutdown | Network isolation (host-verified) | Approved HTTPS in guest |
+| --- | --- | --- | --- |
+| **MP (two-vCPU KVM)** | **PASS** (`b7net-03`, guest-initiated shutdown) | **PASS** — 0 off-subnet leak, nft drops, all non-allowlisted denied | **PASS** — `example.com` 2 gateway allows, E2E TLS |
+| **UP (single-vCPU KVM)** | **PASS** (`b7net-up-01`, clean shutdown) | **PASS** — 0 off-subnet leak | **NOT DEMONSTRATED** — single-vCPU browser cold-start too slow to navigate in-window (UI-bound >130 s, chrome alive, 0 proxy packets); positive proven on MP |
+| **TCG (emulated)** | **PASS** (`b7tcg-01`, guest-initiated shutdown) | **PASS** — 15/15 shell checks, 0 off-subnet leak, nft dropped guest-other + IPv6 | n/a — practical non-DevTools path; browser navigation impractical under emulation (documented) |
+
 ### Status, remaining vulnerabilities, and rollback
-Network-containment acceptance criteria 1–3, 6, 7 are **met and host-verified**;
+Network-containment acceptance criteria 1–3, 6, 7 are **met and host-verified**, and
+criterion 4 (browser-process containment) is **re-verified PASS on the 7A image**;
 `XP25-AI` and all other agents' VMs were untouched throughout. **Not Internet-safe /
 not accepted**: NT 5.1 has **no Chromium renderer sandbox** (Phase 2 below) and the
 intermittent GPU-process `0x842214`/EGL cold-start fragility remains (Milestone 7A;
 the `b7net-03` chrome log shows the usual benign XP startup churn — missing `mf.dll`,
-EGL "no renderers", one child restart — before the page loaded). **Not re-tested this
-session**: browser-process containment on the 7A image (SAFER token + Job Object —
-previously PASS in `fcontain150-mp-02`, launcher/`browserctl.c` unchanged), the
-single-vCPU and TCG network paths, and the full DevTools functional regression
-(previously PASS in `matrix-150-02`). **Rollback is trivial and disposable**: every
+EGL "no renderers", one child restart — before the page loaded). **Outstanding**: the
+UP positive browser navigation (performance, not isolation — proven on MP) and the
+full DevTools functional regression over the gateway (previously PASS in
+`matrix-150-02`, not re-run this session). **Rollback is trivial and disposable**: every
 run is a throwaway qcow2 overlay over a read-only base, the gateway/namespace exist
 only for the run's lifetime, and nftables is namespace-local — discarding a
 compromised environment is `rm -rf` of the `X7b/runs/<name>` overlay; the base images
