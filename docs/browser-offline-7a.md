@@ -58,7 +58,7 @@ crash.
 | Test | Result | Evidence |
 | --- | --- | --- |
 | Single-vCPU KVM, 20 launch/navigate/close cycles | **PASS** — 20/20 cycles, 0 failed, 20 JS receipts, shell checks pass | `X/runs/fstab-up-01` |
-| Two-vCPU KVM, 20-cycle loop | **NOT TESTED** — host RAM saturated by a ~26 GB non-browser VM; the MP loop was swapped out and did not finish (frozen incomplete, `failure.json`). MP full functional regression previously **passed** in `matrix-150-02`. | `X/runs/fstab-mp-01` |
+| Two-vCPU KVM, 20-cycle loop | **NOT TESTED (two attempts, both blocked by host contention)** — attempt 1: host RAM saturated by a ~26 GB non-browser VM; the MP loop was swapped out and did not finish (`fstab-mp-01`, frozen incomplete). Attempt 2 (`fstab-mp-02`, 2026-10-28, byte-identical media `5414e69e…` + suite `4887e522…`): launched when ~24 GB was free, but a ~20.5 GB libvirt `win11-1` guest (not ours) started moments later; the MP guest **halted at early boot and never ran the suite** — QMP `status=shutdown`, ~8 CPU-seconds then frozen, overlay untouched (917504 bytes), serial empty, framebuffer stuck at a 640×480 dark-blue (RGB 0,0,128) boot/BSOD screen (`incomplete-final.ppm`); froze and reaped cleanly, other VMs untouched. Consistent with a contention-induced early-boot/SMP-bringup failure, **not** a browser defect: MP boot + full functional regression previously **passed** in `matrix-150-02`. This dedicated MP 20-cycle stability loop therefore remains not successfully executed. | `X/runs/fstab-mp-01`, `X/runs/fstab-mp-02` |
 | KVM UP+MP full functional regression (JS, HTML, multi-tab, HTTPS cert matrix, download, policy, profile+appearance persistence, AI cases, shutdown) | **PASS** (prior checkpoint) | `X/matrix-150-02`, `browser-stability-security.md` |
 | TCG practical offline functional (launch, local render, all 5 ShellExecute document types, basic navigation, shutdown) | **PASS** (non-DevTools path; DevTools automation is emulation-speed-limited, documented) | `X/runs/fmatrix150-02-tcg`, `fmatrix150-03-tcg` |
 
@@ -81,12 +81,24 @@ profile data confined to the guest by the restricted token.
 
 ## Accepted offline engineering image
 
-**NOT TESTED / NOT PRODUCED this session.** Producing `XP25-Supermium-Offline.qcow2`
+**NOT TESTED / NOT PRODUCED.** Producing the offline image
 requires a fresh install boot, packaging, and an independent cold-boot verification
-plus final regression — at least two guest boots. Host RAM was saturated by a large
-non-browser VM (~26 GB RSS), leaving ~1 GB free; launching a 2 GB guest risked
-OOM-killing another agent's VM, so no image was produced rather than produce an
-unverified one. When host memory allows, the reproduction is:
+plus final regression — at least two guest boots. The image was not produced across
+two windows: first with a ~26 GB non-browser VM leaving ~1 GB free, and again on
+2026-10-28 when a ~20.5 GB libvirt `win11-1` guest (not ours) left ~5.7 GB free and
+caused the concurrent MP-stability guest to fail early boot (see the stability
+table). Launching the install guest under that contention risked OOM-killing another
+agent's VM and would likely reproduce the same early-boot failure, so no image was
+produced rather than produce an unverified one. The clean install media is staged
+and verified (`X/prepared-150-05`: software-rendering, `URLBlocklist=*`, no
+remote-debugging bridge, install-suite `ab8f7ddf…`; Supermium 150 R2.01 pin
+`d9a06a6c…`); `package_browser_image.py` flattens to a standalone compressed
+`XP25-Browser-Experimental.qcow2` (name and manifest carry the **experimental**,
+`status=experimental_unaccepted` designation — this *is* the offline deliverable
+under its honest experimental name, not `XP25-Supermium-Offline.qcow2` as an accepted
+artifact). An offline cold-boot verify suite (13 shell checks against the installed
+image, no reinstall, no network) is staged. When host memory allows, the
+reproduction is:
 
 ```
 # fresh install overlay (software rendering), then package + cold-boot verify
@@ -114,6 +126,8 @@ Milestone 7A is **not** marked accepted. Executed tests pass (GPU investigation
 complete and decided; single-vCPU 20-cycle stability PASS; prior full KVM
 regression and TCG practical functional PASS). Outstanding: the intermittent,
 sometimes-fatal `0x842214` CHECK (experimental blocker, no GPU config avoids it);
-two-vCPU 20-cycle stability and the accepted offline image (NOT TESTED — host
-memory). Out of scope (Milestone 7B+): full renderer sandbox, Internet browsing,
-Trident/Help removal.
+two-vCPU 20-cycle stability and the accepted offline image (NOT TESTED — blocked by
+host memory contention in two separate windows; the 2026-10-28 MP retry reached only
+a failed early boot under a ~20.5 GB non-browser VM, reaped and frozen). Both remain
+reproducible from staged, verified inputs the moment the host frees. Out of scope
+(Milestone 7B+): full renderer sandbox, Internet browsing, Trident/Help removal.
