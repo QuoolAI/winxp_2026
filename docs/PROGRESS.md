@@ -2,6 +2,34 @@
 
 ## Current checkpoint
 
+2026-10-28, Milestone 7B secure Internet access — Phase 1 host-enforced network
+containment DEPLOYED and VERIFIED (`xp25-browser`): **Secure, controlled Internet
+access for the disposable XP25 browser VM works end-to-end and every restriction is
+verified independently from the host (packet capture + nftables drop counters +
+gateway decision log), with no sudo and no global-firewall change.** Architecture:
+the guest runs in a `unshare --user --map-root-user --net` namespace (no uplink, no
+default route, `ip_forward=0`, no public DNS); its only egress is an in-namespace
+proxy `10.25.0.1:3128` relaying over a UNIX socket to the host CONNECT gateway
+(`vm/browser_gateway.py`), hardened to allow only allowlisted public HTTPS names on
+443, reject literal-IP/metadata/private/loopback and non-global DNS results, validate
+the connected peer (rebind guard), keep TLS end-to-end, and fail closed. Added a
+namespace-local nftables default-deny ruleset with drop counters (`browser_network.py
+--firewall`, threaded through `browser_lab.py`). Host gateway test: **8/8** (live
+TLS to example.com allowed; all bypass classes denied). Disposable guest run on the
+7A image (`XP25-Browser-Experimental.qcow2` `6cad84c6…`, MP/two-vCPU, throwaway
+overlay): **positive** `https://example.com/` loaded via the gateway (2 allows to
+global IP `104.20.23.154`, 264 proxy pkts, clean shutdown); **negative** — pcap shows
+**0 packets** leave `10.25.0.0/24`, real Chromium phone-home (google/gvt1/googleapis)
+denied at the gateway, nft dropped 23 guest off-service + 12 IPv6 packets. An earlier
+run (`b7net-01`) caught and fixed my own too-strict DHCP rule — which incidentally
+proved the firewall genuinely enforces. Acceptance 1–3, 6, 7 met and host-verified;
+`XP25-AI` and other agents' VMs untouched. Still experimental/not Internet-safe: no
+NT 5.1 renderer sandbox, intermittent `0x842214`. Not re-tested this session:
+browser-process containment on the 7A image (PASS prior `fcontain150-mp-02`,
+launcher/`browserctl.c` unchanged), single-vCPU/TCG network paths, and the full
+DevTools regression over the gateway (PASS prior `matrix-150-02`). Committed locally,
+not pushed. [secure Internet browsing — architecture and evidence](browser-security-7b.md)
+
 2026-10-28, Milestone 7A offline integration — MP stability + accepted-form image
 produced (`xp25-browser`): **Two-vCPU stability now PASS and the offline image is
 produced and cold-boot verified; the browser still carries the experimental

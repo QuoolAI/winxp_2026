@@ -6,6 +6,29 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Browser secure Internet containment (Milestone 7B, Phase 1) checkpoint, 2026-10-28
+
+Host-enforced network containment for the disposable XP25 browser VM, verified
+independently from the host (pcap + nftables drop counters + gateway log), no sudo,
+no global-firewall change. Base = 7A image `XP25-Browser-Experimental.qcow2`
+(`6cad84c6…`) over a throwaway overlay; MP kernel/HAL (two-vCPU KVM). Allowlist =
+`example.com`/`www.example.com`/`example.org`/`example.net`; unrestricted browsing
+disabled. Browser still **experimental, not Internet-safe/accepted** (no NT 5.1
+renderer sandbox; intermittent `0x842214`).
+
+| Test | Result | Evidence |
+| --- | --- | --- |
+| Gateway allow/deny logic (host, live DNS+TLS) | **PASS 8/8** — example.com allowed w/ real cert; non-allowlisted, public direct-IP, metadata, loopback, port 22, non-CONNECT, rebind-to-nonglobal all denied | `.work/browser-7b-20261028/gw-test-02.log` |
+| Approved HTTPS loads in guest (`https://example.com/`) | **PASS** — 2 gateway allows to global IP `104.20.23.154`, 264 proxy pkts, E2E TLS, clean shutdown | `.work/browser-7b-20261028/runs/b7net-03` |
+| Unapproved host / LAN / host services / other VMs / metadata | **PASS (blocked)** — 0 packets leave `10.25.0.0/24` (pcap); no default route; non-allowlisted denied at gateway | `b7net-03/network.pcap`, `gw-run-01.log` |
+| Unauthorized DNS / IPv6 bypass | **PASS (blocked)** — only `xp25.test` local DNS; nft drops IPv6 (counter 12) and guest off-service pkts (counter 23) | `b7net-03/nft-counters.txt` |
+| Gateway-down ⇒ no Internet (fail-closed) | **PASS** — sole egress is the gateway socket | design; `b7net-01` |
+| Browser-process containment (SAFER token + Job Object) on 7A image | **NOT RE-TESTED this session** — PASS previously (`fcontain150-mp-02`); launcher/`browserctl.c` unchanged | `fcontain150-mp-02` |
+| Single-vCPU and TCG network paths; full DevTools functional regression over the gateway | **NOT TESTED this session** (MP only); functional regression PASS previously | `matrix-150-02` |
+
+Details, architecture, firewall rules, gateway hardening and rollback:
+[secure Internet browsing — architecture and evidence](browser-security-7b.md)
+
 ## Browser offline integration (Milestone 7A) checkpoint, 2026-10-27
 
 | Test | Result | Evidence |

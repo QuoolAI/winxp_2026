@@ -33,6 +33,7 @@ def main():
     p.add_argument('--gdb',action='store_true',help='private UNIX GDB socket for a diagnostic overlay only')
     p.add_argument('--suite',type=Path)
     p.add_argument('--gateway',type=Path)
+    p.add_argument('--firewall',action='store_true',help='install namespace-local nftables default-deny with drop counters')
     a=p.parse_args()
     if not a.name or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in a.name):p.error('simple unique name required')
     base=a.base.resolve();iso=a.media.resolve()
@@ -77,6 +78,7 @@ del "%USERPROFILE%\Start Menu\Programs\Startup\XP25BrowserSuite.cmd"
     (out/'qemu-command.json').write_text(json.dumps(command,indent=2)+'\n')
     wrapper=['unshare','--user','--map-root-user','--net',sys.executable,str(ROOT/'vm/browser_network.py'),'qemu-command.json','--parent-netns',os.readlink('/proc/self/ns/net'),'--mac',mac,'--fixtures',str(ROOT/'components/browser')]
     if gateway:wrapper.extend(['--gateway',str(gateway)])
+    if a.firewall:wrapper.append('--firewall')
     if secret:wrapper.extend(['--provider-clients',str(out/'gateway-clients.json'),'--mock-key','sk-xp25-isolated-test-'+secrets.token_hex(8)])
     with (out/'namespace.log').open('w') as f:proc=subprocess.Popen(wrapper,stdout=f,stderr=subprocess.STDOUT,start_new_session=True)
     lab.record({'argv':wrapper,'pid':proc.pid})

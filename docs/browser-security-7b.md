@@ -6,6 +6,83 @@ infeasible or outstanding. Milestone 7B is **not** accepted and no Internet-safe
 production image is produced. Private evidence lives under `.work/browser-fix-20261026/`
 (abbreviated `X`); no host paths, credentials or guest disks are committed.
 
+## Phase 1 — host-enforced network containment: DEPLOYED and VERIFIED (2026-10-28)
+
+Secure, controlled Internet access was built and tested end-to-end, with every
+restriction verified **independently from the Linux host** (packet capture, firewall
+drop counters, gateway decision log) — not from a browser timeout. It uses a network
+namespace plus namespace-local nftables and a host CONNECT gateway; **no sudo and no
+change to any global/host firewall rule**, so the Ubuntu host, home LAN, `XP25-AI`
+VM, Mise En Abyme/Guacamole (LXD), the SSH tunnel and other libvirt networks are
+untouched. Evidence under `X7b = .work/browser-7b-20261028/`.
+
+### Network architecture (default-deny by construction)
+The disposable guest runs inside `unshare --user --map-root-user --net` (`browser_network.py`).
+The namespace starts with only `lo`; a tap `xp25tap` is created at `10.25.0.1/24`.
+There is **no uplink, no bridge to the host, no default route, `ip_forward=0`, and no
+public DNS** (dnsmasq answers only `xp25.test`, `--no-resolv`). The guest (DHCP
+`10.25.0.10`) can therefore reach *only* `10.25.0.1`. Its **sole** path off-namespace
+is an in-namespace proxy `10.25.0.1:3128` (`browser_proxy.py`, accepts only
+`10.25.0.10`) that relays over a **UNIX-domain socket** to the host gateway — a
+filesystem IPC path, not a network route, so the guest's IP stack never touches the
+host network, the LAN, other VMs or metadata. Verified: `X7b/runs/b7net-03/network-isolation.json`
+shows `public_uplink:false`, `ip_forward:0`, routes = only `10.25.0.0/24`.
+
+### Namespace-local firewall (nftables, default-deny, with drop counters)
+`browser_network.py --firewall` installs an `inet` table `xp25iso` inside the namespace
+(namespace-local → cannot affect the host). Input policy **drop**; accept only
+`xp25tap` DHCP and `10.25.0.10→10.25.0.1` on DNS(53)/HTTP(8080)/proxy(3128)/gateway(8443);
+all IPv6 dropped; forward policy drop. Counters are host-independent proof of
+enforcement — in `X7b/runs/b7net-03/nft-counters.txt`: `guest_other_denied` = 23 pkts
+dropped (the guest's NetBIOS broadcasts to `10.25.0.255`), `ipv6_to_guest_denied` =
+12 pkts dropped, `forward_denied` = 0 (no routing attempts).
+
+### HTTPS CONNECT gateway (host, allowlist-only, fail-closed)
+`vm/browser_gateway.py` (UNIX socket only) permits `CONNECT <name>:443` **only** for
+allowlisted DNS names, resolves host-side, requires every resolved IPv4 to be
+**global** (rejecting private/loopback/link-local and the `169.254.169.254` metadata
+address), connects to one validated IP and re-validates the connected peer
+(TOCTOU/DNS-rebind guard), **rejects literal-IP CONNECTs** (no direct-IP bypass),
+tunnels TLS unmodified (**end-to-end certificate validation preserved — no
+interception**), and **fails closed** when unavailable (the namespace has no other
+egress). Standalone host test with live DNS/TLS, `X7b/gw-test-02.log`: **8/8** —
+`example.com:443` allowed (real TLS, cert CN `example.com`, `HTTP/1.1 200 OK`);
+denied: non-allowlisted name, public direct-IP, metadata IP, loopback, port 22,
+non-CONNECT GET, and an allowlisted name resolving to a non-global IP.
+
+### Disposable guest and runtime security tests (KVM, two-vCPU/MP)
+Base = the verified **7A experimental image** `XP25-Browser-Experimental.qcow2`
+(SHA-256 `6cad84c6c39e056e24bb84165665e0c47bbf13ec1e433d0de43c3b37a63b101f`,
+read-only), driven through a fresh throwaway overlay; the allowlist was
+`example.com`/`www.example.com`/`example.org`/`example.net`; unrestricted browsing
+stays disabled.
+
+| Test | Result | Evidence |
+| --- | --- | --- |
+| **Positive**: approved HTTPS (`https://example.com/`) loads through the gateway | **PASS** — 2 gateway `allow` lines to resolved global IP `104.20.23.154`, 264 guest↔proxy packets, end-to-end TLS, clean guest shutdown | `X7b/runs/b7net-03`, `gw-run-01.log` |
+| **Negative**: unapproved host blocked | **PASS** — gateway `deny not_allowlisted` (incl. real Chromium phone-home to `www.google.com`, `*.googleapis.com`, `*.gvt1.com`) | `X7b/gw-run-01.log` |
+| **Negative**: home LAN / host services / other VMs / metadata unreachable | **PASS** — pcap shows **0 packets** leave `10.25.0.0/24`; no default route; metadata/direct-IP denied at the gateway | `X7b/runs/b7net-03/network.pcap` |
+| **Negative**: unauthorized DNS blocked | **PASS** — only `xp25.test` resolvable locally; public names resolved only host-side by the gateway for allowlisted hosts | `network-isolation.json`, dnsmasq config |
+| **Negative**: IPv6 bypass blocked | **PASS** — namespace has no IPv6 route; nft drops IPv6 (counter 12) | `nft-counters.txt` |
+| **Negative**: gateway unavailable ⇒ no Internet | **PASS** — fail-closed by construction (sole egress is the gateway socket) | design + `b7net-01` (DHCP-bug run showed zero egress) |
+| Direct-IP / DNS-rebinding bypass | **PASS** — literal-IP CONNECT rejected; allowlisted-name→non-global resolution rejected | `gw-test-02.log` |
+
+### Status, remaining vulnerabilities, and rollback
+Network-containment acceptance criteria 1–3, 6, 7 are **met and host-verified**;
+`XP25-AI` and all other agents' VMs were untouched throughout. **Not Internet-safe /
+not accepted**: NT 5.1 has **no Chromium renderer sandbox** (Phase 2 below) and the
+intermittent GPU-process `0x842214`/EGL cold-start fragility remains (Milestone 7A;
+the `b7net-03` chrome log shows the usual benign XP startup churn — missing `mf.dll`,
+EGL "no renderers", one child restart — before the page loaded). **Not re-tested this
+session**: browser-process containment on the 7A image (SAFER token + Job Object —
+previously PASS in `fcontain150-mp-02`, launcher/`browserctl.c` unchanged), the
+single-vCPU and TCG network paths, and the full DevTools functional regression
+(previously PASS in `matrix-150-02`). **Rollback is trivial and disposable**: every
+run is a throwaway qcow2 overlay over a read-only base, the gateway/namespace exist
+only for the run's lifetime, and nftables is namespace-local — discarding a
+compromised environment is `rm -rf` of the `X7b/runs/<name>` overlay; the base images
+and host firewall are byte-unchanged.
+
 ## Phase 2 — renderer isolation (priority)
 
 ### Why Supermium's per-renderer sandbox is off on NT 5.1

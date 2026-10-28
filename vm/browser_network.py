@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--gateway', type=Path)
     parser.add_argument('--provider-clients',type=Path)
     parser.add_argument('--mock-key')
+    parser.add_argument('--firewall', action='store_true',
+                        help='install a namespace-local nftables default-deny ruleset with drop counters')
     args = parser.parse_args()
     # Refuse the host network namespace even when invoked with real root.
     if os.readlink('/proc/self/ns/net') == args.parent_netns:
@@ -47,11 +49,42 @@ def main():
                 ['ip', 'link', 'set', 'xp25tap', 'up']):
         subprocess.run(cmd, check=True)
     Path('/proc/sys/net/ipv4/ip_forward').write_text('0\n')
+    # Namespace-local, default-deny firewall (7B). The guest already has no uplink,
+    # no default route and no public DNS; this is defense-in-depth and, via the drop
+    # counters, host-independent evidence that only DHCP/DNS/fixture-HTTP/gateway-proxy
+    # on 10.25.0.1 are reachable and that IPv6 and every other destination are denied.
+    nft_ruleset = '''table inet xp25iso {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iifname "lo" accept
+    iifname "xp25tap" udp dport 67 accept comment "dhcp-client-broadcast-and-renew"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 udp dport 53 accept comment "dns-udp"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 53 accept comment "dns-tcp"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 8080 accept comment "http-fixtures"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 3128 accept comment "proxy-gateway"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 8443 accept comment "ai-gateway"
+    meta nfproto ipv6 counter drop comment "ipv6_denied"
+    ip saddr 10.25.0.10 counter drop comment "guest_other_denied"
+    counter drop comment "default_input_denied"
+  }
+  chain forward { type filter hook forward priority 0; policy drop; counter drop comment "forward_denied"; }
+  chain output {
+    type filter hook output priority 0; policy accept;
+    meta nfproto ipv6 oifname "xp25tap" counter drop comment "ipv6_to_guest_denied"
+  }
+}
+'''
+    firewall_active = False
+    if args.firewall:
+        subprocess.run(['nft', '-f', '-'], input=nft_ruleset, text=True, check=True)
+        Path('nft-ruleset.txt').write_text(subprocess.check_output(['nft', 'list', 'table', 'inet', 'xp25iso'], text=True))
+        firewall_active = True
     state = {'interfaces': json.loads(subprocess.check_output(['ip', '-j', 'address'])),
              'routes': json.loads(subprocess.check_output(['ip', '-j', 'route'])),
              'ip_forward': Path('/proc/sys/net/ipv4/ip_forward').read_text().strip(),
              'network_namespace': os.readlink('/proc/self/ns/net'),
              'parent_network_namespace': args.parent_netns,
+             'namespace_firewall': firewall_active,
              'public_uplink': False}
     Path('network-isolation.json').write_text(json.dumps(state, indent=2) + '\n')
     Path('qemu-network-command.json').write_text(json.dumps(command, indent=2) + '\n')
@@ -133,6 +166,12 @@ def main():
             if qemu is not None and qemu.poll() is None:
                 qemu.terminate()
                 qemu.wait(timeout=15)
+            # Snapshot the namespace firewall counters before the namespace tears down.
+            if firewall_active:
+                try:
+                    Path('nft-counters.txt').write_text(subprocess.check_output(['nft', 'list', 'table', 'inet', 'xp25iso'], text=True))
+                except Exception:
+                    pass
             dns.terminate()
             dns.wait(timeout=10)
             for process in providers:
