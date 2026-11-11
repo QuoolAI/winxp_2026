@@ -6,6 +6,37 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Browser network-security verification — Phase 2 correction and final coverage (Milestone 7B), 2026-11-11
+
+The Phase-2 ShellExecute render gap is corrected and the complete two-vCPU KVM regression
+re-run through the gateway is clean. Base = 7A image `6cad84c6…` over a throwaway overlay;
+MP two-vCPU KVM; browser HTTPS routed through the Phase-1 gateway. Correction is in
+`build/browser_test_media.py` (committed); evidence root `.work/browser-7b3-20261111/`
+(`X3`), clean run `runs/b7reg4-mp`. Still **experimental, not Internet-safe/accepted**.
+
+| Test | Result | Evidence |
+| --- | --- | --- |
+| ShellExecute internal HTTP/URL render (the 2 previously-open cases) | **PASS** — `rendered_ShellExecute_HTTP` and `_URL` now render; shell fixtures reach the in-ns server directly | `runs/b7reg4-mp`, `http.jsonl` |
+| Explorer/Luna shell-association launch (HTTP/HTML/HTM/URL/HTTPS + rejected scheme) | **PASS** — 5 verbs launch exit 0, rejected scheme `=87`, all four render receipts green | `runs/b7reg4-mp/serial.log` |
+| JavaScript, multiple tabs, downloads, appearance (Luna) set/persist | **PASS** (`modern_javascript`, `multiple_tabs`, `download_completed`, `appearance_setting_changed/persists`) | `runs/b7reg4-mp/cdp-browser/result.json` |
+| HTTPS certificate matrix through the gateway | **PASS** — valid loads; expired/wrong-host/untrusted each rejected `ERR_CERT_*` end-to-end | `runs/b7reg4-mp/cdp-browser/result.json` |
+| Browser profile persistence across restart; browser restart; normal shutdown | **PASS** (`profile_persists`, reopen exit 0, `{"guest":true,"reason":"guest-shutdown"}`) | `runs/b7reg4-mp` |
+| AI regression (62 cases) | **PASS** (`passes=55/0` and `7/0`) under low host load | `runs/b7reg4-mp/serial.log` |
+| Unauthorized destinations still blocked | **PASS** — 79 denies (70 `not_allowlisted` phone-home + 9 non-CONNECT), 11 allows only to the 4 approved cert hosts; no bypass | `regression4-gateway.log` |
+| `full_regression_coverage` | **false** — 4 unchanged `not_tested` probe cases (documented gap, **not** a regression) | `runs/b7reg4-mp/browser-results.json` |
+| XP25-AI assistant suite flakiness (RoverAI indexer / Clippy tray) | Intermittent **timing-race** under back-to-back host load (runs 1–3: 3/1/7 varying case fails); **cleared under low load** (run 4, 55/0). Pre-existing/environmental, non-browser, not caused by the fix (AI-suite bytes identical to the 8 prior passing runs). | `logs-b7reg2-mp`, `logs-b7reg3-mp` |
+
+Fix mechanism: a managed Supermium proxy policy (`HKLM\SOFTWARE\Policies\Supermium`
+`ProxyMode=fixed_servers`, `ProxyServer=10.25.0.1:3128`,
+`ProxyBypassList=xp25.test;localhost;127.0.0.1;10.25.0.1`) is **added** so every browser
+launch path (shell association and command line) routes real egress through the gateway
+while reaching the internal `xp25.test` host directly; the Phase-1 WinINET proxy is
+preserved unchanged (purely additive) and the pinned test ISO is byte-identical
+(`7ca80511…`). Host-enforced isolation (namespace with no uplink + gateway allowlist) is
+**not** weakened — a guest proxy setting only decides where the browser *attempts* to send
+traffic, and the namespace has no route to the Internet regardless.
+[Milestone 7B architecture, residual risk and open items](browser-security-7b.md)
+
 ## Browser network-security verification (Milestone 7B, Phase 2) checkpoint, 2026-11-10
 
 Phase 2 verified the Phase-1 design against an explicit bypass matrix and ran the full

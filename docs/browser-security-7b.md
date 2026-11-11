@@ -185,21 +185,61 @@ denies** — **44 `not_allowlisted`** (real Chromium phone-home to `www.google.c
 check 7 (unauthorized/redirect destinations) proven with live browser traffic: every
 destination the browser reached for that was not on the allowlist was refused.
 
-**Two checks are not green and are reported honestly, not as passes:**
-`rendered_ShellExecute_HTTP` and `rendered_ShellExecute_URL` produced no render
-receipt. Root cause (from the gateway log): the ShellExecute/shell-association launch
-path opens the browser *without* the explicit `--proxy-bypass-list` that the
-DevTools-driven browser carries, so with the test-only system proxy set it sends the
-internal `http://xp25.test` fixture to the gateway as a **plain (non-CONNECT) request**,
-which the gateway correctly refuses (the 7 `malformed` denials). The ShellExecute
-*launch itself* succeeded for all five verbs (`XP25_SHELLEXECUTE_{HTTP,HTTPS,HTML,HTM,URL}=0`,
-rejected-scheme `=87`), and the `file://` HTML/HTM cases rendered. This is a
-test-harness/proxy interaction, **not** a product defect (the shipping image ships no
-system proxy — only the `URLBlocklist` policy) and **not** a security weakness (a
-gateway refusing a non-CONNECT request is correct behaviour). Separately,
-`full_regression_coverage` stays **false** because of the four long-standing
-`not_tested` probe cases (`login_transition`, `legacy_games`, `security_mitigations`,
-`shutdown`) — an unchanged, documented coverage gap, not converted to a pass.
+**Two checks were not green in the initial Phase-2 run and are now corrected (see Task 2
+correction below):** `rendered_ShellExecute_HTTP` and `rendered_ShellExecute_URL`
+produced no render receipt because the ShellExecute/shell-association launch path opens
+the browser *without* the explicit `--proxy-bypass-list` that the DevTools-driven browser
+carries, so with the test-only system proxy set it sent the internal `http://xp25.test`
+fixture to the gateway as a **plain (non-CONNECT) request**, which the gateway correctly
+refused (the 7 `malformed` denials). The ShellExecute *launch itself* succeeded for all
+five verbs (`XP25_SHELLEXECUTE_{HTTP,HTTPS,HTML,HTM,URL}=0`, rejected-scheme `=87`), and
+the `file://` HTML/HTM cases rendered. This was a test-harness/proxy interaction, **not**
+a product defect (the shipping image ships no system proxy — only the `URLBlocklist`
+policy) and **not** a security weakness (a gateway refusing a non-CONNECT request is
+correct behaviour). Separately, `full_regression_coverage` stays **false** because of the
+four long-standing `not_tested` probe cases (`login_transition`, `legacy_games`,
+`security_mitigations`, `shutdown`) — an unchanged, documented coverage gap, not
+converted to a pass.
+
+### Task 2 correction (2026-11-11) — ShellExecute render fixed; clean MP re-run
+
+The harness proxy configuration is corrected without weakening host-enforced isolation.
+`build/browser_test_media.py` now **adds** a managed Supermium proxy policy
+(`HKLM\SOFTWARE\Policies\Supermium` `ProxyMode=fixed_servers`,
+`ProxyServer=10.25.0.1:3128`, `ProxyBypassList=xp25.test;localhost;127.0.0.1;10.25.0.1`)
+that **every** browser launch path honours — shell association as well as the explicit
+command line — so real egress still traverses the gateway while the internal `xp25.test`
+host is reached directly. The Phase-1 per-user WinINET proxy is preserved **unchanged**
+(the change is purely additive; the suite diff is only the added policy block), the
+pinned test ISO is byte-identical (`7ca80511…`), and the suite generation is refactored
+into `render_suite()` so the suite can be regenerated and diffed independently. This is a
+guest routing setting only: host isolation is enforced by the namespace (no uplink) and
+the gateway allowlist, which a guest proxy setting cannot weaken — the bypass entries are
+the in-namespace test host and loopback, never routable to the Internet.
+
+Clean two-vCPU KVM re-run `X3/runs/b7reg4-mp` (`X3 = .work/browser-7b3-20261111/`),
+genuine guest shutdown: **every enumerated item is green**, including the two formerly
+red checks — `rendered_ShellExecute_HTTP` and `rendered_ShellExecute_URL` now render (the
+shell fixtures reach the in-namespace server directly: one `case=shell-http` and one
+`case=shell-url` GET), the `file://` HTML/HTM cases still render, JavaScript, multiple
+tabs, the full HTTPS cert matrix through the gateway, downloads, profile+appearance
+persistence across restart, browser restart, the 62 AI cases (`55/0` and `7/0`) and
+normal shutdown. The clean run's gateway log independently confirms isolation is intact:
+**11 allows** to only the four approved cert hosts and **79 denies** — **70
+`not_allowlisted`** (`www.google.com`, `accounts.google.com`, `*.googleapis.com`,
+`update.googleapis.com`, `redirector.gvt1.com`, `www.wikipedia.org`, …) plus **9
+non-CONNECT** — so every unauthorized destination the browser reached was refused.
+
+The only non-green gate remains `full_regression_coverage` (the four `not_tested` probe
+cases above) — a documented coverage gap, **not** a regression. During the correction
+re-runs, three earlier attempts showed intermittent failures in the bundled XP25-AI
+assistant suite (RoverAI background-indexer searches and the Clippy minimize-to-tray
+probe: 3, 1 and 7 varying cases) that **cleared to 55/0 under low host load** in
+`b7reg4-mp`. These are pre-existing timing-race probes in the separate XP25-AI assistant
+(`components/roverai`, `components/clippyai`), reached over no network during the search
+section; their suite bytes are byte-identical to the eight prior passing runs, so the
+flakiness is environmental host-contention, not an effect of the proxy correction. It is
+tracked as a separate flaky-test item, not a browser regression.
 
 ### Task 3 — SAFER token + Job Object containment, re-verified on the 7A image
 

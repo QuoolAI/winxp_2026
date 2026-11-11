@@ -9,29 +9,12 @@ import subprocess
 
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 
-def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--prepared',type=Path,required=True);p.add_argument('--bridge',type=Path,required=True)
-    p.add_argument('--shell-probe',type=Path,required=True);p.add_argument('--ai-probe',type=Path,required=True)
-    p.add_argument('--wait-probe',type=Path,required=True,help='test-only five-second native Sleep fixture')
-    p.add_argument('--launch-probe',type=Path,required=True,help='test-only SAFER Normal User browser launcher')
-    p.add_argument('--regression',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    a=p.parse_args();out=a.output.resolve()
-    if '.work' not in out.parts:p.error('private .work output required')
-    out.mkdir(parents=True,exist_ok=False);media=out/'media'
-    shutil.copytree(a.prepared/'media',media,copy_function=lambda src,dst:subprocess.run(['cp','--reflink=always',src,dst],check=True) and dst)
-    manifest=json.loads((a.prepared/'manifest.json').read_text())
-    for relative,digest in manifest['files'].items():
-        if sha(media/relative)!=digest:raise ValueError('prepared media changed')
-    for path,name in [(a.bridge,'bridge.exe'),(a.shell_probe,'browser_shell.exe'),(a.ai_probe,'ai_probe.exe'),(a.wait_probe,'wait.exe'),(a.launch_probe,'browser_launch.exe')]:shutil.copy2(path,media/name)
-    for path in a.regression.iterdir():
-        if path.is_file():shutil.copy2(path,media/path.name)
-        else:shutil.copytree(path,media/path.name)
-    (media/'fixture.htm').write_bytes((media/'local.html').read_bytes())
-    (media/'fixture.url').write_bytes(b'[InternetShortcut]\r\nURL=http://xp25.test:8080/local.html?case=shell-url\r\n')
-    (media/'rejected.url').write_bytes(b'[InternetShortcut]\r\nURL=javascript:alert(1)\r\n')
-    sample='@echo off\r\nD:\\wait.exe\r\nD:\\wait.exe\r\nD:\\browserctl.exe inventory > C:\\xp25\\browser\\during.txt\r\n'
-    (media/'sample.cmd').write_bytes(sample.encode())
+def render_suite():
+    """Deterministically render the guest regression suite as CRLF bytes.
+
+    This is supplied to vm/browser_lab.py via --suite; the ISO only carries the
+    fixtures and probes, never the suite, so the suite can be regenerated and
+    diffed independently of the (large, pinned) media image."""
     suite=r'''@echo off
 mkdir C:\xp25\browser 2>nul
 echo XP25_BROWSER_INSTALL_BEGIN > COM1
@@ -48,10 +31,24 @@ reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 102 /d ".www.example.
 reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 103 /d ".expired.badssl.com" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 104 /d ".wrong.host.badssl.com" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Supermium\URLAllowlist" /v 105 /d ".self-signed.badssl.com" /f >nul
-rem Test-only system proxy: the packaged image retains its original settings.
+rem Test-only system proxy (unchanged from Phase 1): WinINET per-user settings that
+rem route generic WinINET clients at the in-namespace proxy, the internal test host
+rem and loopback bypassed. The packaged image retains its original settings.
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer /d "10.25.0.1:3128" /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyOverride /d "xp25.test;localhost;127.0.0.1;10.25.0.1" /f >nul
+rem Phase-2 correction: pin the SAME routing as a managed Supermium policy so EVERY
+rem browser launch path honours it (shell association as well as the explicit command
+rem line). The per-user WinINET ProxyOverride alone did not reliably bypass the internal
+rem test host for shell-launched browser instances, so http://xp25.test was sent to the
+rem CONNECT-only gateway as a plain request and refused. This is a guest routing setting
+rem only: host isolation is enforced by the namespace (no uplink) and the gateway
+rem allowlist, which a guest proxy setting cannot weaken. The bypass list is the
+rem in-namespace test host and loopback only; every real-Internet destination still
+rem traverses the gateway.
+reg add "HKLM\SOFTWARE\Policies\Supermium" /v ProxyMode /d "fixed_servers" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Supermium" /v ProxyServer /d "10.25.0.1:3128" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Supermium" /v ProxyBypassList /d "xp25.test;localhost;127.0.0.1;10.25.0.1" /f >nul
 D:\browserctl.exe shell "http://xp25.test:8080/local.html?case=shell-http" > COM1
 echo XP25_SHELLEXECUTE_HTTP=%ERRORLEVEL% > COM1
 ping -n 16 127.0.0.1 >nul
@@ -95,7 +92,32 @@ shutdown.exe -s -t 0
     # Guest scheduling delays must not depend on the networking stack under test.
     for count,repeats in [(16,3),(12,2),(6,1)]:
         suite=suite.replace('ping -n '+str(count)+' 127.0.0.1 >nul','\n'.join([r'D:\wait.exe']*repeats))
-    (out/'suite.cmd').write_bytes(suite.replace('\n','\r\n').encode())
+    return suite.replace('\n','\r\n').encode()
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--prepared',type=Path,required=True);p.add_argument('--bridge',type=Path,required=True)
+    p.add_argument('--shell-probe',type=Path,required=True);p.add_argument('--ai-probe',type=Path,required=True)
+    p.add_argument('--wait-probe',type=Path,required=True,help='test-only five-second native Sleep fixture')
+    p.add_argument('--launch-probe',type=Path,required=True,help='test-only SAFER Normal User browser launcher')
+    p.add_argument('--regression',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
+    a=p.parse_args();out=a.output.resolve()
+    if '.work' not in out.parts:p.error('private .work output required')
+    out.mkdir(parents=True,exist_ok=False);media=out/'media'
+    shutil.copytree(a.prepared/'media',media,copy_function=lambda src,dst:subprocess.run(['cp','--reflink=always',src,dst],check=True) and dst)
+    manifest=json.loads((a.prepared/'manifest.json').read_text())
+    for relative,digest in manifest['files'].items():
+        if sha(media/relative)!=digest:raise ValueError('prepared media changed')
+    for path,name in [(a.bridge,'bridge.exe'),(a.shell_probe,'browser_shell.exe'),(a.ai_probe,'ai_probe.exe'),(a.wait_probe,'wait.exe'),(a.launch_probe,'browser_launch.exe')]:shutil.copy2(path,media/name)
+    for path in a.regression.iterdir():
+        if path.is_file():shutil.copy2(path,media/path.name)
+        else:shutil.copytree(path,media/path.name)
+    (media/'fixture.htm').write_bytes((media/'local.html').read_bytes())
+    (media/'fixture.url').write_bytes(b'[InternetShortcut]\r\nURL=http://xp25.test:8080/local.html?case=shell-url\r\n')
+    (media/'rejected.url').write_bytes(b'[InternetShortcut]\r\nURL=javascript:alert(1)\r\n')
+    sample='@echo off\r\nD:\\wait.exe\r\nD:\\wait.exe\r\nD:\\browserctl.exe inventory > C:\\xp25\\browser\\during.txt\r\n'
+    (media/'sample.cmd').write_bytes(sample.encode())
+    (out/'suite.cmd').write_bytes(render_suite())
     cmd=['genisoimage','-quiet','-J','-joliet-long','-r','-o',str(out/'browser-tests.iso'),str(media)]
     subprocess.run(cmd,check=True)
     (out/'manifest.json').write_text(json.dumps({'commands':[cmd],'pin':manifest['pin'],'files':{str(f.relative_to(media)):sha(f) for f in sorted(media.rglob('*')) if f.is_file()},'suite_sha256':sha(out/'suite.cmd'),'iso_sha256':sha(out/'browser-tests.iso'),'test_bridge_scope':'Only fixture gateway to loopback CDP; no test bridge in production package.'},indent=2)+'\n')

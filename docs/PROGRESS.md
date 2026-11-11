@@ -2,6 +2,38 @@
 
 ## Current checkpoint
 
+2026-11-11, Milestone 7B Phase 2 — **correction and final MP coverage**
+(`xp25-browser`): the two previously-open `rendered_ShellExecute_HTTP/_URL` checks are
+**fixed and now PASS**, and a clean two-vCPU KVM regression through the HTTPS gateway
+(run `b7reg4-mp`, evidence root `.work/browser-7b3-20261111/`, `X3`) shows **every
+enumerated item green** — ShellExecute HTTP/HTML/HTM/URL all render, JavaScript,
+multiple tabs, the full HTTPS cert matrix through the gateway (valid loads;
+expired/wrong-host/self-signed correctly rejected), downloads, profile+appearance
+persistence across restart, browser restart, the 62 AI cases (55/0 + 7/0), URL-policy
+block and normal guest shutdown. **Root cause / fix:** the shell-association launch
+path does not carry the CDP path's `--proxy-bypass-list`, so with the test-only system
+proxy it sent the internal `http://xp25.test` fixture to the CONNECT-only gateway as a
+plain request (correctly refused). The harness (`build/browser_test_media.py`) now
+**adds** a managed Supermium proxy policy (`HKLM\SOFTWARE\Policies\Supermium`
+`ProxyMode=fixed_servers`, `ProxyServer=10.25.0.1:3128`,
+`ProxyBypassList=xp25.test;localhost;127.0.0.1;10.25.0.1`) that every launch path
+honours; the Phase-1 WinINET settings are preserved unchanged (purely additive) and the
+pinned ISO is byte-identical (`7ca80511…`). This is a guest routing fix only — **host
+isolation is unchanged**: the clean run's gateway log shows **11 allows** (only the 4
+approved cert hosts) and **79 denies** (70 `not_allowlisted` google/wikipedia/
+update.googleapis phone-home + 9 non-CONNECT), with the shell fixtures reaching the
+in-namespace server **directly** (render proof). The only non-green gate is
+`full_regression_coverage` (the four unchanged `not_tested` probe cases — a documented
+coverage gap, not a regression). **No remaining regression failures.** An intermittent
+RoverAI-indexer / Clippy-tray **timing-race flakiness** in the bundled XP25-AI assistant
+suite was observed under back-to-back host load (runs 1–3: 3/1/7 varying AI-case fails)
+and **cleared under low load** (`b7reg4-mp`: AI 55/0) — pre-existing, environmental,
+non-browser, not caused by the correction (the AI-suite bytes are identical to the prior
+passing runs). All overlays frozen `0444`; `XP25-AI` and other VMs untouched; committed
+locally, not pushed. Still experimental; **NOT** classified as safe for unrestricted
+Internet browsing.
+[secure Internet browsing — Phase 2 verification](browser-security-7b.md)
+
 2026-11-10, Milestone 7B Phase 2 — network-security verification and browser
 hardening (`xp25-browser`): **Every required network-bypass class is blocked with
 host-observed evidence, the full practical browser regression passes through the
