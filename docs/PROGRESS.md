@@ -2,6 +2,38 @@
 
 ## Current checkpoint
 
+2026-11-11, XP25-AI and the XP25 gateway (branch `xp25-ai`): **ClippyAI in the
+running XP25-AI VM reaches OpenAI through the XP25 gateway on the host.
+*Test connection* returned "Connected. The model replied: READY"
+(`gpt-4.1-mini`, Responses API). This is the first real OpenAI call from an
+XP25 guest.**
+
+- **Cause of the failure.** The VM had no NIC after 2026-10-26, so ClippyAI
+  reported `connect_failed`. The gateway was listening, on a bridge with nothing attached.
+- **VM.** An RTL8139 was hot-plugged and persisted, with the same MAC and PCI
+  slot as before. XP took it without a wizard and leased `10.25.0.13`.
+- **Filter.** The NIC carries a new libvirt filter, `xp25-gateway-only`. Its
+  layer-2 rules allow DHCP, plus DNS, ICMP and TCP 8443 to `10.25.0.1`, and
+  drop everything else.
+  - It references no guest address.
+  - A/B check: the host reached the guest's TCP 139 with the filter removed
+    and timed out with it restored.
+- **Gateway.** New options `--api-key-file`, `--freebind` (bind the bridge
+  address before it exists) and `--log -` (journal).
+- **Service.** `xp25-gateway.service` and its installer: a dynamic user,
+  root-only credentials, restart forever, exposure 1.5. It was tested as a
+  user-mode unit against the test double; TLS to `api.openai.com` works under
+  its seccomp settings.
+  - **Not installed: it needs root.** The gateway still runs as the process
+    started by hand.
+- 65 host tests pass, 7 skipped for private inputs.
+- Open:
+  - installing the service;
+  - an OpenAI usage limit, because Guacamole users can spend the key;
+  - the `xp25.test` endpoint is untested from the guest;
+  - XP25-Winlogon has no filter.
+- [Record](xp25-ai-gateway.md)
+
 2026-10-26, XP25-AI remote access (branch `xp25-ai`): **the rebuilt XP25-AI VM
 is usable from a browser through Mise En Abyme's existing Guacamole, by any
 verified Newbie user, one at a time; a live end-to-end test passed.**

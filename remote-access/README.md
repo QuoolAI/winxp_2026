@@ -12,11 +12,14 @@ Browser (anywhere) --HTTPS + MEA sign-in--> MEA (CloudFront / ALB)
   --> relay EC2, private address:5900   (security group: Guacamole task only)
   <== SSH reverse tunnel, carried over AWS SSM Session Manager (outbound only)
   --> home KVM host: QEMU VNC on 127.0.0.1 (password)
-  --> XP25-AI (no network adapter)
+  --> XP25-AI (one filtered NIC: DHCP/DNS/ICMP and the XP25 gateway port on the host)
 ```
 
 There is no port forwarding on the home router and no public VNC, RDP, SSH or
-guacd port, and no VPN client. The guest has no network at all.
+guacd port, and no VPN client. Since 2026-11-11 the guest has one network
+adapter. Its libvirt filter, `xp25-gateway-only`, lets it reach only the host's
+DHCP and DNS, ICMP, and the XP25 gateway port. See
+[docs/xp25-ai-gateway.md](../docs/xp25-ai-gateway.md).
 
 ## Files
 

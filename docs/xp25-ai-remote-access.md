@@ -10,6 +10,11 @@ VNC/RDP/SSH/guacd port is involved, and the guest has no network adapter.
 
 Operational scripts and instructions: [remote-access/README.md](../remote-access/README.md).
 
+**Update, 2026-11-11:** XP25-AI has a network adapter again, for ClippyAI's
+gateway. A libvirt filter limits it to DHCP, plus DNS, ICMP and the gateway's
+TCP port on the host ([gateway record](xp25-ai-gateway.md)). The "no network
+adapter" statements below describe 2026-10-26.
+
 ## 1. What the existing AWS deployment turned out to be
 
 The task assumed Guacamole on an EC2 host with SSH. MEA instead runs Guacamole
@@ -111,6 +116,10 @@ Not observed:
 - XP25 is treated as vulnerable. It has no network adapter, so it cannot reach
   the home LAN, the host's services, the internet, AWS credentials or the
   instance metadata service. Its only interface is the VNC console.
+  (Since 2026-11-11 it also has a filtered NIC. That NIC reaches only the
+  host's DHCP and DNS, ICMP and the XP25 gateway port. Whoever holds the seat
+  can therefore spend the gateway's OpenAI key; see
+  [the gateway record](xp25-ai-gateway.md).)
 - Nothing listens publicly. The home host makes only outbound HTTPS
   connections, to AWS SSM. The relay accepts VNC only from the Guacamole task's
   security group, and SSH only on loopback through SSM.
@@ -136,6 +145,7 @@ Not observed:
 - 640×480 VGA without a display driver: XP shows its low-resolution balloon,
   and the browser scales the picture.
 - ClippyAI has no model gateway on this VM; without a network it cannot reach one.
+  (Resolved 2026-11-11 with a filtered NIC; see [the gateway record](xp25-ai-gateway.md).)
 
 ## Evidence
 
