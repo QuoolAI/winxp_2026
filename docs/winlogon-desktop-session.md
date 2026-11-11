@@ -175,6 +175,11 @@ paused through QMP (not shut down, disks unchanged) to free the host for TCG.
 * **Activation UX.** Reminders and the activation wizard after grace expiry are
   not implemented; expiry only denies logon (not runtime-tested: the image is activated).
 * COM1 diagnostics still take the exclusive serial port briefly at session transitions.
+* **Pending computer name.** The original `winlogon.exe` copies `Tcpip\Parameters\NV Hostname` (and
+  `NV Domain`) into the active `Hostname`/`Domain` at startup; its binary contains these strings. The
+  independent Winlogon does not, so after a rename the DNS host name stays old and the Computer Name tab
+  keeps showing a pending rename. Found and worked around on 2026-10-25
+  ([xp25-vm-configuration.md](xp25-vm-configuration.md)); not fixed in the Winlogon.
 * The inherited native session-test executable (`build/prepare_session_tests.py`,
   `tests/guest/session_runtime.c`) last ran as `runtime-06` in the original-Winlogon
   control `L/wl-lifecycle25-control-up-02`: 79 checks, 3 failures

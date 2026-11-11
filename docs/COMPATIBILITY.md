@@ -155,6 +155,17 @@ No shared IE DLL is removed. No new engineering image is accepted. Full browser,
 HTTPS, application and AI regression acceptance remains incomplete.
 [Failure analysis, security method and exact limits](browser-stability-security.md)
 
+## XP25-AI remote access through Guacamole, 2026-10-26
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| XP25-AI rebuilt (libvirt KVM, overlay on image-05, no NIC, VNC loopback + password, USB tablet) | 11/11 offline gates; `oem` probe pass; network gates not applicable | `.work/vm-rebuild-20261026/results` |
+| MEA web → Guacamole 1.6.0/guacd (Fargate) → relay → SSH-over-SSM tunnel → QEMU VNC, system Chromium 156 | Pass: Start menu by mouse, Notepad text by keyboard, reconnect into the same session, seat held and released | `.work/guacamole-remote-20261026/e2e-02` |
+| Windows shortcuts from the browser (Alt+F4) | Not delivered as a shortcut in the headless test | same |
+| Clipboard, audio, other browsers, mobile | Not tested | — |
+
+[Record](xp25-ai-remote-access.md)
+
 ## Earlier browser modernization checkpoint, 2026-10-25/26
 
 Official Supermium x86 150.0.7871.255 R2.01 passes preliminary single-vCPU
@@ -169,6 +180,36 @@ adds `--no-sandbox` on NT 5.1; unrestricted sampled child tokens do not establis
 sandbox protection. No certificate bypass is used. Shared IE DLLs and legacy
 COM remain; complete Trident removal is unverified.
 [Browser evidence, audit, regressions and limitations](browser-modernization.md)
+
+## Interactive XP25-Winlogon and XP25-AI VMs, 2026-10-25
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| XP25-Winlogon (libvirt KVM, 1 vCPU, 512 MiB, RTL8139 `…:04` on `XP25-Isolated`), independent Winlogon | 16/16 gates; `oem` probe 19/19; `XP25-WINLOGON` at `10.25.0.12` | `.work/vm-config-20261025/together-01/results-XP25-Winlogon` |
+| XP25-AI (libvirt KVM, overlay on image-05 `ec22f45b…be2a`, RTL8139 `…:05`), original Winlogon | 16/16 gates; `oem` probe 19/19; `XP25-AI` at `10.25.0.13` | `.../together-01/results-XP25-AI` |
+| Both running at once on `XP25-Isolated` | Distinct leases, guest-to-guest ping and NetBIOS names, host ping both, no gateway, outside unreachable | `.../together-01` |
+| System Properties with the widened Computer lines (`sysdm.cpl` `98f3c968…`), all seven tabs | Text fits, no overlaps, every page's controls inside, sheet width fits 640×480 | probe records; `rehearsal-ai-01/09-tabs-montage.png` |
+| OEM model at 120 and 144 DPI | Font measurement fits 124 DLU; no guest was run at those DPIs | `model_metrics` records |
+| Rehearsal overlays (KVM, no NIC, COM1) | AI and Winlogon flows pass; rollback restores both files; one unexplained restart in `rehearsal-wl-01` | `.work/oem-sysdm-20261025/rehearsal-*` |
+| WMI computer rename on the Winlogon image | Fails, `0x80041004`; native `SetComputerNameExA` used | `rehearsal-wl-01/failure.json` |
+
+See [the configuration record](xp25-vm-configuration.md); the first OEM pass is in [the OEM record](xp25-winlogon-oem-branding.md).
+
+## XP25 AI components (ClippyAI, RoverAI), 2026-10-25
+
+Native build 10 on the accepted engineering image (original Winlogon, SHA-256
+`39112bbd…0296`), see [the milestone record](xp25-ai-clippyai-roverai.md).
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| QEMU/KVM i440FX, 1 vCPU, 512 MB, RTL8139 in a private namespace | 62/62 AI cases, regression suite exit 0, guest shutdown | `.work/ai-20261025/runs/ai-b10-kvm-up-01` |
+| QEMU/KVM i440FX, 2 vCPUs (MP kernel/HAL parent `d46fa4bf…`) | 62/62, regression suite exit 0, guest shutdown | `ai-b10-kvm-mp-01` |
+| QEMU TCG, 1 vCPU | 62/62, regression suite exit 0, guest shutdown | `ai-b10-tcg-01` |
+| Packaged `XP25-AI-Engineering.qcow2` (`ec22f45b…be2a`), KVM 1 vCPU | 62/62, regression suite exit 0, guest shutdown | `ai-b10-image-proof-01` |
+| OpenAI Responses API through the XP25 gateway | Verified against a local test double only | `gateway.jsonl`, `mock-openai.jsonl` per run |
+| Real OpenAI service, direct HTTPS from XP | Not tested; direct HTTPS refused by design (SChannel lacks TLS 1.2) | — |
+| User-scope DPAPI (`CryptProtectData`) | Fails with 1783 on both engineering images; Credential Manager used | `.work/ai-20261025/bisect/eng0{1,2}-dpapi-b` |
+| Physical hardware, other hypervisors, domain logon, non-English UI | Not tested | — |
 
 ## Interactive XP25-Winlogon VM, 2026-10-25
 
@@ -537,7 +578,7 @@ The [supplied XP SP3 guest](xp-sp3-guest.md) has booted in KVM. Its stopped
 backing-disk SHA-256 is
 `e64190c0c2314945d56cb78efa08bcda4551cb4247d6dde848c076a4cc0d776c`.
 Results below apply to that guest and its recorded build overlay, with QEMU
-8.2.2, i440fx, qemu32, one CPU, 512 MiB RAM, IDE and standard VGA. They do not
+8.2, i440fx, qemu32, one CPU, 512 MiB RAM, IDE and standard VGA. They do not
 establish a custom source build or other hardware configurations.
 
 ## Supplied SP3 runtime regression coverage
@@ -646,7 +687,7 @@ and `LsaLogonUser` returns `0xc0000003`. Matching original LSA is being built.
 | Explorer and Luna desktop | Observed under KVM, TCG and two-vCPU KVM; session probe passes |
 | Filesystem and basic applications after login | KVM temporary-file and HKCU round trips pass; Notepad save/reopen verified offline |
 | Normal source-guest shutdown from desktop | Guest `shutdown.exe -s -t 0` reaches QMP shutdown state |
-| Ubuntu reproduction | Fresh clones launched from Ubuntu; native build-media pipeline executes independently |
+| Linux-host reproduction | Fresh clones launched from the Linux host; native build-media pipeline executes independently |
 | Pointer compatibility/security contract | Eleven checks pass, including 262,144 concurrent round trips and rejected remote/invalid queries; not a general security audit |
 | Networking | Historical SP3-helper failure 10022; resolved by the original source-built helper in Milestone 2 above |
 

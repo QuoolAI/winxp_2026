@@ -1,0 +1,12 @@
+#!/bin/bash
+# Logs (to the journal) whether XP25-AI's local VNC server answers before each
+# tunnel attempt. It never fails the start: the tunnel is still useful when the
+# VM is started later. Prints no addresses beyond loopback and no secrets.
+port=$(sed -n 's/^ *RemoteForward [^ ]* 127\.0\.0\.1:\([0-9]*\)$/\1/p' /etc/xp25-tunnel/ssh_config)
+banner=$(timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/${port:-0}; head -c 12 <&3" 2>/dev/null | tr -dc 'A-Za-z0-9. ')
+if [[ $banner == RFB* ]]; then
+  echo "xp25-tunnel-health: local VNC 127.0.0.1:$port answers ($banner)"
+else
+  echo "xp25-tunnel-health: WARNING local VNC 127.0.0.1:$port does not answer; is XP25-AI running?"
+fi
+exit 0

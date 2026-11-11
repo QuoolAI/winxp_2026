@@ -245,6 +245,34 @@ original NT toolchain and tested on KVM/TCG; legacy Help recovery is rehearsed.
 Shared IE compatibility DLLs remain. No new accepted image is produced.
 [Detailed evidence and remaining work](browser-stability-security.md)
 
+2026-10-26, XP25-AI remote access (branch `xp25-ai`): **the rebuilt XP25-AI VM
+is usable from a browser through Mise En Abyme's existing Guacamole, by any
+verified Newbie user, one at a time; a live end-to-end test passed.**
+
+- **VM.** XP25-AI was rebuilt on a fresh overlay of the accepted image-05
+  (`ec22f45b…`, unchanged) with the QuoolAI configuration: 11/11 offline gates.
+  - The network adapter is removed.
+  - VNC is on a fixed loopback port with a password.
+  - A USB tablet gives absolute pointing.
+  - Autostart is enabled.
+  - The previous overlay is kept.
+- **MEA.** Guacamole there is MEA's embedded backend: its UI is not public, and
+  its lifecycle extension admits only MEA desktop leases. A "shared desktop"
+  feature was therefore added to MEA (one seat, normal lease rules, outside the
+  EC2 cap). It was built on the live release once that was pushed, tested on
+  PostgreSQL 17.6 and deployed.
+- **Tunnel.** A t4g.nano relay EC2 in the MEA VPC accepts VNC only from the
+  Guacamole task. The home host keeps an SSH reverse tunnel to it, carried over
+  SSM Session Manager. No inbound ports are open anywhere.
+- **Verified.**
+  - The public site to XP25-AI: mouse, keyboard, disconnect and reconnect into
+    the same session, the single seat, release and the second user. guacd's own
+    logs show it.
+  - The tunnel key cannot open a shell, a TTY, another listen address or a
+    local forward.
+- Not done: MFA for MEA sign-in (MEA has none).
+- [Record](xp25-ai-remote-access.md), [operations](../remote-access/README.md)
+
 ### Earlier browser integration checkpoint
 
 2026-10-25/26, Milestone 7 (branch `xp25-browser`): **Supermium integration is
@@ -262,6 +290,80 @@ standalone experimental QCOW2 is generated and independently boots. Its normal
 restart test still fails JavaScript completion. Full KVM/TCG acceptance is blocked by browser crashes/timeouts.
 Help and Support loads MSHTML/JScript at runtime; those dependencies remain. Previous images and registered
 VMs remain outside this experiment. [Evidence and limits](browser-modernization.md)
+
+2026-10-25, interactive VM configuration (branch `xp25-ai`): **XP25-Winlogon and
+XP25-AI run at the same time, each with its own address and name, and System
+Properties shows QuoolAI with the full "Windows XP 25th Anniversary Edition".**
+
+- **System Properties.** The reviewed `sysdm.cpl` branding step widens the
+  General page's Computer lines from 110 to 124 DLU and the page from 256 to
+  270 DLU. No control moves, and the other five branded files are unchanged.
+  - Installed offline on both VMs.
+  - The `oem` probe checks text fit, overlaps, all seven tabs and fit at
+    96/120/144 DPI; all 19 cases pass on both.
+- **XP25-AI branding.** Same OEM file, Help and Support copy and backups as XP25-Winlogon.
+- **DHCP.** The single-address dynamic range let dnsmasq hold only one lease
+  ("no leases left"). A second range, `.20`–`.29`, was added with a live and
+  persistent `net-update`, which restarted only that network's dnsmasq.
+  - The VMs hold `10.25.0.12` and `10.25.0.13`, ping each other, see each
+    other's NetBIOS names, and cannot reach outside addresses.
+- **Computer names.** `XP25-WINLOGON` and `XP25-AI`, set with `SetComputerNameExA`.
+  - WMI rename fails on the Winlogon image (`0x80041004`).
+  - The independent Winlogon does not copy `NV Hostname` to `Hostname` at
+    startup, as the original does. The active value is set directly instead.
+- **Preserved and verified.** Frozen images, other domains, xp25-sp3,
+  activation data, the 22 Winlogon components and the AI binaries are unchanged.
+  Each VM passes 16 offline gates.
+- **Rehearsals.** All of this was rehearsed on disposable overlays. One
+  rehearsal had an unexplained restart that did not recur and is kept with
+  `failure.json`.
+- [Configuration record](xp25-vm-configuration.md)
+
+The previous entry follows.
+
+2026-10-25, interactive VMs (branch `xp25-ai`): **XP25-Winlogon now carries the
+QuoolAI OEM branding, and a disposable XP25-AI VM is running in virt-manager.**
+
+- **XP25-Winlogon.** The third-party `OEMINFO.INI` (`a1052310…`) was
+  replaced offline on the VM's own writable disk with `[General]
+  Manufacturer=QuoolAI / Model=Windows XP 25th Anniversary Edition`
+  (`7760193a…`). Before that, a guest-requested shutdown was confirmed and the
+  backups were made in the guest and on the host. There was no OEM logo.
+  - Help and Support's copy of the values (`HelpSvc\OEMInfo`) was updated with `reg.exe`.
+  - The new `oem` probe passes 15 of 16 cases. The 22 XP25 components, the branding
+    and licensing files, and every other System Properties text are unchanged.
+  - The model line is clipped to "Windows XP 25th Anniversary": 179 px of text in a
+    165 px field. Fitting it needs either a shorter value or a wider line in
+    XP25's branded `sysdm.cpl`, so it was left as specified.
+  - The whole procedure, including restore, was rehearsed first on a disposable overlay.
+  - [OEM record](xp25-winlogon-oem-branding.md)
+- **XP25-AI.** A new libvirt domain whose disk is an overlay on the verified AI
+  image-05 (`ec22f45b…`). It auto-logs on to the desktop (screenshot evidence
+  only). Other domains, xp25-sp3, the default network and image-05 are unchanged;
+  `XP25-Isolated` gained one reservation, `.13`.
+  - The single-address DHCP range lets only one of these VMs hold a lease at a
+    time, so XP25-AI has no IP while XP25-Winlogon runs.
+  - [VM record](virt-manager-xp25-ai.md)
+
+The Milestone 6 entry follows.
+
+2026-10-25, Milestone 6 (branch `xp25-ai`): **ClippyAI, RoverAI and the shared
+XP25 agent runtime pass guest acceptance under KVM (1 and 2 vCPUs) and TCG,
+and the experimental QCOW2 is verified.** Native `/W4 /WX` build 10 passes
+62/62 guest cases in each mode on the accepted engineering image (original
+Winlogon, native Explorer and UserEnv): desktop, Explorer Search redirect,
+RoverAI index/watcher/search, ClippyAI tools, approvals and troubleshooting
+workflow, and OpenAI Responses requests through the authenticated gateway to a
+test double. The full established regression suite exits 0 and every run ends
+with a guest-requested shutdown. `XP25-AI-Engineering.qcow2` (SHA-256
+`ec22f45b67af19f584eb6ca0a286e943731298543aa1b910eab6ff42674bee2a`) boots
+independently and passes the same 62 cases. Guest runs of builds 04–08 found
+and fixed: user-scope DPAPI error 1783 on the engineering images (keys now go
+to Credential Manager), share consent asked for earlier offline results, two
+index-store races including a stale overwrite by the background indexer, and
+a runaway-process rule that missed single-threaded loops on multiprocessors.
+No real OpenAI call was made (no key or uplink in the isolated lab).
+[Architecture, security model, evidence, failures and limits](xp25-ai-clippyai-roverai.md)
 
 2026-10-25: **`XP25-Winlogon` is registered in system libvirt for interactive
 virt-manager use, running the independent Winlogon.** Its disk is a full,
@@ -281,6 +383,8 @@ is disabled. During registration, the virt-manager Delete wizard removed
 `XP25-Desktop` and its disk (04:28–04:29 local). This registration did not cause
 that change; it is recorded in the evidence.
 [Configuration, evidence and limits](virt-manager-xp25-winlogon.md)
+
+The following entry describes the Winlogon checkpoint this branch is based on.
 
 2026-10-25, Winlogon desktop and session continuation from `67de708ed`:
 **the independent NT 5.1 Winlogon now starts the original Explorer with Luna
@@ -532,7 +636,7 @@ are intact. [Commands, hashes, failures and runtime evidence](native-networking-
 
 Tracked launchers, source-pinned native build media, fresh-probe test media and
 packet/server logs make the networking process repeatable on the prepared
-Ubuntu host. Native SCM/Winreg RPC stubs and headers were generated in build
+Linux host. Native SCM/Winreg RPC stubs and headers were generated in build
 copies for Milestone 3. The installed SCM was not replaced. Eight extended SP3
 ntdll IPv4/IPv6 conversion exports remain absent; the matching original helper
 does not require them. Native Ws2_32 also lacks the SP3 Unicode resolver exports
@@ -732,7 +836,7 @@ kernel compilation still requires its original Windows toolchain environment.
 
 ## Supplied SP3 guest: 2026-10-18–19
 
-Installed the user-supplied ISO on a new 32 GiB disk using QEMU 8.2.2/KVM,
+Installed the user-supplied ISO on a new 32 GiB disk using QEMU 8.2/KVM,
 `pc-i440fx-8.2`, `qemu32`, one CPU, 512 MiB RAM, IDE and no NIC. All artifacts
 remain in `.work/xp-sp3-install-20261018/`. The ISO was attached read-only;
 no Microsoft download, source upload or public CI was used.

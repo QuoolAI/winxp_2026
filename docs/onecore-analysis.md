@@ -139,7 +139,7 @@ git -C .work/upstream/one-core-api checkout --detach 9eb3c31de9460c1ccce3f6a10c9
 ```
 
 The build needs native GCC and the appropriate MinGW `ld` and `objdump`.
-If installed on PATH, omit `--binutils-dir`. On this Ubuntu host the following
+If installed on PATH, omit `--binutils-dir`. On this Linux host the following
 packages were downloaded and extracted privately with `dpkg-deb -x`:
 
 | Package | Version | Download SHA-256 |

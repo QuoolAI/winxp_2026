@@ -6,13 +6,8 @@ screenshots, command records and guest logs are private under
 
 ## Installation input
 
-The user authorized installation from the existing local file:
-
-```text
-/home/artemd/Downloads/Windows XP Professional SP3 Nov 2013 + SATA Drivers [ThumperDC.com].iso
-```
-
-Size: 647,823,360 bytes. SHA-256:
+The user authorized installation from a user-supplied Windows XP Professional
+SP3 installation ISO kept outside the repository. Size: 647,823,360 bytes. SHA-256:
 
 ```text
 3855a4049663edb2c7b7b11b448a86e01274a4d1a9bb49392420bdb61f830a0e
@@ -31,7 +26,7 @@ guest is a runtime and potential build host, not a rebuild of that reference.
 
 | Setting | Value |
 | --- | --- |
-| Emulator | QEMU 8.2.2, Debian package `1:8.2.2+ds-0ubuntu1.18` |
+| Emulator | QEMU 8.2 (distribution package) |
 | Acceleration | KVM; API 12; QMP reports enabled |
 | Machine | `pc-i440fx-8.2` |
 | CPU | `qemu32`, one virtual CPU |
@@ -83,7 +78,8 @@ The supplied medium completed installation and booted Explorer with Luna at
 640×480 using standard VGA. Its unattended settings selected the product key
 and initial Administrator session; Setup did not request the user-supplied key.
 The local `XP25` account was subsequently created, added to Administrators, and
-logged in with an empty password. Computer name: `XP25-BASELINE`.
+logged in (its credentials are kept outside the repository). Computer name:
+`XP25-BASELINE`.
 
 WMI and file-version observations from the guest:
 
@@ -184,7 +180,7 @@ virt-manager --connect qemu:///system
 VMM lists `xp25-sp3` under the system connection. `virsh domdisplay xp25-sp3`
 reports the current loopback VNC display. The domain boots to the XP desktop;
 the Found New Hardware Wizard may appear and can be dismissed.
-Log on as `XP25` with the blank password. The source-kernel boot entry remains
+Log on as `XP25` (credentials are kept outside the repository). The source-kernel boot entry remains
 experimental: KVM stops at the checked HAL APIC assertion, and TCG retries did
 not establish a loaded-kernel identity or login. See the native build record.
 

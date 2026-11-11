@@ -75,7 +75,7 @@ under `.work/`. There is no global replacement of “Windows XP”.
 
 | Location | Resource edit | Limits and preserved behavior |
 | --- | --- | --- |
-| System Properties | `sysdm.cpl`, dialog 101, new private static control 0x7f25 | Two lines in the unused left-hand gap; original version/product/OEM controls unchanged |
+| System Properties | `sysdm.cpl`, dialog 101, new private static control 0x7f25; Computer lines 63–68/70–72 widened 110→124 DLU and the page 256→270 DLU (2026-10-25) | Two lines in the unused left-hand gap; no control moved; an OEM model such as "Windows XP 25th Anniversary Edition" fits (see [xp25-vm-configuration.md](xp25-vm-configuration.md)) |
 | About Windows and ShellAbout users | `xpsp1res.dll`, dialog 14352, new private label | Full edition name; dialog grows 12 DLU and existing text/buttons move down; license text unchanged |
 | About Windows title | `winver.exe`, string 101 | Compact “Windows XP25”; original Winver uses `TCHAR szTitle[32]`, so the full edition name is deliberately a separate label |
 | Classic and modern Start menu | `explorer.exe`, menu 204 and string 7021 | “XP25 Help”; command IDs, accelerators and menu alignment preserved; existing Start button caption unchanged |
@@ -198,6 +198,12 @@ the live source-kernel checksum with `vm/inspect_native.py` and resume with QMP
 GUI observations remain separate from automated gates.
 Final `branding_results.py` checks also require `--notepad-marker` with the
 exact unique text saved in that guest; inherited files cannot satisfy that gate.
+
+A disk that already carries an earlier reviewed package can be moved to a newer one with
+`--upgrade-from PREVIOUS_PACKAGE`. It requires the previous package's hash in the base, skips
+unchanged components and keeps the previous file at `/xp25/brand-<sha12>-<name>`. Registered
+interactive VMs are updated offline with `vm/vm_offline_update.py` instead
+([xp25-vm-configuration.md](xp25-vm-configuration.md)).
 
 To revert a stage, retain the failed child and restore into another child:
 

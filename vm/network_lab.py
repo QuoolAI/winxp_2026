@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fresh networking clone of a verified, stopped source-kernel desktop.
 
-Requires the private Milestone 1 lab and images retained on this Ubuntu host.
+Requires the private Milestone 1 lab and images retained on this Linux host.
 The baseline's byte hashes, every staged file and commands are recorded.
 """
 import argparse

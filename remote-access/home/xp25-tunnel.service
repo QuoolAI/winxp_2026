@@ -1,0 +1,47 @@
+[Unit]
+Description=XP25-AI VNC reverse tunnel to the Mise En Abyme relay (SSH over SSM)
+Documentation=file:///etc/xp25-tunnel/README
+Wants=network-online.target
+After=network-online.target libvirtd.service
+# Keep retrying forever; RestartSec spaces the attempts.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=xp25-tunnel
+Group=xp25-tunnel
+Environment=AWS_REGION=us-west-2
+Environment=AWS_SHARED_CREDENTIALS_FILE=/etc/xp25-tunnel/aws-credentials
+Environment=HOME=/var/lib/xp25-tunnel
+ExecStartPre=/usr/local/lib/xp25-tunnel/xp25-tunnel-health
+ExecStart=/usr/bin/ssh -F /etc/xp25-tunnel/ssh_config xp25-relay
+Restart=always
+RestartSec=15
+# One unit, one ssh process; ExitOnForwardFailure also stops a second client
+# from starting while the relay still holds the forwarded port.
+KillMode=control-group
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/xp25-tunnel
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
