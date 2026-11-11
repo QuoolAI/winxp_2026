@@ -6,6 +6,25 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Browser network-security verification (Milestone 7B, Phase 2) checkpoint, 2026-11-10
+
+Phase 2 verified the Phase-1 design against an explicit bypass matrix and ran the full
+practical regression through the gateway, all host-observed. Base = 7A image
+`6cad84c6…` over throwaway overlays; MP two-vCPU KVM. Evidence
+`.work/browser-7b2-20261110/`. Still **experimental, not Internet-safe/accepted**.
+
+| Test | Result | Evidence |
+| --- | --- | --- |
+| Gateway bypass matrix (not-allowlisted, direct-IP, metadata, loopback, IPv6-literal, wrong-port, non-CONNECT, CRLF, DNS-rebind, live-TLS allow) | **PASS 11/11** | `gateway-tests/gateway-bypass-matrix.json`, `tests/test_browser_gateway.py` |
+| Namespace egress probe (Internet, alt-DNS, host LAN, router, libvirt/LXD/docker, metadata, IPv6 = no-route; gateway-down = refused; control reachable), with and without nft | **PASS 12/12 ×2** | `isolation-fw/`, `isolation-nofw/`, `vm/network_isolation_probe.py` |
+| Full regression through the gateway (JS, tabs, HTTPS cert matrix, downloads, profile+appearance persistence, restart, AI 62, shutdown) | **PASS** (all enumerated items) | `runs/b7reg-mp`, `regression/mp/result.json` |
+| Gateway decisions during the run | 12 allow (4 approved hosts) / 51 deny (44 phone-home + 7 non-CONNECT) | `regression-gateway.log` |
+| ShellExecute internal-HTTP render (2 cases) | **Not green** — test-proxy artifact (non-CONNECT refused), launches exit 0; not a product/security defect | `runs/b7reg-mp/serial.log` |
+| `full_regression_coverage` | **false** — 4 documented `not_tested` probe cases (unchanged gap) | `regression/mp/result.json` |
+| Containment re-verify (SAFER token + Job Object) | **PASS** — 12/12 samples denied admin/system (error 5), 6/6 `job_member=1`, controls discriminate; residual = own-profile writable | `runs/b7cont2-01` |
+| `0x842214` latest-build review | No supported fix — v150-r2.02 = same Chromium 150.0.7871.255; upstream still working it | `gpu-0x842214-update-review.json` |
+| Recovery (disposable discard, clean cold-boot 15/15, gateway restart 9/9, infra unaffected) | **PASS** | `recovery/`, `runs/b7coldboot-01`, `host-state/` |
+
 ## Browser secure Internet containment (Milestone 7B, Phase 1) checkpoint, 2026-10-28
 
 Host-enforced network containment for the disposable XP25 browser VM, verified

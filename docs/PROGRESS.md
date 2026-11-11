@@ -2,6 +2,55 @@
 
 ## Current checkpoint
 
+2026-11-10, Milestone 7B Phase 2 — network-security verification and browser
+hardening (`xp25-browser`): **Every required network-bypass class is blocked with
+host-observed evidence, the full practical browser regression passes through the
+HTTPS gateway, containment is re-verified, the latest Supermium build offers no
+`0x842214` fix, and disposable recovery holds — the browser stays experimental and
+is NOT classified as safe for unrestricted Internet browsing.** Evidence root
+`.work/browser-7b2-20261110/` (`X2`, zstd-compressed); nothing pushed.
+**Task 1 (network isolation):** a new committed gateway bypass test
+(`tests/test_browser_gateway.py`) drives the real gateway over its UNIX socket and
+asserts its decision for every class — **11/11** (not-allowlisted resolvable+
+unresolvable, direct-IP public/metadata/loopback, IPv6-literal, wrong-port,
+non-CONNECT, CRLF, allowlisted-name→non-global rebind, and a live-TLS allow with the
+real `example.com` cert reaching the client). A new namespace isolation probe
+(`vm/network_isolation_probe.py`) runs inside the same `unshare` isolation and records
+`connect(2)` errno for every forbidden egress — **12/12 with and without the nft
+firewall** (public Internet, alternative DNS, host LAN, home router, libvirt/LXD/
+docker bridges, cloud metadata, public IPv6 = `ENETUNREACH` no-route; gateway-down =
+`ECONNREFUSED` fail-closed; control reachable); the namespace holds one route
+(`10.25.0.0/24`), no IPv6. Blocks are distinguished from ordinary failures by errno.
+**Task 2 (regression through the gateway, MP/two-vCPU, run `b7reg-mp`):** JavaScript,
+multiple tabs, the full HTTPS cert matrix **through the gateway** (valid `example.com`
+loads; expired/wrong-host/self-signed badssl each correctly rejected `ERR_CERT_*`),
+downloads, profile+appearance persistence across restart, repeated navigation, browser
+restart, the 62 AI cases, URL-policy block and normal guest shutdown **all PASS**. The
+gateway log independently shows **12 allows** (only the 4 approved hosts) and **51
+denies** (44 real Chromium phone-home `not_allowlisted` incl. google/wikipedia + 7
+non-CONNECT). Two checks are **not** green and are reported as open, not passes:
+`rendered_ShellExecute_HTTP/_URL` (the ShellExecute launch path lacks the proxy-bypass
+the CDP path carries, so the test-only system proxy sends internal `http://xp25.test`
+to the gateway as a non-CONNECT request, correctly refused — a harness artifact, not a
+product/security defect; the launches themselves all exit 0), and
+`full_regression_coverage` (the four long-standing `not_tested` probe cases).
+**Task 3 (containment, run `b7cont2-01`):** 6 browser processes per probe (launcher +
+association); **all 12 primary samples denied `system32`, SYSTEM-inject, admin-file and
+admin-registry = error 5**, controls discriminate, **all 6 `chrome.exe` are
+`job_member=1`** (no breakaway) — admin/SYSTEM boundary (SAFER + Job), **not** a
+renderer sandbox; documented residual = own-profile writable. **Task 4 (`0x842214`):**
+newest stable **v150-r2.02** is the **same Chromium `150.0.7871.255`**; its changelog
+is unrelated and upstream still lists the XP process-failure fix as in progress — **no
+supported correction**, not adopted, stays tracked/unpatched (no assertion disabled).
+**Task 5 (recovery):** disposable overlay discard leaves the base `0444` and SHA
+byte-identical; a fresh overlay cold-boots clean (**15/15** shell checks, `b7coldboot-01`);
+gateway restart **9/9** (denies/allows correctly, socket removed + fail-closed while
+down, policy identical, TLS preserved); isolation is namespace-local/deterministic; and
+host-state before/after is identical (`XP25-AI` running, libvirt/LXD unchanged, no
+global firewall, no sudo). All overlays frozen `0444`; other agents' VMs untouched;
+committed locally, not pushed.
+[secure Internet browsing — Phase 2 verification](browser-security-7b.md)
+
 2026-10-28, Milestone 7B secure Internet access — Phase 1 host-enforced network
 containment DEPLOYED and VERIFIED (`xp25-browser`): **Secure, controlled Internet
 access for the disposable XP25 browser VM works end-to-end and every restriction is

@@ -105,6 +105,168 @@ only for the run's lifetime, and nftables is namespace-local — discarding a
 compromised environment is `rm -rf` of the `X7b/runs/<name>` overlay; the base images
 and host firewall are byte-unchanged.
 
+## Phase 2 verification (2026-11-10) — network-security verification and browser hardening
+
+Continues Phase 1 without restarting development; all existing browser integration,
+containment and regression functionality is preserved. Every result below is
+observed **from the Linux host** (the gateway's own decision log, packet-level
+`connect(2)` errno, nftables counters, and the guest's own serial records), and a
+blocked request is always distinguished from an ordinary network failure. Evidence
+root `X2 = .work/browser-7b2-20261110/` (zstd-compressed). The milestone stays
+**experimental and not accepted**: NT 5.1 has no Chromium renderer sandbox and the
+intermittent `0x842214` CHECK is unresolved. XP25 is **not** safe for unrestricted
+Internet browsing.
+
+### Task 1 — network-isolation bypass matrix (host-observed)
+
+Two independent, reproducible host-side harnesses now gate the egress design.
+
+**Gateway bypass matrix** (`tests/test_browser_gateway.py`, committed) drives the
+real `vm/browser_gateway.py` over its private UNIX socket and asserts its own JSON
+decision for every bypass class — **11/11**: a resolvable-but-non-allowlisted host
+and an unresolvable host are both refused `not_allowlisted` (so the denial is policy,
+not a DNS failure); literal public, metadata (`169.254.169.254`) and loopback IPs are
+refused `direct_ip_literal`; an IPv6 literal, a non-443 port and a non-CONNECT verb
+are refused by the strict grammar; an encoded-CRLF host is refused; an allowlisted
+name that resolves to a non-global address is refused `non_global_resolution` (the
+DNS-rebind / internal-pivot defense); and an approved HTTPS host connects with
+**end-to-end TLS preserved** (the real `example.com` certificate reaches the client —
+the gateway never terminates TLS). Evidence `X2/gateway-tests/gateway-bypass-matrix.json`.
+
+**Namespace isolation probe** (`vm/network_isolation_probe.py`) runs inside the
+*same* `unshare --user --map-root-user --net` isolation the guest runs in and attempts
+every forbidden egress, recording the exact outcome — **12/12**, both with and without
+the namespace nftables firewall (proving the containment is structural, not solely
+nft): the public Internet, an alternative public DNS resolver, the host's own LAN
+address, the home-LAN router, the libvirt `default` and LXD/docker bridges, the cloud
+metadata address and public IPv6 are all `ENETUNREACH` (no route — contained, not a
+timeout); the gateway proxy port with nothing listening is `ECONNREFUSED`
+(fail-closed); and a bound control port is reachable (the probe discriminates). The
+namespace holds exactly one route (`10.25.0.0/24`) and no IPv6 route. Because the
+guest runs only inside this namespace and is a less-privileged tap client, anything
+unreachable here is unreachable for the guest. Evidence `X2/isolation-fw/` and
+`X2/isolation-nofw/`.
+
+Mapping to the ten required checks: direct Internet without the gateway (1), host
+management interfaces (2), home LAN / other libvirt/LXD nets (3), cloud metadata (4),
+direct-IP bypass (5), DNS rebinding (6), redirects/unauthorized destinations (7, see
+Task 2 — real Chromium phone-home denied at the gateway), IPv6 (8), alternative DNS
+resolvers (9) and gateway-stopped (10) are each demonstrated with host-observed
+evidence and an errno/decision that distinguishes a block from a failure.
+
+### Task 2 — full functional regression through the HTTPS gateway (MP/two-vCPU KVM)
+
+`vm/browser_matrix.py --mode mp` on the frozen 7A image
+(`XP25-Browser-Experimental.qcow2` `6cad84c6…`, read-only overlay), with the browser's
+HTTPS routed through the Phase-1 gateway (host allowlist = `example.com`,
+`www.example.com` and the three `badssl.com` cert-test hosts). Run `X2/runs/b7reg-mp`,
+genuine guest shutdown. **Every enumerated regression item passed:**
+
+| Item | Result |
+| --- | --- |
+| JavaScript execution | PASS (`modern_javascript`) |
+| Multiple tabs | PASS (`multiple_tabs`) |
+| HTTPS certificate validation (through the gateway) | PASS — valid `example.com` loads; `expired`, `wrong.host` and `self-signed` badssl are each rejected with `net::ERR_CERT_*` (reached end-to-end, so the verdict is a real cert error) |
+| File downloads | PASS (`download_completed`) |
+| Browser profile persistence | PASS (`profile_persists`) across restart |
+| Appearance/settings persistence | PASS (`appearance_setting_persists`) |
+| Repeated navigation | PASS (local + HTTP fixtures, multi-tab) |
+| Browser restart | PASS (reopen exit 0, persistence re-read) |
+| Normal guest shutdown | PASS (`{"guest":true,"reason":"guest-shutdown"}`) |
+| AI regression (62 cases) | PASS (`AI_PROBE_COMPLETE passes=55/0` and `passes=7/0`) |
+| URL-policy block (public site) | PASS (`net::ERR_BLOCKED_BY_ADMINISTRATOR`) |
+
+Host-side gateway decision log for the run (`X2/regression-gateway.log`),
+independently corroborating isolation: **12 allows** to exactly the four approved
+hosts (`example.com` ×2, `expired`/`wrong.host`/`self-signed.badssl.com`), and **51
+denies** — **44 `not_allowlisted`** (real Chromium phone-home to `www.google.com`,
+`accounts.google.com`, `*.googleapis.com`, `redirector.gvt1.com`, …, and
+`www.wikipedia.org`) plus **7 `malformed_or_wrong_method_or_port`**. This is Task 1
+check 7 (unauthorized/redirect destinations) proven with live browser traffic: every
+destination the browser reached for that was not on the allowlist was refused.
+
+**Two checks are not green and are reported honestly, not as passes:**
+`rendered_ShellExecute_HTTP` and `rendered_ShellExecute_URL` produced no render
+receipt. Root cause (from the gateway log): the ShellExecute/shell-association launch
+path opens the browser *without* the explicit `--proxy-bypass-list` that the
+DevTools-driven browser carries, so with the test-only system proxy set it sends the
+internal `http://xp25.test` fixture to the gateway as a **plain (non-CONNECT) request**,
+which the gateway correctly refuses (the 7 `malformed` denials). The ShellExecute
+*launch itself* succeeded for all five verbs (`XP25_SHELLEXECUTE_{HTTP,HTTPS,HTML,HTM,URL}=0`,
+rejected-scheme `=87`), and the `file://` HTML/HTM cases rendered. This is a
+test-harness/proxy interaction, **not** a product defect (the shipping image ships no
+system proxy — only the `URLBlocklist` policy) and **not** a security weakness (a
+gateway refusing a non-CONNECT request is correct behaviour). Separately,
+`full_regression_coverage` stays **false** because of the four long-standing
+`not_tested` probe cases (`login_transition`, `legacy_games`, `security_mitigations`,
+`shutdown`) — an unchanged, documented coverage gap, not converted to a pass.
+
+### Task 3 — SAFER token + Job Object containment, re-verified on the 7A image
+
+Fresh run `X2/runs/b7cont2-01` (MP, 7A image), the browser launched through both the
+windowed launcher and a shell association, `browser_sandbox` run over the whole tree
+after each. **6 browser processes per probe (root + renderers + utility + gpu); all
+12 primary samples denied, `ERROR_ACCESS_DENIED` (5), on every privileged object:**
+`system32` file write (12/12), SYSTEM-process injection (12/12), administrator file
+write (12/12) and administrator registry write (12/12). The probe's controls
+discriminate (a baseline token succeeds; a known-restricted token is denied), and the
+guest inventory confirms **all 6 `chrome.exe` processes are `job_member=1`** in both
+runs — with no breakaway flag, none can escape the Job Object. **Documented residual
+(not hidden):** all 12 samples retain `user_profile_write=1` — a compromised renderer
+can still write the *user's own profile* and message peer-user processes (no UIPI /
+integrity levels on NT 5.1). This is the **admin/SYSTEM boundary (SAFER Normal User +
+Job Object), not a per-renderer Chromium sandbox**; XP25 is contained, not "fully
+sandboxed."
+
+### Task 4 — 0x842214: review of the latest Supermium builds (no supported fix)
+
+Read-only release-metadata review (`X2/gpu-0x842214-update-review.json`): the newest
+official stable build is **v150-r2.02** (2026-11-05), the **same Chromium
+`150.0.7871.255`** as the pinned R2.01; its changelog (a Win7 `SetDefaultDllDirectories`
+fix and a bookmarks-bar/compact-ui fix) does not touch the gpu/child field-trial-handle
+`TakeHandleOfType` CHECK. Upstream's own R2.01 notes state the Windows XP
+"occasional process failures" solution **is still being worked on**. There is
+therefore **no supported correction** in the latest builds; `0x842214` remains
+separately tracked, unpatched, with no assertion disabled and no handle fabricated.
+R2.02 is **not** adopted here — it is the same Chromium with no relevant fix, and a
+build change belongs to Milestone 7A (and would require re-running its stability
+matrix). Root cause unchanged (see Phase 3 / `browser-stability-security.md`).
+
+### Task 5 — recovery verification
+
+- **Disposable overlay discard + base integrity** (`X2/recovery/disposable-overlay.json`):
+  a throwaway overlay of the read-only base is created, checked and `rm`-ed; the base
+  stays `0444` and its SHA-256 is byte-identical before and after. PASS.
+- **Clean image boots afterward** (`X2/runs/b7coldboot-01`): a fresh overlay of the
+  7A base boots after all Phase-2 experiments, passes the shell-integration checks and
+  shuts down normally — the base remains bootable and uncorrupted. PASS.
+- **Gateway returns to a secure state after restart** (`X2/recovery/gateway-recovery.json`,
+  **9/9**): before and after a stop/restart the gateway denies an unapproved host and
+  allows the approved one; the socket is removed when stopped and a connect is refused
+  (fail-closed) while it is down; the published policy is byte-identical across the
+  restart; end-to-end TLS is preserved each time.
+- **Isolation persists / is independent of host services**: the namespace isolation is
+  per-run and namespace-local, so no shared host service governs it; the isolation
+  probe is deterministic across fresh namespaces (identical 12/12 with and without the
+  firewall). PASS by construction.
+- **XP25-AI and Mise En Abyme unaffected**: host-state snapshots before and after the
+  session (`X2/host-state/before`, `/after`) show the `XP25-AI` libvirt domain still
+  running, the `default`/`XP25-Isolated` libvirt networks and LXD bridges unchanged,
+  no global firewall rule added, and no sudo used throughout.
+
+### Acceptance (Phase 2)
+
+The gateway passes all required positive and negative network tests; Supermium runs
+the complete practical regression through the gateway (every enumerated item green;
+two shell-association render receipts and the four `not_tested` probe cases are the
+only non-green checks, both reported as open, not as passes); existing containment is
+re-verified functional; network restrictions survive a gateway restart and are
+service-independent; disposable recovery is verified; and all unresolved limitations
+(no NT 5.1 renderer sandbox; unresolved `0x842214`) are documented. **XP25 is not
+classified as safe for unrestricted Internet browsing.** The environment is ready only
+for *allowlisted* browsing of a small set of approved HTTPS hosts in a disposable,
+host-contained guest — not for general Internet use. Committed locally; not pushed.
+
 ## Phase 2 — renderer isolation (priority)
 
 ### Why Supermium's per-renderer sandbox is off on NT 5.1

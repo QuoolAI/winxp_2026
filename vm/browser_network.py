@@ -14,6 +14,34 @@ import subprocess
 import threading
 import time
 
+# Namespace-local, default-deny firewall (7B). The guest already has no uplink,
+# no default route and no public DNS; this is defense-in-depth and, via the drop
+# counters, host-independent evidence that only DHCP/DNS/fixture-HTTP/gateway-proxy
+# on 10.25.0.1 are reachable and that IPv6 and every other destination are denied.
+# Kept at module scope so the isolation probe (vm/network_isolation_probe.py) can
+# install the byte-identical ruleset without drift.
+NFT_RULESET = '''table inet xp25iso {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iifname "lo" accept
+    iifname "xp25tap" udp dport 67 accept comment "dhcp-client-broadcast-and-renew"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 udp dport 53 accept comment "dns-udp"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 53 accept comment "dns-tcp"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 8080 accept comment "http-fixtures"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 3128 accept comment "proxy-gateway"
+    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 8443 accept comment "ai-gateway"
+    meta nfproto ipv6 counter drop comment "ipv6_denied"
+    ip saddr 10.25.0.10 counter drop comment "guest_other_denied"
+    counter drop comment "default_input_denied"
+  }
+  chain forward { type filter hook forward priority 0; policy drop; counter drop comment "forward_denied"; }
+  chain output {
+    type filter hook output priority 0; policy accept;
+    meta nfproto ipv6 oifname "xp25tap" counter drop comment "ipv6_to_guest_denied"
+  }
+}
+'''
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -49,34 +77,9 @@ def main():
                 ['ip', 'link', 'set', 'xp25tap', 'up']):
         subprocess.run(cmd, check=True)
     Path('/proc/sys/net/ipv4/ip_forward').write_text('0\n')
-    # Namespace-local, default-deny firewall (7B). The guest already has no uplink,
-    # no default route and no public DNS; this is defense-in-depth and, via the drop
-    # counters, host-independent evidence that only DHCP/DNS/fixture-HTTP/gateway-proxy
-    # on 10.25.0.1 are reachable and that IPv6 and every other destination are denied.
-    nft_ruleset = '''table inet xp25iso {
-  chain input {
-    type filter hook input priority 0; policy drop;
-    iifname "lo" accept
-    iifname "xp25tap" udp dport 67 accept comment "dhcp-client-broadcast-and-renew"
-    ip saddr 10.25.0.10 ip daddr 10.25.0.1 udp dport 53 accept comment "dns-udp"
-    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 53 accept comment "dns-tcp"
-    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 8080 accept comment "http-fixtures"
-    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 3128 accept comment "proxy-gateway"
-    ip saddr 10.25.0.10 ip daddr 10.25.0.1 tcp dport 8443 accept comment "ai-gateway"
-    meta nfproto ipv6 counter drop comment "ipv6_denied"
-    ip saddr 10.25.0.10 counter drop comment "guest_other_denied"
-    counter drop comment "default_input_denied"
-  }
-  chain forward { type filter hook forward priority 0; policy drop; counter drop comment "forward_denied"; }
-  chain output {
-    type filter hook output priority 0; policy accept;
-    meta nfproto ipv6 oifname "xp25tap" counter drop comment "ipv6_to_guest_denied"
-  }
-}
-'''
     firewall_active = False
     if args.firewall:
-        subprocess.run(['nft', '-f', '-'], input=nft_ruleset, text=True, check=True)
+        subprocess.run(['nft', '-f', '-'], input=NFT_RULESET, text=True, check=True)
         Path('nft-ruleset.txt').write_text(subprocess.check_output(['nft', 'list', 'table', 'inet', 'xp25iso'], text=True))
         firewall_active = True
     state = {'interfaces': json.loads(subprocess.check_output(['ip', '-j', 'address'])),
