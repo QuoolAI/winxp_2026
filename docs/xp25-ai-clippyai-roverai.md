@@ -263,6 +263,26 @@ Explorer's search pane, that pane shows RoverAI while the redirect is enabled.
   extracts binaries, PDBs and logs read-only, confirms the 91 compiled sources
   match the media manifest and verifies imports.
 
+**Update, 2026-11-12 (Milestone 8, `xp25-security`): native build 11.** The
+broker's service policy was tightened after a recorded guest run showed an
+ordinary account stopping the Windows Firewall through `XP25Broker`
+(`SharedAccess` was on the default allowlist; see
+[the security baseline](security-baseline.md)). `xp25_policy.c` now refuses
+`SharedAccess` and `wscsvc` whatever an allowlist says, and the default
+allowlist offers desktop services only (`AudioSrv`, `BITS`, `Dhcp`, `Dnscache`,
+`helpsvc`, `LanmanWorkstation`, `Netman`, `Nla`, `Schedule`, `Spooler`, `stisvc`,
+`Themes`, `W32Time`, `WZCSVC`). Nothing else changed. Build 11
+(`.work/security-20261111/ai-native-11/collect.json` in the `xp25-security`
+worktree, 91 sources match the media, `/W4 /WX`): `xp25agent.dll`
+`0517e28d06f4e8061fabbe6d8404e00285684812f180c3ee2240a3296656416e`,
+`XP25Broker.exe` `ff16fd87e3015ce0fc0c06054331ece3d112c4cb2943058b5bfaf980ec8d3836`,
+`ClippyAI.exe` `c25358cdec9553ed303cae6382c12404327d6198366569a20f68cda8d7b5d3a7`,
+`RoverAI.exe` `5dd86d6180a4a7696012b4ab1bcb6b715287a5282f54dbaa9294909d60457f07`,
+`RoverAIBand.dll` `0e28ddc38e06ca96d0ce8fd7bc3ea2c2244a3b33771a2cb24881c4ddf0ec3a51`.
+It passes the same 62 guest cases under one-vCPU KVM, two-vCPU KVM and TCG in
+the hardened image ([record](security-regression.md)). Image-05 and the
+`XP25-AI` virtual machine still carry build 10.
+
 | Native build 10 artifact (`W/native-10/collect.json`) | SHA-256 |
 | --- | --- |
 | `xp25agent.dll` (153,600 bytes) | `1230582a847516ba83c0359411c5135c6a95be7a2efc492b36c3d7cab4fa312e` |

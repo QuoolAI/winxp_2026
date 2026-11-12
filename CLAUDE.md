@@ -127,6 +127,35 @@ means user processes are actually gone. When adding a native source file, update
 `components/winlogon/sources`, and also `build/prepare_session_tests.py` if the test executable
 needs it.
 
+## Architecture: XP25 security baseline and audit (`components/security`)
+
+Two native console tools, built by `sources` with `/W4 /WX` (`build/prepare_security.py` →
+`native-security-build.cmd` → `security_collect_native.py`) and cross-compiled for iteration by
+`build/security_build.py`:
+
+- **Portable C89 core (`core/sec_core.c`, host-tested by `tests/security_core.c`):** the reviewed
+  service, registry and access-control tables, the strict backup-record codec, and the
+  deterministic audit rules. Adding a hardening item means adding a table row here.
+- **`XP25Sec.exe`** (`xp25sec/main.c`): `enumerate|plan|apply|verify|rollback|status`. It records
+  every original in the protected store (`%SystemRoot%\XP25\Security`,
+  `HKLM\SOFTWARE\XP25\Security`) before changing it and applies only its tables. Nothing may
+  take a service name, key or path from the command line; a host test checks that.
+- **`XP25Audit.exe`** (`xp25audit/main.c`): read-only `report` (JSON lines, findings) and an
+  administrator-only reference `snapshot`. It must never modify the system; a host test checks
+  its source for modifying calls. Interface: `docs/security-engine-interface.md`.
+
+Guest testing uses `vm/security_lab.py` (`launch --role ... | wait | scan | fail`), fixtures in
+`vm/security_fixtures.py`, and gates in `vm/security_results.py`; the namespace wrapper
+`vm/security_network.py` also scans the guest from outside. Things that are easy to get wrong:
+
+- `shutdown.exe` does not work under the XP25 Winlogon (no `InitShutdown` RPC). Use
+  `security_probe.exe power shutdown|restart` or `wait --ui-shutdown-after`.
+- Stage test payload into the XP25 profile (`xp25sec-*`), never into `C:\xp25` or
+  `Program Files\XP25`: files written offline have no ACL and make `XP25Sec verify` fail.
+- The firewall needs the relinked kernel that exports `KeFlushQueuedDpcs`
+  (`build/prepare_kernel_exports.py`, lab flag `--kernel kx01`).
+- Run the AI regression with no other guest running; its provider case is timing sensitive.
+
 The rest of the repo is build/VM tooling around the reference tree: `build/inventory.py`,
 `stage.py` and `attempt.py` (hashed inventory, disposable source copy, protected native
 launch), `build/onecore.py` (pinned One-Core-API forwarder experiment, `onecore.lock.json`),

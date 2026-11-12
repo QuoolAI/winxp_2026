@@ -2,10 +2,13 @@
 #include <string.h>
 #include "xp25_policy.h"
 
+/* Desktop services whose restart is a routine repair. Services that listen on
+   the network, give remote control or guard the computer are not offered:
+   the XP25 security baseline keeps the former disabled, and the latter are
+   refused below whatever an allowlist says. */
 const char xp25_default_service_allowlist[] =
-    "Alerter,AudioSrv,BITS,Browser,Dhcp,Dnscache,ERSvc,helpsvc,LanmanServer,LanmanWorkstation,"
-    "Messenger,Netman,Nla,Schedule,SharedAccess,Spooler,SSDPSRV,stisvc,Themes,upnphost,"
-    "W32Time,WebClient,wuauserv,WZCSVC";
+    "AudioSrv,BITS,Dhcp,Dnscache,helpsvc,LanmanWorkstation,Netman,Nla,Schedule,Spooler,stisvc,Themes,"
+    "W32Time,WZCSVC";
 
 static void say(char *reason, size_t size, const char *text)
 {
@@ -332,9 +335,12 @@ static int in_list(const char *list, const char *name)
 XP25_PERM xp25_policy_service(const char *name, const char *action, const char *allowlist,
                               int is_admin, char *reason, size_t reason_size)
 {
+    /* SharedAccess is the Windows Firewall and wscsvc the Security Center: an
+       assistant, or any interactive caller of the SYSTEM broker, must never be
+       able to switch protection off. */
     static const char critical[] =
         "RpcSs,DcomLaunch,PlugPlay,Eventlog,SamSs,ProtectedStorage,PolicyAgent,Winmgmt,"
-        "TermService,Netlogon,seclogon,XP25Broker,lanmanserver_kernel";
+        "TermService,Netlogon,seclogon,XP25Broker,lanmanserver_kernel,SharedAccess,wscsvc";
     if (!name || !*name || strlen(name) > 256 || !plain_word(name, strlen(name), "_-. ")) {
         say(reason, reason_size, "A valid service name is required.");
         return XP25_PERM_DENIED;

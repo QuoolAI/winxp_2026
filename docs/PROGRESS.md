@@ -2,6 +2,67 @@
 
 ## Current checkpoint
 
+2026-11-12, Milestone 8 — operating-system security baseline and attack-surface
+reduction (`xp25-security`): **A hardened standalone image,
+`XP25-Security-Baseline.qcow2` (SHA-256
+`6da7d04ed4f2f768d390be875228643648a7a36801e4bfe37854fdf8d7ee45d9`), is built from
+the verified AI image plus the XP25 Winlogon and passes the complete security
+and compatibility suites under one-vCPU KVM, two-vCPU KVM and TCG; rollback is
+proven. It is not safe for hostile networks and does not have current-Windows
+security.** Evidence root `.work/security-20261111/` (`W`); nothing pushed.
+**Base:** the two verified lines were combined for the first time (AI image-05
+`ec22f45b…` + Winlogon build 10 `e3a9cdca…`) and passed the established suites
+before any change (`pre-up-02`: AI 55/0 + 7/0, all compatibility probes 0).
+**Audit findings, all observed in recorded guests:** (1) Windows Firewall could
+not start — `ipnat.sys` imports `KeFlushQueuedDpcs`, which the source-built
+kernel did not export; TCP 135/139 and UDP 123/137 were reachable. (2) With
+the firewall on, UDP 137 still answered 60 of 60 probes while the guest
+broadcast NetBIOS queries (the firewall admits replies to the computer's own
+broadcasts). (3) `system32\ue51sp3.dll` was writable by Everyone: any local
+account could run code as SYSTEM. (4) Kernel, HAL, NTFS driver,
+`XP25Broker.exe`, RoverAI COM registrations and `HKLM\SOFTWARE\XP25` were owned
+by the administrator account, so a restricted process of that account (the
+browser containment model) could rewrite them — 12 failed probe cases. (5) The
+SYSTEM `XP25Broker` stopped the firewall for an ordinary account. (6)
+`shutdown.exe`/`InitiateSystemShutdown` do not work under the XP25 Winlogon (no
+`InitShutdown` interface) — recorded, not fixed.
+**Implemented:** the kernel export list gains `KeFlushQueuedDpcs` (Microsoft's
+routine, already in the source; one line, kernels relinked, exports
+1,464 → 1,465); native `XP25Sec.exe` (enumerate/plan/apply/verify/rollback: 18
+service rules, 54 registry settings, audit policy, 8 access-control rules, every
+original recorded before it is changed) and `XP25Audit.exe` (read-only JSON
+audit with deterministic rules and a reference snapshot), both `/W4 /WX` with
+the NT toolchain; the broker policy refuses the firewall and the Security
+Center (AI native build 11); a negative-test probe that runs as an ordinary
+account and as a restricted token; a lab that scans the guest from the
+adjacent network. **Result on the image:** 11 services newly disabled, 5 of
+which had been running (39 → 34 running services); nothing answers from the network (1,113 TCP
+ports filtered, 8 UDP services and 60 repeated name-service probes silent, no
+ICMP echo); ordinary account 71/71, restricted token 73/73 and administrator
+36/36 probe cases as expected; the audit finds no high-severity issue, detects
+the deliberate changes of the drift test and reports the lab's own Startup
+fixture as an addition to its reference snapshot; AI 55/0 + 7/0 and the established
+compatibility suite pass, with Remote Registry proven after an administrator
+re-enables it. **Matrix:** `harden-up-04`/`harden-mp-03`/`harden-tcg-02`
+(34 gates each) on the combined base and `proof-up-02`/`proof-mp-02`/`proof-tcg-03`
+(32 gates each) on fresh overlays of the image all pass; `image-install-02`
+(11 gates) built the image; `rollback-up-02` (12 gates) restored all 97
+recorded originals. **Kept failures:** `harden-up-01` (two defects found and
+fixed), `harden-up-02` (one AI provider case failed while other guests ran),
+`harden-tcg-01` (found the UDP 137 window), `proof-tcg-02` (one AI tray case
+failed while other guests ran), the first image `1c55d9ea…` and its runs
+(superseded), native builds `sec-native-01/-02` (`/W4` findings).
+**Not addressed:** the 25 source-built core binaries have no post-2003 fixes,
+no `/GS`, SafeSEH, DEP or ASLR; no driver signing; the daily account is an
+administrator with a blank password; Windows File Protection is not hosted;
+TLS 1.0 only. `XP25-AI` and every earlier image are untouched; `Source/` is
+unchanged. Host tests: 12 new in `tests/test_security.py` plus the core test
+program; the whole suite passes (107 tests, 12 skipped because their private inputs live in other worktrees).
+[security baseline and inventory](security-baseline.md) ·
+[threat model](security-threat-model.md) ·
+[regression record](security-regression.md) ·
+[audit and baseline interface](security-engine-interface.md)
+
 2026-11-11, Milestone 7B Phase 2 — **correction and final MP coverage**
 (`xp25-browser`): the two previously-open `rendered_ShellExecute_HTTP/_URL` checks are
 **fixed and now PASS**, and a clean two-vCPU KVM regression through the HTTPS gateway

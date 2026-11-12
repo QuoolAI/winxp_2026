@@ -164,6 +164,16 @@ static void test_policy(void)
     CHECK(xp25_policy_service("Eventlog", "stop", "Eventlog", 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
     CHECK(xp25_policy_service("Spooler", "delete", NULL, 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
     CHECK(xp25_policy_service("NotListed", "start", NULL, 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    /* The firewall and the Security Center are never controllable, not even through an administrator's allowlist;
+       services the security baseline disables are not offered by default. */
+    CHECK(xp25_policy_service("SharedAccess", "stop", NULL, 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("SharedAccess", "stop", "SharedAccess,Spooler", 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("sharedaccess", "restart", "SharedAccess", 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("wscsvc", "stop", "wscsvc", 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("LanmanServer", "start", NULL, 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("RemoteRegistry", "start", NULL, 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("WebClient", "start", NULL, 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("Themes", "restart", NULL, 0, reason, sizeof(reason)) == XP25_PERM_PRIVILEGED);
     CHECK(xp25_policy_process(1234, "cpuhog.exe", "terminate", reason, sizeof(reason)) == XP25_PERM_APPROVAL);
     CHECK(xp25_policy_process(600, "LSASS.EXE", "terminate", reason, sizeof(reason)) == XP25_PERM_DENIED);
     CHECK(xp25_policy_process(4, "System", "terminate", reason, sizeof(reason)) == XP25_PERM_DENIED);

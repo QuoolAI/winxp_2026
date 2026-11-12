@@ -6,6 +6,56 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Security baseline (Milestone 8) checkpoint, 2026-11-12
+
+Hardened image `XP25-Security-Baseline.qcow2` (`6da7d04e…45d9`): AI image-05 plus
+the XP25 Winlogon build 10, the relinked kernel that exports
+`KeFlushQueuedDpcs`, AI build 11 and the applied security baseline. Evidence
+root `.work/security-20261111/` (`W`). "Image" columns are fresh overlays of the
+standalone image; two-vCPU runs add the multiprocessor kernel and HAL.
+
+| Test | 1 vCPU KVM | 2 vCPU KVM | TCG |
+| --- | --- | --- | --- |
+| Combination before hardening: AI 55/0 + 7/0, compatibility CD, XP25 Winlogon logon (`pre-up-02`) | Pass | Not run | Not run |
+| Install, apply, restart, verify on the combined base (`harden-*`) | Pass (`harden-up-04`) | Pass (`harden-mp-03`) | Pass (`harden-tcg-02`) |
+| Image cold boot: NT 5.1 boot, XP25 Winlogon logon, `licdll` admission, Explorer identity | Pass (`proof-up-02`) | Pass (`proof-mp-02`) | Pass (`proof-tcg-03`) |
+| Image: AI suite 55/0 and provider checks 7/0 | Pass | Pass | Pass |
+| Image: standard, pointer, session, network, service, GINA, UserEnv, branding, shell, profile probes | Pass | Pass | Pass |
+| Image: MSI install and removal (application installation) | Pass | Pass | Pass |
+| Image: Remote Registry probe | Refused while disabled (error 1058), **passes after an administrator re-enables the service**; baseline re-applied | Same | Same |
+| Image: ordinary account, restricted token and administrator security probe | 71 / 73 / 36 cases, 0 failures | Same | Same |
+| Image: nothing reachable from the adjacent network (TCP, UDP, ICMP, repeated NetBIOS probes) | Pass | Pass | Pass |
+| Image: baseline verified after restart and after the workload | Pass | Pass | Pass |
+| Image: guest-requested power-off | Pass | Pass | Pass |
+| Rollback restores the recorded configuration (`rollback-up-02`) | Pass | Not run | Not run |
+
+Compatibility changes made by the baseline (each reversible with `XP25Sec
+rollback` or by an administrator):
+
+| Change | Effect on use |
+| --- | --- |
+| Server, Computer Browser, Remote Registry, SSDP, UPnP host, WebDAV, IPSEC Services, Remote Assistance, NetMeeting sharing, Automatic Updates, Error Reporting disabled | The computer shares nothing, is not remotely administered, has no IPsec/L2TP, no Windows Update. Access to other computers' shares still works |
+| Firewall on, no replies to own broadcasts | NetBIOS names are not resolved by broadcast; a program that finds LAN peers by broadcast needs its firewall exception. DHCP works |
+| Internet zone without script, ActiveX, Java; machine-only zones | Internet pages in IE and embedded browsers lose active content; local, intranet and trusted zones unchanged |
+| Script files open in Notepad on double-click | `cscript`/`wscript` run them when named |
+| AutoRun only for optical media | USB and network media never auto-start a program |
+| Administrators group owns what an administrator creates | A program that compares a file's owner with the user sees the group |
+| XP25 broker refuses the firewall and Security Center; offers only desktop services | ClippyAI cannot restart those services |
+
+Defects recorded, not changed:
+
+| Item | Observation | Evidence |
+| --- | --- | --- |
+| `shutdown.exe`, `InitiateSystemShutdown` under the XP25 Winlogon | "The network path was not found": the `InitShutdown` RPC interface is not served. `ExitWindowsEx` and Start → Turn Off work | `W/runs/pre-up-02`, `pre-up-02-extract/xp25/shut.txt` |
+| Server service, `http.sys` | Cannot start on the source-built kernel (`RtlIpv4AddressToStringExW`, push-lock exports missing). The Server service is disabled by the baseline anyway | `W/import-check-01/report.json`, System log 7023 |
+| `sfc /scannow` | Would be expected to replace the 25 source-built system files; Windows File Protection is not hosted by the XP25 Winlogon | Not executed; file inventory `W/offline-audit-03` |
+| AI cases `provider_reconfigured_wrong_secret` and `clippy_minimizes_to_tray` | Each failed once while other guests ran on the host (`harden-up-02`, `proof-tcg-02`); both pass in every run made alone | `W/runs/harden-up-02`, `W/runs/proof-tcg-02` |
+
+Not tested: real networks and hardware, other NIC models, the image in the
+libvirt VMs, third-party applications and games, Fast User Switching, Remote
+Desktop, printing. [Regression record](security-regression.md),
+[inventory and trade-offs](security-baseline.md).
+
 ## Browser network-security verification — Phase 2 correction and final coverage (Milestone 7B), 2026-11-11
 
 The Phase-2 ShellExecute render gap is corrected and the complete two-vCPU KVM regression

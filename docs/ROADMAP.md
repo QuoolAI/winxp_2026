@@ -14,6 +14,7 @@ baseline exists yet, so none can currently be promised to survive a kernel patch
 | 6. API extensions | Import-driven selection, complete implementations, ABI tests and application-local rollback | API-set aliases compiled only |
 | 7. Modern hardware | One documented controller/device at a time; identify PCI IDs and drivers; boot/I/O regression | No verified new hardware support |
 | 8. Security/update pipeline | Native signed-manifest verifier, offline test keys, corruption/rollback tests, then TLS/trust integration | Not implemented |
+| 8a. OS security baseline (delivery Milestone 8) | Threat model and inventory; reduced services and listeners; verified user/SYSTEM boundary; native audit; negative tests; hardened image with rollback | `XP25-Security-Baseline.qcow2` `6da7d04e…45d9` passes the security and compatibility suites under KVM UP/MP and TCG; kernel memory protections, driver signing and patched core components remain open ([record](security-regression.md)) |
 | 9. VM acceleration/passthrough | Validated XP GPU driver, device reset/isolation and game regression on named hardware | Not tested |
 | 10. Native AMD64/EC2 | NT 5.2 product baseline, native storage/network drivers and provider-supported deployment route | Source/platform blockers |
 

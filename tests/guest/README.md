@@ -111,3 +111,28 @@ number of failures. JSON lines go to the file, and to COM1 when that opens.
 `vm/vm_config_results.py` gates the results offline. See [the OEM
 record](../../docs/xp25-winlogon-oem-branding.md) and [the VM configuration
 record](../../docs/xp25-vm-configuration.md).
+
+`build/security_build.py` builds `security_probe.exe` (Kernel32, User32, Advapi32,
+Netapi32, Shell32, UserEnv, msvcrt) together with the XP25 security tools.
+`security_probe.exe admin [--hardened] [--xp25-winlogon] [--tools <dir>]` is run
+by the logged-on administrator. It creates a temporary ordinary account with a
+random password, runs itself as that account through the Secondary Logon
+service and again with a restricted token of the administrator inside a Job
+Object, and removes the account and its profile afterwards. Each unprivileged
+run attempts the real operation — writing system files, the kernel image and
+hives, `HKLM` run, policy and service keys, reconfiguring or starting services,
+enabling privileges, opening LSASS, Winlogon and the XP25 broker for injection,
+opening the logon desktop, asking the SYSTEM broker to stop the firewall,
+running `XP25Sec apply|rollback` — and passes a case only on the expected
+denial. The administrator side checks that legitimate administration still
+works, that every baseline service is disabled and stopped, that a disabled
+service does not start, and that the Security log recorded the account
+management and failed logon the probe itself caused. Without `--hardened` the
+baseline-dependent cases are `observed`, not gates; a case whose object does
+not exist is `not_run`, never a pass. Records go to COM1 as
+`{"security_case":...,"context":"admin|ordinary_account|restricted_token"}`
+followed by `SECURITY_PROBE_COMPLETE context=... passes=N failures=M`; the exit
+code is the number of failures. `security_probe.exe power shutdown|restart`
+calls `ExitWindowsEx`, because `shutdown.exe` does not work under the XP25
+Winlogon. Use it only through [`vm/security_lab.py`](../../vm/security_lab.py);
+see [the regression record](../../docs/security-regression.md).
