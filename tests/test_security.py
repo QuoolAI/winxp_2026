@@ -60,7 +60,7 @@ class FixtureTests(unittest.TestCase):
         import security_fixtures as fixtures
         for role in fixtures.ROLES:
             for mode in ('up', 'mp', 'tcg'):
-                text = fixtures.suite(role, mode)
+                text = fixtures.suite(role, mode) + ''.join(fixtures.extra_files(role, mode).values())
                 self.assertNotIn('\n', text.replace('\r\n', ''), role)
                 self.assertIn('XP25_SEC_SUITE_DONE', text)
                 # shutdown.exe needs the InitShutdown interface the XP25 Winlogon does not serve.
@@ -83,12 +83,90 @@ class FixtureTests(unittest.TestCase):
             self.assertLess(text.index('REGSVC_PROBE_WHILE_DISABLED_EXIT'), text.rindex('sc config RemoteRegistry start= demand'))
             self.assertLess(text.index('REGSVC_PROBE_EXIT='), text.index('XP25_SEC_REAPPLY_EXIT'))
         self.assertNotIn('--hardened', fixtures.suite('audit', 'up'))
-        # The scan window is a period of NetBIOS broadcasts, not an idle wait: the firewall's
-        # broadcast-response window must be open while the namespace scanner probes.
-        for role in ('audit', 'harden', 'proof', 'rollback'):
+        # The scan is asked for by the guest while it broadcasts NetBIOS name queries (the firewall's
+        # broadcast-response window must be open while the observer probes), and the suite goes on
+        # only when the observer has finished: no fixed waiting window.
+        for role, label in (('audit', 'before'), ('harden', 'hardened'), ('proof', 'proof'), ('rollback', 'rolled-back')):
             text = fixtures.suite(role, 'up')
-            window = text[text.index('XP25_SEC_SCAN_WINDOW_OPEN'):text.index('XP25_SEC_SCAN_WINDOW_CLOSED')]
-            self.assertIn('ping -n 1 -w 200 xp25-nbprobe-%%N', window)
+            on, request = text.index('echo on > %W%\\broadcast.on'), text.index('XP25_HOST_REQUEST=scan:' + label)
+            wait, off = text.index('security_probe.exe hostwait ' + label), text.index('del %W%\\broadcast.on')
+            self.assertLess(on, request)
+            self.assertLess(request, wait)
+            self.assertLess(wait, off)
+            self.assertIn('ping -n 1 -w 200 xp25-nbprobe-%%N', text[on:request])
+            self.assertNotIn('XP25_SEC_SCAN_WINDOW', text)
+
+    def test_firewall_role_orders_every_state_with_the_observer(self):
+        import security_fixtures as fixtures
+        text = fixtures.suite('firewall', 'mp')
+        stages = ['blocked', 'permitted', 'removed', 'after-unprivileged', 'admin-disabled', 'admin-enabled', 'service-stopped',
+                  'service-started', 'after-restart']
+        positions = [text.index('XP25_HOST_REQUEST=ports:%s ' % stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+        for stage in stages:                                       # each observation is awaited before the next guest step
+            self.assertIn('security_probe.exe hostwait %s 600' % stage, text)
+        # The listener is up before the first observation; the exception is added and removed by the administrator.
+        self.assertLess(text.index('security_probe.exe listen %d' % fixtures.LISTENER_PORT), positions[0])
+        self.assertLess(positions[0], text.index('netsh firewall add portopening protocol=TCP port=%d' % fixtures.LISTENER_PORT))
+        self.assertLess(text.index('netsh firewall delete portopening protocol=UDP'), positions[2])
+        # What the firewall still holds for the earlier datagram peer is measured right after the removal.
+        self.assertLess(positions[2], text.index('XP25_HOST_REQUEST=udp-expiry:removed-expiry'))
+        self.assertLess(text.index('XP25_HOST_REQUEST=udp-expiry:removed-expiry'), text.index('security_probe.exe admin'))
+        # The unprivileged attempts run between "removed" and "after-unprivileged".
+        self.assertLess(positions[2], text.index('security_probe.exe admin'))
+        self.assertLess(text.index('security_probe.exe admin'), positions[3])
+        # The restart is watched from before the guest goes down until it is back and checked.
+        start, restart = text.index('XP25_HOST_REQUEST=watch-start:restart'), text.index('security_probe.exe power restart')
+        self.assertLess(start, restart)
+        self.assertLess(restart, positions[8])
+        self.assertLess(positions[8], text.index('XP25_HOST_REQUEST=watch-stop:restart'))
+        # Whatever the administrator turned off is on again before the baseline is verified.
+        self.assertLess(text.index('net start SharedAccess'), text.index('XP25_FW_VERIFY_BOOT1'))
+        self.assertEqual(text.count('fwcheck'), 3)
+
+    def test_repeated_ai_rounds_start_from_a_clean_state(self):
+        import security_fixtures as fixtures
+        text = fixtures.suite('ai-repeat', 'mp', repeat=3)
+        self.assertEqual(text.count('ai_probe.exe suite'), 3)
+        self.assertEqual(text.count('ai_probe.exe provider'), 3)
+        starts = [i for i in range(len(text)) if text.startswith('ai_probe.exe suite', i)]
+        for n, start in enumerate(starts, 1):
+            # ClippyAI and RoverAI are ended and the fixtures removed before every round.
+            before = text[:start]
+            self.assertGreater(before.rindex('security_probe.exe aireset'), before.rindex('XP25_AI_ROUND_STARTED=%d' % n))
+            self.assertGreater(before.rindex('XP25AI-Fixtures'), before.rindex('security_probe.exe aireset'))
+        self.assertLess(text.index('xp25sec-gateway-secret.cmd'), starts[0])
+
+    def test_standard_user_role_plans_three_sessions(self):
+        import security_fixtures as fixtures
+        self.assertEqual(fixtures.LOGONS['standard-user'], ('admin', 'standard', 'standard'))
+        admin = fixtures.suite('standard-user', 'up')
+        startup = fixtures.extra_files('standard-user', 'tcg')['std-startup.cmd']
+        # The account is a member of Users only; its password comes from the run, never from the fixture.
+        self.assertIn('net user %XP25_STD_USER% %XP25_STD_PASSWORD% /add', admin)
+        self.assertNotIn('localgroup Administrators %XP25_STD_USER%', admin)
+        # MSGINA is told which account to offer before the administrator logs off.
+        self.assertLess(admin.index('/v DefaultUserName /d %XP25_STD_USER%'), admin.index('power restart'))
+        self.assertLess(admin.index('XP25Standard.cmd'), admin.index('power restart'))
+        self.assertNotIn('power logoff', admin)
+        # Every session but the standard user's does nothing; the first runs the desktop, the programs,
+        # then restarts; the second repeats the desktop checks and powers off.
+        self.assertLess(startup.index('if /i not "%USERNAME%"=="xp25user" goto :eof'), startup.index('desktop'))
+        first = startup[:startup.index(':second')]
+        self.assertLess(first.index('desktop %W%\\std-desktop-1.jsonl --hardened slow'), first.index('apps %W%\\std-apps-1.jsonl slow'))
+        self.assertLess(first.index('std-apps-1'), first.index('power restart'))
+        second = startup[startup.index(':second'):]
+        self.assertLess(second.index('std-desktop-2'), second.index('power shutdown'))
+        self.assertEqual(fixtures.STD_USER, 'xp25user')
+
+    def test_image_upgrade_keeps_the_original_install_record(self):
+        import security_fixtures as fixtures
+        upgrade, install = fixtures.suite('image-upgrade', 'up'), fixtures.suite('image-install', 'up')
+        self.assertIn('upgrade-81-apply.jsonl', upgrade)
+        self.assertNotIn('install-apply.jsonl', upgrade)
+        self.assertIn('install-apply.jsonl', install)
+        self.assertLess(upgrade.index('XP25_SEC_VERIFY_BEFORE_UPGRADE_EXIT'), upgrade.index('copy /y "%U%\\xp25sec-XP25Sec.exe"'))
+        self.assertLess(upgrade.index('rmdir /s /q C:\\xp25sec'), upgrade.index('XP25_SEC_SUITE_DONE'))
 
     def test_image_install_leaves_no_test_payload(self):
         import security_fixtures as fixtures
@@ -148,6 +226,91 @@ class ScannerTests(unittest.TestCase):
             server.close()
         self.assertEqual(result['probes'], 6)
         self.assertEqual(result['answers'], 3)
+
+
+class ObserverTests(unittest.TestCase):
+    def test_guest_requests_are_parsed_strictly(self):
+        import re
+        import security_network as network
+        import inspect
+        source = inspect.getsource(network.scanner)
+        pattern = re.compile(re.search(r"re\.compile\(r'(.+?)', re\.M\)", source).group(1), re.M)
+        text = ('XP25_HOST_REQUEST=ports:blocked \nnoise XP25_HOST_REQUEST=scan:x\nXP25_HOST_REQUEST=scan:proof\n'
+                'XP25_HOST_REQUEST=watch-start:restart\nXP25_HOST_REQUEST=ports:../../etc\nXP25_HOST_REQUEST=PORTS:a\n'
+                'XP25_HOST_REQUEST=ports:' + 'a' * 41 + '\n')
+        self.assertEqual(pattern.findall(text), [('ports', 'blocked'), ('scan', 'proof'), ('watch-start', 'restart')])
+
+    def test_capture_is_segmented_by_marker_frames(self):
+        import struct
+        import security_pcap as pcap
+        import security_network as network
+        guest, host = bytes([10, 25, 0, 10]), bytes([10, 25, 0, 1])
+        gmac, hmac = bytes.fromhex('525400250002'), bytes.fromhex('525400250001')
+
+        def ip(source, target, protocol, payload):
+            header = struct.pack('>BBHHHBBH4s4s', 0x45, 0, 20 + len(payload), 0, 0, 64, protocol, 0, source, target)
+            return (hmac if target == host else gmac) + (gmac if source == guest else hmac) + b'\x08\x00' + header + payload
+
+        def tcp(source, target, sport, dport, flags):
+            return ip(source, target, 6, struct.pack('>HHIIBBHHH', sport, dport, 0, 0, 0x50, flags, 0, 0, 0))
+
+        def udp(source, target, sport, dport):
+            return ip(source, target, 17, struct.pack('>HHHH', sport, dport, 8, 0))
+
+        def marker(text):
+            return network.MARK_DESTINATION + hmac + network.MARK_ETHERTYPE + ('XP25-MARK:' + text).encode().ljust(46, b'\0')
+        frames = [tcp(host, guest, 40000, 135, 0x02),                                   # before any marker: whole capture only
+                  marker('blocked:start'), tcp(host, guest, 40001, 5025, 0x02), udp(host, guest, 40002, 137),
+                  udp(guest, bytes([10, 25, 0, 255]), 137, 137), marker('blocked:end'),
+                  marker('permitted:start'), tcp(host, guest, 40003, 5025, 0x02), tcp(guest, host, 5025, 40003, 0x12),
+                  udp(guest, host, 5025, 40004), tcp(host, guest, 40005, 139, 0x02), tcp(guest, host, 139, 40005, 0x14),
+                  # The guest's own outbound connection and its reset are not answers to the observer.
+                  tcp(guest, host, 1030, 8081, 0x02), tcp(guest, host, 1030, 8081, 0x14),
+                  udp(bytes(4), b'\xff\xff\xff\xff', 68, 67), marker('permitted:end')]
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / 'network.pcap'
+            with path.open('wb') as f:
+                f.write(struct.pack('<IHHiIII', 0xa1b2c3d4, 2, 4, 0, 0, 65536, 1))
+                for n, frame in enumerate(frames):
+                    f.write(struct.pack('<IIII', n, 0, len(frame), len(frame)) + frame)
+            result = pcap.summarize(path)
+        blocked, permitted = result['segments']['blocked'], result['segments']['permitted']
+        self.assertEqual(list(result['segments']), ['blocked', 'permitted'])
+        self.assertEqual(blocked['tcp_syn_to_guest'], {'5025': 1})
+        self.assertEqual(blocked['tcp_synack_from_guest'], {})
+        self.assertEqual(blocked['udp_to_guest'], {'137': 1})
+        self.assertEqual(blocked['guest_broadcast_udp'], {'137': 1})
+        self.assertEqual(blocked['udp_replies_from_guest'], {})
+        self.assertEqual(permitted['tcp_synack_from_guest'], {'5025': 1})
+        self.assertEqual(permitted['udp_replies_from_guest'], {})          # no datagram was sent to 5025 in this segment
+        self.assertEqual(permitted['guest_udp_unicast_out'], {'40004': 1})
+        self.assertEqual(permitted['tcp_rst_from_guest'], {'139': 1})
+        self.assertEqual(permitted['guest_tcp_connections_out'], 1)
+        self.assertEqual(permitted['dhcp_requests_without_address'], 1)
+        self.assertEqual(blocked['dhcp_requests_without_address'], 0)
+        self.assertEqual(result['whole_capture']['tcp_syn_to_guest'], {'135': 1, '139': 1, '5025': 2})
+        self.assertTrue(blocked['closed'] and permitted['closed'])
+
+    def test_kernel_check_reads_export_and_import_tables(self):
+        if not (TOOLCHAIN / 'i686-w64-mingw32-gcc-posix').is_file():
+            self.skipTest('private MinGW toolchain unavailable')
+        import security_kernel_check as check
+        with tempfile.TemporaryDirectory() as d:
+            source = Path(d) / 'k.c'
+            source.write_text('__declspec(dllexport) int KeOne(void) { return 1; }\n__declspec(dllexport) int KeTwo(void) { return 2; }\n'
+                              'int __stdcall DllMain(void *a, unsigned b, void *c) { (void)a; (void)b; (void)c; return 1; }\n')
+            user = Path(d) / 'u.c'
+            user.write_text('__declspec(dllimport) int KeOne(void);\nint __stdcall DllMain(void *a, unsigned b, void *c) { (void)a; (void)b; (void)c; return KeOne(); }\n')
+            cc = str(TOOLCHAIN / 'i686-w64-mingw32-gcc-posix')
+            subprocess.run([cc, '-shared', '-nostdlib', '-Wl,--entry,_DllMain@12', '-o', str(Path(d) / 'ntoskrnl.exe'), str(source),
+                            '-Wl,--out-implib,' + str(Path(d) / 'libk.a')], check=True, capture_output=True)
+            subprocess.run([cc, '-shared', '-nostdlib', '-Wl,--entry,_DllMain@12', '-o', str(Path(d) / 'drv.sys'), str(user),
+                            '-L', d, '-lk'], check=True, capture_output=True)
+            exports = check.PE((Path(d) / 'ntoskrnl.exe').read_bytes()).exports()
+            imports = check.PE((Path(d) / 'drv.sys').read_bytes()).imports()
+        self.assertEqual(sorted(exports), ['KeOne', 'KeTwo'])
+        self.assertIsNone(exports['KeOne'][2])
+        self.assertEqual(imports, {'ntoskrnl.exe': ['KeOne']})
 
 
 class OfflineInventoryTests(unittest.TestCase):

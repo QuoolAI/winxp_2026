@@ -1,4 +1,4 @@
-# XP25 security baseline (Milestone 8)
+# XP25 security baseline (Milestones 8 and 8.1)
 
 Work on branch `xp25-security` (worktree `xp25-security`), based on `xp25-nt` at
 `d0db1f036`. Private evidence is under `.work/security-20261111/` (`W`) of this
@@ -22,6 +22,19 @@ high-severity finding, and the AI and compatibility suites pass
 ([record](security-regression.md)). The largest remaining risks are listed as
 findings 6, 7, 23 and 24 below: an unpatched 2003-era kernel and core, an
 administrator as the daily account, no driver signing and TLS 1.0.
+
+**Milestone 8.1.** `XP25-Security-Baseline-8.1.qcow2` (SHA-256
+`501c79862d41824a2748c96f5b4715f22ba25443630cb1e3ff0c13674999fda4`, standalone)
+is the Milestone 8 image upgraded in a recorded guest run: baseline version 2
+(five more items: NetBIOS point-to-point node, protected scheduled-task
+directory, administrator-only control of the firewall, Security Center and
+broker services), the 8.1 security tools and AI build 14 (broker hardening,
+RoverAI index race fixed). The firewall was verified on the wire in every state
+an administrator or an attacker can put it in, the standard-user desktop works
+(accounts were switched with restarts: after a logoff the XP25 Winlogon's
+logon dialog does not paint its fields, a known defect), and the AI suite is stable under repeated runs and moderate host load
+([record](security-regression.md#milestone-81--stabilization-firewall-verification-and-final-acceptance)).
+The largest remaining risks are unchanged.
 
 ## Starting point
 
@@ -133,7 +146,7 @@ networking), Spooler (applications fail without it), Terminal Services (Fast
 User Switching; inbound Remote Desktop stays refused by `fDenyTSConnections`),
 Task Scheduler, Help and Support, W32Time.
 
-### Registry settings (54 rules)
+### Registry settings (54 rules; 55 since Milestone 8.1)
 
 | Area | Settings |
 | --- | --- |
@@ -159,7 +172,27 @@ policy change events; failure for privilege use. Object access and process
 tracking stay off: without SACLs and with every process start logged they
 would bury the useful records.
 
-### Access control (8 rules)
+### Milestone 8.1 additions (baseline version 2)
+
+Five items, found by the 8.1 tests on the Milestone 8 image (run
+`fw-m8-up-01`) and applied by `XP25Sec apply` on top of the existing baseline
+(run `upgrade-up-01`: these five changed, every other item already compliant;
+the original of each was recorded in the same backup before it changed):
+
+| Item | Before | After | Why |
+| --- | --- | --- | --- |
+| `netbt.nodetype` | not set (hybrid/broadcast node) | `NodeType=2` (point-to-point) | NetBT registers names by broadcast from UDP 137 as soon as the computer has an address, before the firewall service has applied its policy; a neighbour probing during start-up got answers and kept the conversation open afterwards. A point-to-point node sends no NetBIOS broadcasts at all |
+| `acl.tasks` | Authenticated Users may create task files in `%SystemRoot%\Tasks` | SYSTEM and Administrators full, Users read | A task set to run only while its owner is logged on starts with the owner's full token and needs no password, so a contained process (the browser's restricted token) could leave a task that runs outside the containment |
+| `acl.firewall_service`, `acl.security_center_service`, `acl.xp25_broker_service` | NT 5.1 default service DACL: Power Users may start, stop and pause | SYSTEM and Administrators control; Authenticated Users query only | The computer's protection should not be stoppable without administrator rights |
+
+New rule kind `SEC_ACL_SERVICE`: one service object; only its DACL is recorded,
+replaced and restored. Compatibility: Power Users can no longer stop, pause or
+restart these three services; NetBIOS names are no longer resolved by
+broadcast (already ineffective with the broadcast-response setting; WINS,
+DNS, `hosts` and `lmhosts` still work); standard users cannot create scheduled
+tasks.
+
+### Access control (8 rules; 12 since Milestone 8.1)
 
 | Rule | Scope | Action |
 | --- | --- | --- |
@@ -181,6 +214,17 @@ would bury the useful records.
 - **XP25 broker policy.** `components/xp25-agent/permissions/xp25_policy.c`
   refuses `SharedAccess` and `wscsvc` unconditionally and offers only desktop
   services by default.
+- **XP25 broker, Milestone 8.1 (AI build 13).** The broker refuses restricted
+  tokens, tokens with deny-only groups (the browser's containment) and
+  guests; without an administrator's machine policy a standard user may only
+  have `AudioSrv`, `Spooler`, `stisvc` and `Themes` started, stopped or
+  restarted (administrators keep the full list, critical services stay
+  refused for everyone); the broker owns its pipe name for its whole
+  lifetime (`FILE_FLAG_FIRST_PIPE_INSTANCE`, no create-instance right for
+  users); clients connect at identification level and refuse a pipe not owned
+  by SYSTEM or Administrators; every read and write is bounded to 5 s; the
+  request allowance is per caller; the audit file moved to
+  `%SystemRoot%\XP25\Broker`, readable by SYSTEM and administrators only.
 
 ## Evaluated and deliberately not changed
 
@@ -254,8 +298,38 @@ demand`); `XP25Sec verify` and the audit then report the deviation, and
   needs its own review.
 - Windows File Protection does not run under the XP25 Winlogon.
 
+## Kernel change review (Milestone 8.1)
+
+Milestone 8.1 makes **no new kernel or HAL change**. The one kernel change of
+the hardened line is still the Milestone 8 export of `KeFlushQueuedDpcs`, and
+it was retained, not reverted: the Milestone 8 image boots `xp25krnl.exe`
+byte-identical to the relinked uniprocessor kernel (`b9531947…809d9`), which
+exports the routine at ordinal 526 (`W81/kernel-check-m8-image-03`, from
+`vm/security_kernel_check.py`). The HAL (`xp25hal.dll`, `12b0847d…86ff`) is the
+one the AI image always had.
+
+| Question | Finding |
+| --- | --- |
+| Why it is needed | The installed Service Pack 3 firewall driver `ipnat.sys` imports `KeFlushQueuedDpcs`. Without it the driver cannot load and Windows Firewall cannot start (run `audit-up-01`). An offline check of all 164 drivers on the image finds every other import of `ipnat.sys` resolved |
+| Interface affected | Only the kernel's export table: 1,464 → 1,465 names, none removed. Exports are sorted by name, so 939 later names moved up one ordinal; no driver on the image imports the kernel by ordinal (0 of 164) and no user-mode module imports the kernel |
+| Code | Microsoft's own routine from `base/ntos/ke/dpcobj.c`, already compiled and linked into both kernels before the change (present in the link map; the I/O manager calls it). The relink compiled no source file (the "4 files compiled" are the four preprocessed `.def` files); the link map's symbol set is unchanged (11,204 symbols) |
+| Synchronization | `PAGED_CODE`, callable at `PASSIVE_LEVEL` only, no parameters. On the uniprocessor kernel the body is empty: a thread running at passive level on the only processor implies no DPC is queued. On the multiprocessor kernel it raises the caller's priority and moves the thread to each other processor in turn, which cannot happen before that processor has drained its DPC queue, then restores affinity and priority. Those are the semantics later service packs document; the routine was not stubbed, wrapped or rewritten |
+| Privilege | A kernel-mode routine: exporting it lets code that already runs in ring 0 call it. Nothing new is reachable from user mode, and it takes no input |
+| Binary effect of the relink | Symbol by symbol against the previous kernels (`build/compare_pe.py --symbols`, `W81/kernel-relink-symbols-{up,mp}.json`): UP 9,217 symbols byte-identical, 113 identical except for references to code or data the linker placed elsewhere, 28 extents differing where anonymous string literals and static code between public symbols moved; MP 9,276 / 78 / 7. Adding the name changed the order in which the linker pulled a few library members (ke `dpcobj`, `devquobj`, `apcobj`, `abiosc`/`abiosa`, `gdtsup`, FsRtl `fastio`), so about 50 functions moved within their sections. The section layout is unchanged except that the export section grew by 28 bytes |
+| Reproducibility | The same build run again from the same frozen build VM (`sec81-kexport-01`) gives kernels equal to the Milestone 8 ones once the link time stamp, checksum and the export and debug directory time stamps are masked (`W81/kernel-relink-repeat-{up,mp}.json`) |
+| Regression | Every Milestone 8 and 8.1 run boots this kernel: one-vCPU KVM and TCG the UP kernel, two-vCPU KVM the MP kernel (`kernel-kx01/ntkrnlmp.exe`, `42662074…ad01`) with the verified MP HAL |
+| New bypass? | None found: the export table is the only interface that changed, and only kernel-mode callers can use it |
+
+`Source/` is unchanged; the export line is applied to the build VM's
+disposable copy by `build/prepare_kernel_exports.py`, whose host test checks that
+exactly one line is added and that the routine is implemented in the tree.
+
 ## Recommended next steps
 
+0. Fix the XP25 Winlogon's post-logoff logon dialog (its fields do not paint;
+   [known gap](winlogon-desktop-session.md#known-gaps-and-defects), seen again
+   in Milestone 8.1 runs `logon-focus-*`), then make a standard account the
+   default XP25 desktop: Milestone 8.1 found nothing else in its way.
 1. Rebuild the source-built components with `/GS` and SafeSEH, and plan the
    kernel fixes that matter most for local escalation.
 2. Give the daily account a password and move daily use to an ordinary account;

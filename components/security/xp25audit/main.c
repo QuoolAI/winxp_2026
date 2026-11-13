@@ -1092,9 +1092,24 @@ static void collect_managed_access_control(void)
         DWORD error;
         ZeroMemory(&scan, sizeof(scan));
         scan.severity = SEC_SEVERITY_MEDIUM;
-        scan.rule = rule->kind == SEC_ACL_REPAIR_FILES ? "acl.system_file_modifiable" :
+        scan.rule = rule->kind == SEC_ACL_REPAIR_FILES || !lstrcmpA(rule->id, "acl.tasks") ? "acl.system_file_modifiable" :
                     rule->kind == SEC_ACL_REPAIR_KEYS ? "acl.system_key_modifiable" : "acl.xp25_object_modifiable";
-        if (rule->kind == SEC_ACL_TREE_REGISTRY || rule->kind == SEC_ACL_REPAIR_KEYS) {
+        if (rule->kind == SEC_ACL_SERVICE) {
+            char sddl[SEC_BACKUP_DATA_MAX], detail[500];
+            BOOL others = FALSE;
+            secw_wide(rule->root, root, 600);
+            error = secw_service_dacl(root, sddl, sizeof(sddl), &others);
+            if (error == ERROR_SERVICE_DOES_NOT_EXIST) continue;
+            wsprintfA(root8, "service:%.500s", rule->root);
+            scan.checked = 1;
+            if (!error && others) {
+                scan.exposed = 1;
+                wsprintfA(detail, "Its access control list is %.440s", sddl);
+                finding(SEC_SEVERITY_MEDIUM, "acl.protection_service_controllable", rule->root,
+                        "A service that protects the computer can be stopped or reconfigured without administrator rights", detail,
+                        "XP25Sec apply leaves control of it to SYSTEM and administrators; nothing was changed by this audit.");
+            }
+        } else if (rule->kind == SEC_ACL_TREE_REGISTRY || rule->kind == SEC_ACL_REPAIR_KEYS) {
             WCHAR object[620];
             lstrcpynA(root8, rule->root, sizeof(root8));
             secw_wide(root8, root, 600);
@@ -1144,10 +1159,11 @@ static void collect_access_control(void)
         wsprintfW(path, L"%s%s", programs, program_files[i]);
         acl_check(path, SE_FILE_OBJECT, SECW_FILE_WRITE, SEC_SEVERITY_HIGH, "Programs here run with the rights of whoever starts them, including services.");
     }
-    /* Ordinary users may add their own scheduled tasks by design; a task runs as its creator. */
+    /* A task that runs "only if logged on" is started with its owner's full token and needs no
+       password, so whoever can create task files here can leave a restricted token behind. */
     wsprintfW(path, L"%s\\Tasks", base);
-    acl_check(path, SE_FILE_OBJECT, SECW_FILE_WRITE, SEC_SEVERITY_LOW,
-              "NT 5.1 lets every authenticated user create task files here; tasks run with their creator's own credentials, not the system's.");
+    acl_check(path, SE_FILE_OBJECT, SECW_FILE_WRITE, SEC_SEVERITY_MEDIUM,
+              "NT 5.1 lets every authenticated user create task files here; the Task Scheduler starts them with the owner's full token.");
     /* NT 5.1 lets Users create files and folders in the system drive root by default. */
     base[3] = 0;
     acl_check(base, SE_FILE_OBJECT, FILE_WRITE_DATA | FILE_APPEND_DATA | WRITE_DAC | WRITE_OWNER | FILE_DELETE_CHILD, SEC_SEVERITY_LOW,

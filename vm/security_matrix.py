@@ -8,7 +8,10 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNS = ROOT / '.work/security-20261111/runs'
+sys.path.insert(0, str(ROOT / 'vm'))
+import security_paths
+
+RUNS = security_paths.RUNS
 
 
 def main():

@@ -477,6 +477,66 @@ DWORD secw_sddl_set(const WCHAR *name, SE_OBJECT_TYPE type, const char *sddl)
     return error;
 }
 
+DWORD secw_service_dacl(const WCHAR *service, char *sddl, int size, BOOL *others_control)
+{
+    SC_HANDLE scm = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT), handle;
+    BYTE buffer[4096];
+    PSECURITY_DESCRIPTOR sd = (PSECURITY_DESCRIPTOR)buffer;
+    PACL dacl = NULL;
+    BOOL present = FALSE, defaulted = FALSE;
+    WCHAR *text = NULL;
+    DWORD error = ERROR_SUCCESS, needed = 0, i;
+    if (size > 0) sddl[0] = 0;
+    *others_control = FALSE;
+    if (!scm) return GetLastError();
+    handle = OpenServiceW(scm, service, READ_CONTROL);
+    if (!handle) { error = GetLastError(); CloseServiceHandle(scm); return error; }
+    if (!QueryServiceObjectSecurity(handle, DACL_SECURITY_INFORMATION, sd, sizeof(buffer), &needed) ||
+        !GetSecurityDescriptorDacl(sd, &present, &dacl, &defaulted)) error = GetLastError();
+    else if (!present || !dacl) *others_control = TRUE;            /* no DACL: everyone has every right */
+    else for (i = 0; i < dacl->AceCount; ++i) {
+        ACCESS_ALLOWED_ACE *ace;
+        DWORD mask;
+        if (!GetAce(dacl, i, (void **)&ace) || ace->Header.AceType != ACCESS_ALLOWED_ACE_TYPE) continue;
+        mask = ace->Mask;
+        if (mask & (GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL)) mask |= SECW_SERVICE_CONTROL;
+        if ((mask & SECW_SERVICE_CONTROL) && !IsWellKnownSid((PSID)&ace->SidStart, WinLocalSystemSid) &&
+            !IsWellKnownSid((PSID)&ace->SidStart, WinBuiltinAdministratorsSid)) *others_control = TRUE;
+    }
+    if (!error) {
+        if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(sd, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &text, NULL)) error = GetLastError();
+        else {
+            if (lstrlenW(text) >= size) error = ERROR_BUFFER_OVERFLOW;
+            else secw_utf8(text, sddl, size);
+            LocalFree(text);
+        }
+    }
+    CloseServiceHandle(handle);
+    CloseServiceHandle(scm);
+    return error;
+}
+
+DWORD secw_service_dacl_set(const WCHAR *service, const char *sddl)
+{
+    SC_HANDLE scm, handle;
+    PSECURITY_DESCRIPTOR sd = NULL;
+    PACL dacl = NULL;
+    BOOL present = FALSE, defaulted = FALSE;
+    WCHAR wide[SEC_BACKUP_DATA_MAX];
+    DWORD error = ERROR_SUCCESS;
+    if ((unsigned)lstrlenA(sddl) >= SEC_BACKUP_DATA_MAX || sddl[0] != 'D' || sddl[1] != ':') return ERROR_INVALID_SECURITY_DESCR;
+    secw_wide(sddl, wide, SEC_BACKUP_DATA_MAX);
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(wide, SDDL_REVISION_1, &sd, NULL)) return GetLastError();
+    if (!GetSecurityDescriptorDacl(sd, &present, &dacl, &defaulted) || !present || !dacl) { LocalFree(sd); return ERROR_INVALID_SECURITY_DESCR; }
+    scm = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT);
+    handle = scm ? OpenServiceW(scm, service, WRITE_DAC) : NULL;
+    if (!handle || !SetServiceObjectSecurity(handle, DACL_SECURITY_INFORMATION, sd)) error = GetLastError();
+    if (handle) CloseServiceHandle(handle);
+    if (scm) CloseServiceHandle(scm);
+    LocalFree(sd);
+    return error;
+}
+
 DWORD secw_inherit_only(const WCHAR *name, SE_OBJECT_TYPE type)
 {
     /* An empty unprotected DACL: the object keeps only what its parent passes down. */

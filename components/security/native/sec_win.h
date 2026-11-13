@@ -93,6 +93,15 @@ DWORD secw_walk_keys(const WCHAR *key, SECW_VISIT visit, void *context);
                          DELETE | WRITE_DAC | WRITE_OWNER | FILE_DELETE_CHILD)
 #define SECW_KEY_WRITE (KEY_SET_VALUE | KEY_CREATE_SUB_KEY | KEY_CREATE_LINK | DELETE | WRITE_DAC | WRITE_OWNER)
 #define SECW_SERVICE_WRITE (SERVICE_CHANGE_CONFIG | DELETE | WRITE_DAC | WRITE_OWNER)
+/* Rights that decide whether a service keeps running as configured. */
+#define SECW_SERVICE_CONTROL (SERVICE_STOP | SERVICE_PAUSE_CONTINUE | SECW_SERVICE_WRITE)
+
+/* A service's DACL as SDDL text ("D:..."), and whether any trustee other than SYSTEM and the
+   Administrators group is allowed one of the SECW_SERVICE_CONTROL rights.
+   ERROR_SERVICE_DOES_NOT_EXIST when the service is not installed. */
+DWORD secw_service_dacl(const WCHAR *service, char *sddl, int size, BOOL *others_control);
+/* Replaces the service's DACL (only the DACL) by the one in the SDDL text. */
+DWORD secw_service_dacl_set(const WCHAR *service, const char *sddl);
 
 /* Registry helpers below HKEY_LOCAL_MACHINE (or the given root). */
 DWORD secw_reg_read(HKEY root, const char *key, const char *value, DWORD *type, BYTE *data, DWORD *size);

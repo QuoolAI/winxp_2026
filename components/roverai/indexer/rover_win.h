@@ -41,6 +41,10 @@ typedef struct ROVER_WATCH ROVER_WATCH;
 ROVER_WATCH *rover_watch_start(ROVER_SETTINGS *s, ROVER_INDEX *index, CRITICAL_SECTION *lock);
 void rover_watch_stop(ROVER_WATCH *watch);
 unsigned long rover_watch_applied(const ROVER_WATCH *watch);
+/* Records the saved index as the watcher's own (call after the owner saved it,
+   e.g. after rover_store_reconcile): a later save by anyone else is detected and
+   answered with a rescan instead of being overwritten. */
+void rover_watch_adopt_store(ROVER_WATCH *watch);
 
 typedef struct {
     char *path;

@@ -1,4 +1,4 @@
-# XP25 security threat model (Milestone 8)
+# XP25 security threat model (Milestones 8 and 8.1)
 
 This is the threat model the Milestone 8 security baseline was built against. It
 describes the system as it was inspected and tested in recorded guests
@@ -113,9 +113,38 @@ An ordinary (non-administrator) account must not be able to change the system.
   and the open ports were reachable again. The policy now refuses the firewall
   and the Security Center unconditionally and no longer offers network-facing
   services (AI build 11, installed in the hardened image; probed).
+- **The broker, revisited (Milestone 8.1).** A code audit of `XP25Broker` and
+  the guest probe found four more ways around it, all observed in
+  `fw-m8-up-01` on the Milestone 8 image or derived from the code:
+  (a) any interactive token was served, including the restricted token with
+  Administrators deny-only that contains the browser, so a contained process
+  could have SYSTEM restart services for it; (b) without an administrator's
+  policy the default list let an ordinary user stop the DNS Client, DHCP,
+  Task Scheduler and other services that every user and the network depend
+  on; (c) the broker closed and re-created its pipe for every client and
+  granted interactive users the right to create pipe instances, so another
+  process could serve the same name in between, receive the next client's
+  request and impersonate that client — NT 5.1 has no
+  `SeImpersonatePrivilege`, so any process may impersonate a pipe client;
+  (d) a client that connected and sent nothing held the broker forever, and
+  its audit file lived in All Users\Application Data. **After (AI build 13):**
+  restricted tokens, tokens with deny-only groups and guests are refused; a
+  standard user gets a short built-in list (`AudioSrv`, `Spooler`, `stisvc`,
+  `Themes`) unless an administrator sets a machine policy, administrators keep
+  the full list, and critical services stay refused for everyone; the broker
+  creates its single pipe instance first (`FILE_FLAG_FIRST_PIPE_INSTANCE`),
+  keeps it for its lifetime and gives users no create-instance right; clients
+  connect at identification level and refuse a pipe not owned by SYSTEM or
+  Administrators; reads and writes are bounded to 5 s; the allowance is per
+  caller; the audit file is in `%SystemRoot%\XP25\Broker` (SYSTEM and
+  Administrators only). Probed from an ordinary account, a restricted token and
+  a standard user's own desktop ([record](security-regression.md)).
 - **Power Users.** Power Users can modify `Program Files`, `HKLM\Software` and
   service files on NT 5.1, which is enough to become an administrator. Nobody
-  is a member; the audit reports membership.
+  is a member; the audit reports membership. The NT 5.1 default service ACL also
+  lets Power Users stop and pause *every* service; since Milestone 8.1 the
+  firewall, the Security Center and the XP25 broker can be controlled by SYSTEM
+  and administrators only.
 
 ### 3. Browser compromise
 
@@ -164,6 +193,17 @@ any program that embeds it. It cannot be removed without breaking them.
   Registry, WebDAV, IPSEC Services, Automatic Updates and Error Reporting are
   disabled and stopped; Server, Computer Browser, SSDP, UPnP host, Remote
   Assistance and NetMeeting sharing are disabled.
+- **Start-up window (Milestone 8.1).** Probing UDP 137 continuously while the
+  guest restarted (`fw-m8-up-01`) found that the name service answered a
+  neighbour from about 18 s into the restart and went on answering from the
+  same socket for the rest of the minute: NetBT registers the computer's names
+  by broadcast from UDP 137 as soon as it has an address, the reply window
+  opens before the firewall service has applied its policy, and the
+  conversation the neighbour opened in that window stayed open afterwards.
+  **After:** NetBIOS over TCP/IP is a point-to-point node (`NodeType=2`): the
+  computer sends no NetBIOS broadcasts, so no reply window opens on UDP 137 at
+  any time. Measured across a restart with continuous probing of every port in
+  runs `fw-up-03`, `fw-mp-01` and `fw-tcg-01`.
 - **Remaining:** RPC (135) and NetBT (137–139, 445) are still *bound* and are
   reachable from the local machine, and from the network again if the firewall
   is switched off by an administrator. The Server service cannot start at all
@@ -199,6 +239,23 @@ anything added or changed since the reference snapshot. In the recorded drift
 test it reported an added `Run` value and a re-enabled service. *Detection
 only; nothing is blocked or removed.* Per-user persistence (`HKCU\...\Run`) is
 possible by design.
+
+**Scheduled tasks (Milestone 8.1).** NT 5.1 lets every authenticated user create
+task files in `%SystemRoot%\Tasks`. A task set to run only while its owner is
+logged on needs no password and is started by the Task Scheduler with the
+owner's full token — so a contained process of the administrator (the browser)
+could leave a task that runs uncontained at the next trigger. Observed: the
+ordinary account and the restricted token both created a file there
+(`fw-m8-up-01`). **After:** the directory is protected (SYSTEM and
+Administrators full, Users read); creating or changing tasks needs an
+administrator. The 8.1 probe checks 21 further machine-wide autostart and
+hijack locations (RunOnce/RunOnceEx/RunServices, Winlogon Notify, Browser
+Helper Objects, ShellExecuteHooks, SharedTaskScheduler,
+ShellServiceObjectDelayLoad, Active Setup, AeDebug, Drivers32, Command
+Processor AutoRun, `exefile` open command, CLSID, print monitors, security
+providers, network provider order, KnownDLLs, the Winsock catalog, TCP/IP
+parameters), 12 system files and 6 system directories, `boot.ini`, `ntldr` and
+the All Users Startup, Start Menu and Desktop folders.
 
 ### 9. Credential theft
 

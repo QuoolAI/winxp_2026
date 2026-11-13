@@ -75,11 +75,32 @@ static void access_control(void)
     CHECK(system32 && programs && lab && keys && tree && !sec_acl_rule("acl.none") && !sec_acl_rule(NULL));
     for (i = 0; i < sec_acl_rule_count(); ++i) {
         const SEC_ACL_RULE *rule = sec_acl_rule_at(i);
-        CHECK(rule->kind >= SEC_ACL_REPAIR_FILES && rule->kind <= SEC_ACL_REPAIR_KEYS);
-        CHECK((rule->sddl != NULL) == (rule->kind == SEC_ACL_TREE_FILES || rule->kind == SEC_ACL_TREE_REGISTRY));
+        CHECK(rule->kind >= SEC_ACL_REPAIR_FILES && rule->kind <= SEC_ACL_SERVICE);
+        CHECK((rule->sddl != NULL) == (rule->kind == SEC_ACL_TREE_FILES || rule->kind == SEC_ACL_TREE_REGISTRY || rule->kind == SEC_ACL_SERVICE));
         /* Tree descriptors are protected and grant write access to SYSTEM and Administrators only. */
-        if (rule->sddl) CHECK(!strncmp(rule->sddl, "O:BAD:P(", 8) && !strstr(rule->sddl, ";WD)") && !strstr(rule->sddl, ";AU)") && !strstr(rule->sddl, ";IU)"));
+        if (rule->sddl && rule->kind != SEC_ACL_SERVICE)
+            CHECK(!strncmp(rule->sddl, "O:BAD:P(", 8) && !strstr(rule->sddl, ";WD)") && !strstr(rule->sddl, ";AU)") && !strstr(rule->sddl, ";IU)"));
+        /* Service descriptors: a DACL only, three entries; stop (WP), pause (DT), reconfigure (DC), delete (SD),
+           re-secure (WD, WO) for SYSTEM and Administrators alone, and no entry for Power Users or everyone. */
+        if (rule->kind == SEC_ACL_SERVICE) {
+            const char *users = strstr(rule->sddl, "(A;;CCLCSWLOCRRC;;;AU)");
+            CHECK(!strncmp(rule->sddl, "D:(A;;", 6) && users && users[22] == 0 && strstr(rule->sddl, ";;;SY)") && strstr(rule->sddl, ";;;BA)"));
+            CHECK(!strstr(rule->sddl, ";PU)") && !strstr(rule->sddl, ";WD)") && !strstr(rule->sddl, ";BU)") && !strstr(rule->sddl, ";IU)"));
+            CHECK(!strchr(rule->root, '\\') && !strchr(rule->root, '%'));
+        }
         CHECK(sec_acl_rule(rule->id) == rule && strlen(rule->reason) > 20);
+    }
+    {
+        /* A service rule covers exactly its own service; a backup record cannot name another one. */
+        const SEC_ACL_RULE *firewall = sec_acl_rule("acl.firewall_service"), *tasks = sec_acl_rule("acl.tasks");
+        CHECK(firewall && firewall->kind == SEC_ACL_SERVICE && !strcmp(firewall->root, "SharedAccess"));
+        CHECK(sec_acl_in_scope(firewall, "SharedAccess", "", "") && sec_acl_in_scope(firewall, "sharedaccess", w, p));
+        CHECK(!sec_acl_in_scope(firewall, "Eventlog", "", "") && !sec_acl_in_scope(firewall, "SharedAccess\\Parameters", "", ""));
+        CHECK(!sec_acl_in_scope(firewall, "", "", "") && !sec_acl_in_scope(firewall, NULL, "", ""));
+        CHECK(sec_acl_rule("acl.security_center_service") && sec_acl_rule("acl.xp25_broker_service"));
+        CHECK(tasks && tasks->kind == SEC_ACL_TREE_FILES && sec_acl_root(tasks, w, p, root, sizeof(root)) && !strcmp(root, "C:\\WINDOWS\\Tasks"));
+        CHECK(sec_acl_in_scope(tasks, "C:\\WINDOWS\\Tasks", w, p) && sec_acl_in_scope(tasks, "C:\\WINDOWS\\Tasks\\a.job", w, p));
+        CHECK(!sec_acl_in_scope(tasks, "C:\\WINDOWS\\Tasks\\..\\system32\\a.dll", w, p));
     }
     CHECK(sec_acl_root(system32, w, p, root, sizeof(root)) && !strcmp(root, "C:\\WINDOWS\\system32"));
     CHECK(sec_acl_root(programs, w, p, root, sizeof(root)) && !strcmp(root, "C:\\Program Files\\XP25"));

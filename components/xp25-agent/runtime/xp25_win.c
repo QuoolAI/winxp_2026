@@ -208,7 +208,7 @@ void xp25w_config_defaults(XP25_CONFIG *c)
     c->timeout_seconds = 60;
     c->retries = 2;
     c->max_output_tokens = 1200;
-    lstrcpynA(c->service_allowlist, xp25_default_service_allowlist, sizeof(c->service_allowlist));
+    c->service_allowlist[0] = 0;        /* no administrator policy: the built-in lists apply (xp25_policy_service) */
     lstrcpyA(c->mascot, "builtin");
     c->ai_query_interpretation = 1;
     c->content_index = 1;

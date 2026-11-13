@@ -186,6 +186,9 @@ static const SEC_REGISTRY_RULE registry_rules[] = {
     {"netbt.nonamereleaseondemand", "SYSTEM\\CurrentControlSet\\Services\\NetBT\\Parameters", "NoNameReleaseOnDemand",
      SEC_REG_DWORD, 1, NULL, R, "tcpip",
      "The computer ignores NetBIOS name-release requests from the network.", "None."},
+    {"netbt.nodetype", "SYSTEM\\CurrentControlSet\\Services\\NetBT\\Parameters", "NodeType", SEC_REG_DWORD, 2, NULL, R, "tcpip",
+     "While Windows starts, before the firewall service has applied its policy, the firewall driver's start-up filter still admits unicast packets for three seconds after each broadcast the computer sends. NetBIOS over TCP/IP registers its names by broadcast from UDP 137 at every start, so a neighbour probing during start-up reached the name service, and the conversation it opened stayed open afterwards. As a point-to-point node the computer sends no NetBIOS broadcasts.",
+     "None beyond the broadcast-response setting, which already ends name resolution by NetBIOS broadcast. A WINS server, DNS, hosts and lmhosts still resolve names."},
     {"remote.fdenytsconnections", TS, "fDenyTSConnections", SEC_REG_DWORD, 1, NULL, I, "remote",
      "Remote Desktop does not accept connections.", "Remote Desktop into this computer is off until an administrator enables it."},
     {"remote.fallowtogethelp", TS, "fAllowToGetHelp", SEC_REG_DWORD, 0, NULL, I, "remote",
@@ -267,6 +270,10 @@ int sec_registry_dword_ok(const SEC_REGISTRY_RULE *rule, int present, unsigned l
 #define XP25_FILES "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)"
 #define REPAIR_REASON "Files written into this directory by an administrator account or by offline servicing can carry that account's ownership or an open ACL. Windows loads them as system code."
 #define REPAIR_COMPAT "None for installed programs: the files get the directory's own inherited access control."
+/* SYSTEM: everything a service host needs; Administrators: full control; authenticated users: query only. */
+#define SERVICE_ADMIN_ONLY "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;AU)"
+#define SERVICE_REASON "The NT 5.1 default lets the Power Users group stop and pause every service. The firewall, the Security Center and the SYSTEM broker are the computer's protection: only SYSTEM and administrators may control them."
+#define SERVICE_COMPAT "Members of Power Users can no longer stop, pause or restart this service. Every account can still see its state."
 static const SEC_ACL_RULE acl_rules[] = {
     {"acl.windows", SEC_ACL_REPAIR_FILES, "%W%", NULL, REPAIR_REASON, REPAIR_COMPAT},
     {"acl.system32", SEC_ACL_REPAIR_FILES, "%W%\\system32", NULL, REPAIR_REASON, REPAIR_COMPAT},
@@ -285,7 +292,13 @@ static const SEC_ACL_RULE acl_rules[] = {
      "None: the keys get the CLSID key's own inherited access control."},
     {"acl.xp25_registry", SEC_ACL_TREE_REGISTRY, "SOFTWARE\\XP25", "O:BAD:P(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KR;;;BU)",
      "The broker's service allowlist and the security baseline state live here; whoever can write them decides what the SYSTEM broker does.",
-     "Only administrators can change XP25 machine policy. Per-user ClippyAI settings are stored elsewhere."}
+     "Only administrators can change XP25 machine policy. Per-user ClippyAI settings are stored elsewhere."},
+    {"acl.tasks", SEC_ACL_TREE_FILES, "%W%\\Tasks", XP25_FILES,
+     "NT 5.1 lets every user create scheduled-task files here. A task marked to run only while its owner is logged on needs no password and is started by the Task Scheduler with that user's full token, so a contained process of an administrator (the XP25 browser) could start code outside its containment.",
+     "Only administrators can create or change scheduled tasks. Existing tasks keep running."},
+    {"acl.firewall_service", SEC_ACL_SERVICE, "SharedAccess", SERVICE_ADMIN_ONLY, SERVICE_REASON, SERVICE_COMPAT},
+    {"acl.security_center_service", SEC_ACL_SERVICE, "wscsvc", SERVICE_ADMIN_ONLY, SERVICE_REASON, SERVICE_COMPAT},
+    {"acl.xp25_broker_service", SEC_ACL_SERVICE, "XP25Broker", SERVICE_ADMIN_ONLY, SERVICE_REASON, SERVICE_COMPAT}
 };
 
 unsigned sec_acl_rule_count(void) { return (unsigned)(sizeof(acl_rules) / sizeof(acl_rules[0])); }
@@ -329,6 +342,7 @@ int sec_acl_in_scope(const SEC_ACL_RULE *rule, const char *path, const char *win
 {
     char root[520];
     size_t n, i;
+    if (rule && rule->kind == SEC_ACL_SERVICE) return path && sec_equal_nocase(path, rule->root);
     if (!path || !sec_acl_root(rule, windows, programs, root, sizeof(root))) return 0;
     n = length(root);
     for (i = 0; i < n; ++i) if (slash(path[i]) != slash(root[i])) return 0;

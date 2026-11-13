@@ -330,7 +330,19 @@ struct ROVER_WATCH {
     volatile DWORD dirty_since;
     volatile LONG watching;   /* roots with an open change notification (interlocked) */
     HANDLE live;              /* WATCHING_EVENT while every root is watched (under lock) */
+    FILETIME stamp;           /* last write time of the saved index when this watcher last wrote or adopted it */
+    int stamp_known;          /* guarded by the store mutex */
 };
+
+/* Last write time of the saved index. */
+static int store_stamp(const XP25W_PATHS *paths, FILETIME *stamp)
+{
+    WCHAR file[MAX_PATH];
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    if (!rover_store_file(paths, file) || !GetFileAttributesExW(file, GetFileExInfoStandard, &info)) return 0;
+    *stamp = info.ftLastWriteTime;
+    return 1;
+}
 
 /* A root is no longer watched: searches judge the saved index by its age again. */
 static void unadvertise(struct ROVER_WATCH *w)
@@ -344,27 +356,53 @@ static void unadvertise(struct ROVER_WATCH *w)
 }
 
 /* Saves under the store mutex shared with rover_store_refresh; the index
-   stays dirty (and is retried) until a save actually succeeds. */
+   stays dirty (and is retried) until a save actually succeeds.
+   The saved index has more than one writer: this watcher, and anyone who
+   rescans (RoverAI /index, a search that finds the index too old). When the
+   file changed since this watcher last wrote or adopted it, the other writer's
+   listing may be newer than this in-memory index, so the watcher rescans every
+   root before saving rather than putting an older listing back. */
 static void save_now(struct ROVER_WATCH *w)
 {
     XP25_BUF data;
     WCHAR file[MAX_PATH];
     HANDLE mutex = CreateMutexW(NULL, FALSE, STORE_MUTEX);
     DWORD wait = mutex ? WaitForSingleObject(mutex, 30000) : WAIT_FAILED;
+    FILETIME stamp;
     int saved = 0;
     if (wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED) {
         xp25_buf_init(&data);
         EnterCriticalSection(w->lock);
+        if (w->stamp_known && store_stamp(w->settings->paths, &stamp) && CompareFileTime(&stamp, &w->stamp)) {
+            ROVER_FS fs;
+            ROVER_SCAN_STATS stats;
+            rover_win_fs(&fs, w->settings);
+            rover_index_scan(w->index, &fs, &w->settings->scan, &stats, xp25w_now());
+        }
         rover_index_serialize(w->index, &data);
         InterlockedExchange(&w->dirty, 0);
         LeaveCriticalSection(w->lock);
         saved = xp25_buf_ok(&data) && rover_store_file(w->settings->paths, file) &&
                 xp25w_write_file_atomic(file, data.data, (DWORD)data.len);
         xp25_buf_free(&data);
+        if (saved && store_stamp(w->settings->paths, &stamp)) { w->stamp = stamp; w->stamp_known = 1; }
         ReleaseMutex(mutex);
     }
     if (mutex) CloseHandle(mutex);
     if (!saved && !InterlockedExchange(&w->dirty, 1)) w->dirty_since = GetTickCount();
+}
+
+void rover_watch_adopt_store(ROVER_WATCH *w)
+{
+    HANDLE mutex;
+    FILETIME stamp;
+    if (!w) return;
+    mutex = CreateMutexW(NULL, FALSE, STORE_MUTEX);
+    if (mutex && WaitForSingleObject(mutex, 30000) != WAIT_TIMEOUT) {
+        if (store_stamp(w->settings->paths, &stamp)) { w->stamp = stamp; w->stamp_known = 1; }
+        ReleaseMutex(mutex);
+    }
+    if (mutex) CloseHandle(mutex);
 }
 
 static void apply_one(struct ROVER_WATCH *w, const char *root, const WCHAR *name, DWORD bytes, int action, char *old_path)
@@ -428,35 +466,37 @@ static DWORD WINAPI watch_thread(void *param)
         }
         wait = WaitForMultipleObjects(2, events, FALSE, 2000);
         if (wait == WAIT_OBJECT_0) { CancelIo(dir); break; }
-        if (w->dirty && (GetTickCount() - last_change > 3000 || GetTickCount() - w->dirty_since > 10000)) save_now(w);
-        if (wait == WAIT_TIMEOUT) continue;
-        pending = 0;
-        if (!GetOverlappedResult(dir, &ov, &got, FALSE)) continue;
-        last_change = GetTickCount();
-        if (!got) {
-            /* The change buffer overflowed: reconcile this root fully. */
-            ROVER_FS fs;
-            ROVER_SCAN_CONFIG one = w->settings->scan;
-            ROVER_SCAN_STATS stats;
-            const char *root = r->root;
-            one.roots = &root;
-            one.root_count = 1;
-            rover_win_fs(&fs, w->settings);
-            EnterCriticalSection(w->lock);
-            rover_index_scan(w->index, &fs, &one, &stats, xp25w_now());
-            LeaveCriticalSection(w->lock);
-            InterlockedExchange(&w->dirty, 1);
-            continue;
-        }
-        {
-            BYTE *p = (BYTE *)buffer;
-            for (;;) {
-                FILE_NOTIFY_INFORMATION *info = (FILE_NOTIFY_INFORMATION *)p;
-                apply_one(w, r->root, info->FileName, info->FileNameLength, (int)info->Action, old_path);
-                if (!info->NextEntryOffset) break;
-                p += info->NextEntryOffset;
+        if (wait != WAIT_TIMEOUT) {
+            pending = 0;
+            if (GetOverlappedResult(dir, &ov, &got, FALSE)) {
+                last_change = GetTickCount();
+                if (!got) {
+                    /* The change buffer overflowed: reconcile this root fully. */
+                    ROVER_FS fs;
+                    ROVER_SCAN_CONFIG one = w->settings->scan;
+                    ROVER_SCAN_STATS stats;
+                    const char *root = r->root;
+                    one.roots = &root;
+                    one.root_count = 1;
+                    rover_win_fs(&fs, w->settings);
+                    EnterCriticalSection(w->lock);
+                    rover_index_scan(w->index, &fs, &one, &stats, xp25w_now());
+                    LeaveCriticalSection(w->lock);
+                    if (!InterlockedExchange(&w->dirty, 1)) w->dirty_since = GetTickCount();
+                } else {
+                    BYTE *p = (BYTE *)buffer;
+                    for (;;) {
+                        FILE_NOTIFY_INFORMATION *info = (FILE_NOTIFY_INFORMATION *)p;
+                        apply_one(w, r->root, info->FileName, info->FileNameLength, (int)info->Action, old_path);
+                        if (!info->NextEntryOffset) break;
+                        p += info->NextEntryOffset;
+                    }
+                }
             }
         }
+        /* Only after every change already delivered has been applied: a save made before would put
+           an index older than the file system into the store. */
+        if (w->dirty && (GetTickCount() - last_change > 3000 || GetTickCount() - w->dirty_since > 10000)) save_now(w);
     }
     CloseHandle(ov.hEvent);
     CloseHandle(dir);

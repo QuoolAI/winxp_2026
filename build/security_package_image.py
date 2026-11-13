@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Flatten a frozen, normally shut down XP25 security image-install run into
-the standalone engineering image XP25-Security-Baseline.qcow2 (no backing
-file), then verify it sector-for-sector against the source chain and with
-qemu-img check. The run must have passed every gate of
+"""Flatten a frozen, normally shut down XP25 security image-install or
+image-upgrade run into a standalone engineering image (no backing file):
+XP25-Security-Baseline.qcow2 (Milestone 8) or XP25-Security-Baseline-8.1.qcow2
+(Milestone 8.1, upgraded from the Milestone 8 image), then verify it
+sector-for-sector against the source chain and with qemu-img check. The run must have passed every gate of
 vm/security_results.py. Guest files are not edited here. The result is
 private engineering media, not a Windows Setup image or a redistribution
 artifact."""
@@ -29,7 +30,8 @@ def main():
     parser.add_argument('--run', type=Path, required=True, help='frozen image-install run directory')
     parser.add_argument('--tools', type=Path, required=True, help='collect.json of the native XP25Sec/XP25Audit build')
     parser.add_argument('--ai', type=Path, required=True, help='collect.json of the native XP25 AI build installed in the run')
-    parser.add_argument('--kernel', type=Path, required=True, help='manifest.json of build/prepare_kernel_exports.py')
+    parser.add_argument('--kernel', type=Path, help='manifest.json of build/prepare_kernel_exports.py (image-install)')
+    parser.add_argument('--name', default=NAME, help='file name of the image')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     run, out = args.run.resolve(), args.output.resolve()
@@ -38,12 +40,20 @@ def main():
     inputs = json.loads((run / 'inputs.json').read_text())
     results = json.loads((run / 'results.json').read_text())
     disk = run / 'disk.qcow2'
-    if inputs.get('role') != 'image-install' or not (run / 'normal-shutdown.json').is_file() or disk.stat().st_mode & 0o222:
-        parser.error('a frozen image-install run that shut down normally is required')
+    if inputs.get('role') not in ('image-install', 'image-upgrade') or not (run / 'normal-shutdown.json').is_file() or disk.stat().st_mode & 0o222:
+        parser.error('a frozen image-install or image-upgrade run that shut down normally is required')
+    if inputs['role'] == 'image-install' and not args.kernel:
+        parser.error('image-install needs --kernel')
+    parent_manifest = None
+    if inputs['role'] == 'image-upgrade':
+        # The parent is itself a packaged image; its manifest carries the lineage and the kernel change.
+        parent_manifest = json.loads((Path(inputs['base']).parent / 'manifest.json').read_text())
+        if parent_manifest.get('image_sha256') != inputs['base_sha256']:
+            parser.error('the parent image does not match its manifest')
     if not results.get('all_passed'):
         parser.error('the run did not pass every gate: ' + str([g['gate'] for g in results['gates'] if not g['passed']]))
     out.mkdir(parents=True, exist_ok=False)
-    image = out / NAME
+    image = out / args.name
     source_sha = sha(disk)
     if source_sha != results.get('disk_sha256'):
         raise SystemExit('the run disk changed after its results were recorded')
@@ -84,9 +94,15 @@ def main():
         'install_gates': results['gates'],
         'native_security_tools': json.loads(args.tools.read_text()),
         'native_ai_build': {k: v for k, v in json.loads(args.ai.read_text()).items() if k != 'probe'},
-        'kernel_export_change': json.loads(args.kernel.read_text()),
-        'in_image_records': 'C:\\WINDOWS\\XP25\\Security: baseline-backup.txt (original configuration), install-apply.jsonl, '
-                            'install-plan.jsonl, install-services-before.jsonl, install-verify.jsonl, audit-snapshot.txt',
+        'kernel_export_change': json.loads(args.kernel.read_text()) if args.kernel else
+            dict(parent_manifest.get('kernel_export_change') or {}, inherited_from=inputs['base']),
+        'lineage': (parent_manifest.get('lineage') or [{'image': parent_manifest['previous_verified_image'],
+                                                         'sha256': parent_manifest['previous_verified_image_sha256']}]) +
+                   [{'image': inputs['base'], 'sha256': inputs['base_sha256']}] if parent_manifest else
+                   [{'image': inputs['base'], 'sha256': inputs['base_sha256']}],
+        'in_image_records': 'C:\\WINDOWS\\XP25\\Security: baseline-backup.txt (original configuration), install-*.jsonl '
+                            '(Milestone 8 install)' + (', upgrade-81-*.jsonl (Milestone 8.1 upgrade)' if parent_manifest else '') +
+                            ', audit-snapshot.txt (reference snapshot)',
         'rollback': 'XP25Sec.exe rollback inside the guest, or a new overlay of the previous verified image',
         'sector_compare': compare.stdout.strip(), 'image_check': check.stdout.strip().splitlines()[-1:],
         'scope': 'Private engineering disk: verified XP25 AI image plus the natively built XP25 Winlogon, the relinked checked '
@@ -94,7 +110,7 @@ def main():
                  'security baseline. Not Windows Setup media; no licensing or redistribution claim. Keep it off unrestricted networks.'}
     (out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     (out / 'README.txt').write_text(
-        'XP25 private hardened engineering disk: ' + NAME + '\n\n'
+        'XP25 private hardened engineering disk: ' + args.name + '\n\n'
         'SHA-256 ' + digest + '\n'
         'Parent (unchanged, still bootable): ' + inputs['base'] + '\n  SHA-256 ' + inputs['base_sha256'] + '\n\n'
         'This is an importable disk, not Windows Setup and not a redistribution artifact.\n'

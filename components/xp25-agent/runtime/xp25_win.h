@@ -50,7 +50,7 @@ typedef struct {
     long timeout_seconds;
     long retries;
     long max_output_tokens;
-    char service_allowlist[600];
+    char service_allowlist[600];     /* administrator policy from HKLM; empty when there is none */
     char mascot[MAX_PATH * 3];       /* "builtin" or path to an Agent .acs character */
     int ai_query_interpretation;     /* RoverAI may send the query text (never file content) to the provider */
     int content_index;

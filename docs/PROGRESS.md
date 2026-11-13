@@ -2,6 +2,55 @@
 
 ## Current checkpoint
 
+2026-11-13, Milestone 8.1 — security stabilization, firewall verification and final
+acceptance (`xp25-security`): **`XP25-Security-Baseline-8.1.qcow2` (SHA-256
+`501c79862d41824a2748c96f5b4715f22ba25443630cb1e3ff0c13674999fda4`), upgraded from the unchanged Milestone 8
+image, passes the firewall, privilege, standard-user, AI and full proof suites
+under one-vCPU KVM, two-vCPU KVM and TCG, and rollback on two-vCPU KVM. It is
+not safe for hostile networks and does not have current-Windows security.**
+Evidence root `.work/security81-20261112/` (`W81`).
+**Firewall:** the Milestone 8 kernel export was retained (the image boots the
+relinked kernel; `KeFlushQueuedDpcs` ordinal 526; no driver imports the kernel
+by ordinal). New role `firewall` checks the service and IPNAT from inside, and
+a test listener from the adjacent network in every state, on the sockets and in
+the packet capture: blocked without an exception, reachable with the
+administrator's exception, closed again after it (a UDP conversation state
+lasts briefly and ends within 150 s), opened exactly by an administrator's
+disable/stop and closed by enable/start, unprivileged `netsh`, `net stop`,
+service, key, device and broker attempts refused, nothing answering at any
+moment of a restart (`fw-up-03`/`fw-mp-01`/`fw-tcg-01`, 27 gates each).
+**Found and fixed:** Power Users could stop the firewall, Security Center and
+broker services (default DACL); every user could create scheduled-task files
+(a contained process could escape through the Task Scheduler); NetBT's start-up
+broadcasts let a neighbour reach UDP 137 during a restart and keep the
+conversation (now a point-to-point node); the SYSTEM broker stopped the DNS
+Client and Task Scheduler for ordinary users, served the browser's restricted
+token, let its pipe name be taken over between clients (NT 5.1 has no
+impersonation privilege), could be held by a silent client and logged under All
+Users (AI build 13: caller checks, two-tier service lists, permanent
+first-instance pipe, identification-level clients that verify the pipe owner,
+bounded I/O, protected log); RoverAI's background indexer overwrote a fresh
+re-index with an older listing (AI build 14). **AI stability:** the two
+Milestone 8 failures were fixed sleeps after posted messages in the probe; it
+now waits for ClippyAI to finish each step and records its duration
+(minimize ≈0.3 s, settings OK ≤0.11 s under moderate load). Three rounds each
+under moderate host load pass on UP and MP (`ai-load-up-01`/`-mp-01`, 14
+gates). **Standard user:** logon, own profile and shell, Luna, files, ClippyAI,
+RoverAI, broker, IE8, the programs and games installed with Windows, restart
+and power-off all work without administrator rights (`std-up-08`/`std-mp-01`/
+`std-tcg-01`, 12 gates each); recommended as the default desktop once a
+pre-existing XP25 Winlogon defect is fixed: after a logoff the logon dialog's
+fields do not paint, and the lab switched accounts with a restart instead. **Kernel review:** no
+new kernel or HAL change; the relink is reproducible (equal after link time
+stamps are masked) and changes only the export table and the placement of
+about 50 functions. **Image:** `upgrade-up-02` (14 gates) on the Milestone 8
+image, then `proof-up-01`/`proof-mp-01`/`proof-tcg-01` (35 gates each)
+and `rollback-mp-01` (12 gates). Microsoft Hearts crashes when its opening
+dialog is closed, on the unhardened base too (pre-existing). Storage: 337 duplicate screenshots deleted and 58 frozen run disks compressed in place (bytes unchanged); free space 49.06 → 90.31 GB on the shared volume.
+Host tests: 114 OK (12 skipped), test_security.py 19. Earlier images, `XP25-AI` and `Source/` are unchanged.
+[record](security-regression.md#milestone-81--stabilization-firewall-verification-and-final-acceptance) ·
+[baseline](security-baseline.md) · [threat model](security-threat-model.md)
+
 2026-11-12, Milestone 8 — operating-system security baseline and attack-surface
 reduction (`xp25-security`): **A hardened standalone image,
 `XP25-Security-Baseline.qcow2` (SHA-256

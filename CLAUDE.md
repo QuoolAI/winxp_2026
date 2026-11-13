@@ -154,7 +154,20 @@ Guest testing uses `vm/security_lab.py` (`launch --role ... | wait | scan | fail
   `Program Files\XP25`: files written offline have no ACL and make `XP25Sec verify` fail.
 - The firewall needs the relinked kernel that exports `KeFlushQueuedDpcs`
   (`build/prepare_kernel_exports.py`, lab flag `--kernel kx01`).
-- Run the AI regression with no other guest running; its provider case is timing sensitive.
+- The AI probe now synchronizes on ClippyAI's own message processing; still run AI regressions
+  (`proof`, `ai-repeat`) with as few other guests as possible, and use `--host-load` (moderate
+  defaults of `vm/host_load.py`) when load is the point. An unbounded fsync writer on the volume
+  holding the guest disk slows the guest a hundredfold.
+- Milestone 8.1 runs boot packaged images with `--image m8|m81` (`vm/security_paths.py`); a
+  rebuilt AI probe is staged with `--ai-probe`. Host observations are requested by the guest
+  (`XP25_HOST_REQUEST=<kind>:<label>` + `security_probe.exe hostwait`), and the QEMU capture is
+  segmented by marker frames (`vm/security_pcap.py`): judge network results on the sockets and
+  on the wire.
+- After a logoff the XP25 Winlogon's logon dialog does not paint its fields (known defect), so
+  automation cannot see where keys land; switch accounts with a restart. Letters typed into a
+  logon dialog without a focused field act as its shortcuts (S = Shut Down): type only into a
+  focused field. `net user /add` asks a question for passwords over 14 characters.
+- `xp_lab.py screen` cannot run while `security_lab.py wait` holds the run's QMP socket.
 
 The rest of the repo is build/VM tooling around the reference tree: `build/inventory.py`,
 `stage.py` and `attempt.py` (hashed inventory, disposable source copy, protected native

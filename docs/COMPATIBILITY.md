@@ -6,6 +6,39 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Security baseline 8.1 (Milestone 8.1) checkpoint, 2026-11-13
+
+Image `XP25-Security-Baseline-8.1.qcow2` (`501c7986…fda4`): the Milestone 8 image
+with baseline version 2, the 8.1 security tools and AI build 14. Evidence root
+`.work/security81-20261112/`. Two-vCPU runs add the multiprocessor kernel and
+HAL.
+
+| Test | 1 vCPU KVM | 2 vCPU KVM | TCG |
+| --- | --- | --- | --- |
+| Cold boot, XP25 Winlogon logon, `licdll` admission, Explorer identity | Pass | Pass | Pass |
+| Windows Firewall: running, filtering, permitted port, removal, administrator control, unprivileged attempts refused, restart window (`fw-*`) | Pass | Pass | Pass |
+| AI suite 55/0 and provider 7/0 (`proof-*`) | Pass | Pass | Pass |
+| AI suite three times under moderate host load (`ai-load-*`) | Pass | Pass | Not run |
+| Established compatibility suite, MSI install and removal (`proof-*`) | Pass | Pass | Pass |
+| Programs and games installed with Windows: start, respond, close | Pass; Hearts crashes on close (also on the unhardened base) | Same | Same |
+| Standard user: logon, desktop, AI, IE8, programs, restart, power-off (`std-*`) | Pass | Pass | Pass |
+| Rollback of the security configuration | Pass (Milestone 8) | Pass (`rollback-mp-01`) | Not run |
+| Logoff, then logon as another account without a restart | **Not established**: after a logoff the logon dialog's fields do not paint (known XP25 Winlogon defect; also on the unhardened base); the lab could not log on through them | Not run | Not run |
+
+Compatibility changes of baseline version 2:
+
+| Change | Effect on use |
+| --- | --- |
+| NetBIOS over TCP/IP as a point-to-point node | No NetBIOS name broadcasts or broadcast resolution (already ineffective with the broadcast-response setting); WINS, DNS, `hosts`, `lmhosts` work |
+| `%SystemRoot%\Tasks` for administrators only | Standard users cannot create scheduled tasks; existing tasks run |
+| Firewall, Security Center and XP25 broker services controlled by SYSTEM and administrators only | Power Users can no longer stop, pause or restart them |
+| XP25 broker for standard users: AudioSrv, Spooler, stisvc, Themes only (without an administrator's policy) | ClippyAI cannot restart DNS Client, DHCP, BITS, Task Scheduler and the other network or system services for a standard user; an administrator can allow them |
+
+Observed: Internet Explorer 8 shows its "Set Up Windows Internet Explorer 8"
+wizard on each user's first start. Not tested: real networks and hardware,
+third-party applications and games, Fast User Switching, Remote Desktop,
+printing. [Record](security-regression.md).
+
 ## Security baseline (Milestone 8) checkpoint, 2026-11-12
 
 Hardened image `XP25-Security-Baseline.qcow2` (`6da7d04e…45d9`): AI image-05 plus

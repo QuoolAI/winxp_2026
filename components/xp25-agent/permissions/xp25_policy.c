@@ -9,6 +9,11 @@
 const char xp25_default_service_allowlist[] =
     "AudioSrv,BITS,Dhcp,Dnscache,helpsvc,LanmanWorkstation,Netman,Nla,Schedule,Spooler,stisvc,Themes,"
     "W32Time,WZCSVC";
+/* What a standard user may have the SYSTEM broker do without an administrator having said so.
+   Stopping one of these takes nothing from other users, from the network or from the computer's
+   protection; Windows itself gives a standard user none of this, so the list stays short. An
+   administrator widens or narrows it for everyone with the machine policy. */
+const char xp25_default_user_service_allowlist[] = "AudioSrv,Spooler,stisvc,Themes";
 
 static void say(char *reason, size_t size, const char *text)
 {
@@ -353,8 +358,10 @@ XP25_PERM xp25_policy_service(const char *name, const char *action, const char *
         say(reason, reason_size, "This service is critical to Windows security or stability.");
         return XP25_PERM_DENIED;
     }
-    if (!in_list(allowlist ? allowlist : xp25_default_service_allowlist, name)) {
-        say(reason, reason_size, "This service is not on the authorized service list.");
+    if (!allowlist || !*allowlist) allowlist = is_admin ? xp25_default_service_allowlist : xp25_default_user_service_allowlist;
+    if (!in_list(allowlist, name)) {
+        say(reason, reason_size, is_admin ? "This service is not on the authorized service list." :
+            "A standard user may not control this service. An administrator can authorize it in the XP25 agent policy.");
         return XP25_PERM_DENIED;
     }
     if (!is_admin) {

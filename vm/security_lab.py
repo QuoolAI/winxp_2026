@@ -15,7 +15,7 @@ and are recorded with hashes in inputs.json. Gates are decided from guest
 serial records and QMP events, not from screenshots.
 
 usage:
-  security_lab.py launch --name RUN --mode up|mp|tcg [--base IMG --base-sha256 H]
+  security_lab.py launch --name RUN --mode up|mp|tcg [--image m8|m81 | --base IMG --base-sha256 H]
                   [--winlogon EXE] [--stage /guest/path=HOSTFILE ...] [--startup CMD] [--provider]
   security_lab.py wait RUN [--marker TEXT] [--timeout SECONDS] [--no-finish]
   security_lab.py scan RUN LABEL
@@ -33,11 +33,11 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'vm'))
 import security_fixtures as fixtures
+import security_paths
 import xp_lab as lab
 
-WORK = ROOT / '.work/security-20261111'
-REFERENCE = WORK / 'reference'
-RUNS = WORK / 'runs'
+REFERENCE = security_paths.REFERENCE
+RUNS = security_paths.RUNS
 PROFILE = '/Documents and Settings/XP25'
 STARTUP = PROFILE + '/Start Menu/Programs/Startup/XP25Security.cmd'
 
@@ -59,7 +59,11 @@ def reference(name):
 def launch(args):
     if '/' in args.name or args.name in ('.', '..'):
         raise SystemExit('a fresh simple run name is required')
-    if args.base:
+    if args.image:
+        # A packaged hardened image carries the XP25 Winlogon and boots the kernel with the firewall export.
+        base, base_sha = security_paths.image(args.image)
+        args.xp25_winlogon_installed, args.kernel = True, 'kx01'
+    elif args.base:
         if not args.base_sha256:
             raise SystemExit('--base needs --base-sha256')
         base, base_sha = args.base.resolve(), args.base_sha256
@@ -89,6 +93,8 @@ def launch(args):
         kernel = 'kernel-kx01/ntkrnlmp.exe' if args.mode == 'mp' else 'kernel-kx01/ntoskrnl.exe'
     elif args.mode == 'mp':
         kernel = 'mp/ntkrnlmp.exe'
+    if args.image and args.mode != 'mp':
+        kernel = None                                # exactly the kernel and HAL the image ships
     for target, name in (('/WINDOWS/system32/xp25krnl.exe', kernel),
                          ('/WINDOWS/system32/xp25hal.dll', 'mp/halmacpi.dll' if args.mode == 'mp' else None)):
         if name:
@@ -106,7 +112,11 @@ def launch(args):
             raise SystemExit('--role generates its own Startup fixture')
         args.provider = args.role in fixtures.PROVIDER
         for name in fixtures.PAYLOAD[args.role]:
-            if name == 'ai_probe.exe':
+            if name == 'ai_probe.exe' and args.ai_probe:
+                source = args.ai_probe.resolve()
+                if not source.is_file() or not source.is_relative_to(ROOT / '.work'):
+                    raise SystemExit('--ai-probe must be a private .work/ file')
+            elif name == 'ai_probe.exe':
                 source, expected = reference('ai_probe.exe')
                 if sha(source) != expected:
                     raise SystemExit('AI probe reference changed')
@@ -135,6 +145,17 @@ def launch(args):
         Path('failure.json').write_text(json.dumps({'reason': 'reference hash mismatch', 'actual': actual}, indent=2) + '\n')
         raise SystemExit('reference hash mismatch')
     secret = mock_key = None
+    logons = None
+    if args.role in fixtures.LOGONS:
+        # A second, ordinary account for the standard-user roles: a random password of keys the
+        # monitor can type, known only to this run.
+        # Without the letters of the logon dialog's shortcuts (Shut Down, Options, User name, Password,
+        # Log on to, Domain, ...): a key that reaches the dialog instead of a field can then do nothing.
+        password = ''.join(secrets.choice('abcefghjkmnqrtvwxyz23456789') for _ in range(14))   # net user asks before longer ones
+        Path('standard-account.cmd').write_bytes(('@set XP25_STD_USER=%s\r\n@set XP25_STD_PASSWORD=%s\r\n' % (fixtures.STD_USER, password)).encode())
+        files[PROFILE + '/xp25sec-standard-account.cmd'] = out / 'standard-account.cmd'
+        accounts = {'admin': ('xp25', ''), 'standard': (fixtures.STD_USER, password)}
+        logons = [accounts[who] for who in fixtures.LOGONS[args.role]]
     if args.provider:
         secret = secrets.token_hex(32)
         mock_key = 'sk-xp25-isolated-test-' + secrets.token_hex(8)
@@ -142,7 +163,10 @@ def launch(args):
         Path('gateway-secret.cmd').write_bytes(('@set XP25_GW_SECRET=%s\r\n' % secret).encode())
         files[PROFILE + '/xp25sec-gateway-secret.cmd'] = out / 'gateway-secret.cmd'
     if args.role:
-        Path('xp25sec-suite.cmd').write_bytes(fixtures.suite(args.role, args.mode, xp25_winlogon, args.provider).encode())
+        for name, text in fixtures.extra_files(args.role, args.mode).items():
+            Path(name).write_bytes(text.encode())
+            files[PROFILE + '/xp25sec-' + name] = out / name
+        Path('xp25sec-suite.cmd').write_bytes(fixtures.suite(args.role, args.mode, xp25_winlogon, args.provider, args.repeat).encode())
         Path('XP25Security.cmd').write_bytes(fixtures.STARTUP.encode())
         files[PROFILE + '/xp25sec-suite.cmd'] = out / 'xp25sec-suite.cmd'
         files[STARTUP] = out / 'XP25Security.cmd'
@@ -167,7 +191,8 @@ def launch(args):
     Path('inputs.json').write_text(json.dumps({
         'mode': args.mode, 'base': str(base), 'base_sha256': base_sha, 'regression_iso': str(iso),
         'regression_iso_sha256': iso_sha, 'staged': staged, 'recovery': recovery,
-        'role': args.role, 'kernel': args.kernel, 'ai_build': str(args.ai_build.resolve()) if args.ai_build else None, 'xp25_winlogon': xp25_winlogon, 'provider_checks': bool(args.provider),
+        'role': args.role, 'image': args.image, 'logons': logons, 'repeat': args.repeat, 'kernel': args.kernel,
+        'ai_probe': str(args.ai_probe.resolve()) if args.ai_probe else None, 'host_load': args.host_load, 'ai_build': str(args.ai_build.resolve()) if args.ai_build else None, 'xp25_winlogon': xp25_winlogon, 'provider_checks': bool(args.provider),
         'gateway_secret_scope': 'per-run test secret, isolated namespace only' if args.provider else None}, indent=2) + '\n')
     machine, accel, cpus = (('pc-i440fx-8.2', 'tcg,thread=single', '1') if args.mode == 'tcg' else
                             ('pc-i440fx-8.2,kernel-irqchip=on', 'kvm', '2' if args.mode == 'mp' else '1'))
@@ -184,6 +209,13 @@ def launch(args):
     if args.provider:
         wrapper += ['--gateway-clients', 'gateway-clients.json', '--mock-key', mock_key]
         logged += ['--gateway-clients', 'gateway-clients.json', '--mock-key', '<per-run test key>']
+    if args.host_load:
+        # Competing work on the host for the whole run, bounded in time; wait/fail end it.
+        load = [sys.executable, str(ROOT / 'vm/host_load.py'), '--io-dir', str(out / 'host-load'), '--cpus', str(args.host_load),
+                '--seconds', str(4 * 3600)]
+        with Path('host-load.log').open('w') as log:
+            loader = subprocess.Popen(load, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        lab.record({'argv': load, 'pid': loader.pid})
     with Path('namespace.log').open('w') as log:
         process = subprocess.Popen(wrapper, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     lab.record({'argv': logged, 'pid': process.pid})
@@ -232,6 +264,7 @@ def wait(args):
     logons = attempts = shots = 0
     sent_at, sent_results, next_shot = 0.0, -1, time.time() + 120
     ui_tries, next_ui = 0, 0.0
+    handled = -1
     outcome = None
     # One monitor connection for the whole wait, so no QMP event is missed.
     with lab.QMP() as q:
@@ -266,7 +299,44 @@ def wait(args):
                 lab.record({'ui_shutdown_keys_sent': ui_tries})
                 if ui_tries > 6:
                     outcome = 'ui_shutdown_not_accepted'
-            if inputs.get('xp25_winlogon'):
+            if inputs.get('logons'):
+                # One entry per interactive session, in order. The MSGINA dialog is known to be up and
+                # idle when the logon process has logged its visible password field after the last
+                # result; the account name is typed too, because the dialog offers the previous user.
+                events = winlogon_events(text)
+                sessions = events.count('session_interactive')
+                marks = {name: max((i for i, e in enumerate(events) if e == name), default=-1)
+                         for name in ('gina_dialog_edit_1503_enabled_1_visible_1', 'gina_logged_out_result', 'session_interactive')}
+                prompt = marks['gina_dialog_edit_1503_enabled_1_visible_1']
+                if sessions > logons:
+                    logons, attempts, handled = sessions, 0, -1
+                    lab.record({'session_interactive_number': sessions})
+                idle = prompt > marks['gina_logged_out_result'] and prompt > marks['session_interactive']
+                if idle and handled == prompt and time.time() - sent_at > 90 * scale:
+                    handled = -1                     # no result for the keys that were sent: they were lost
+                if idle and handled != prompt and sessions < len(inputs['logons']):
+                    user, password = inputs['logons'][sessions]
+                    if attempts:
+                        # A failed attempt leaves MSGINA's "could not log you on" box up: Esc closes it (or, if
+                        # there is none, cancels the dialog, which Winlogon then shows again).
+                        lab.key(q, 'esc')
+                        time.sleep(3 * scale)
+                    time.sleep(2 * scale)
+                    # MSGINA offers the account the suite named (DefaultUserName); only the password is typed.
+                    # After a logoff no field has the focus and letters act as the dialog's shortcuts, so the
+                    # password field is focused by its own shortcut first.
+                    lab.key(q, 'alt-p')
+                    time.sleep(0.5 * scale)
+                    for name in ('end', 'shift-home', 'delete'):
+                        lab.key(q, name)
+                    lab.type_text(q, password)
+                    lab.key(q, 'ret')
+                    attempts += 1
+                    handled, sent_at = prompt, time.time()
+                    lab.record({'logon_typed_for': user, 'session': sessions + 1, 'attempt': attempts})
+                    if attempts > 6:
+                        outcome = 'logon_keys_not_accepted'
+            elif inputs.get('xp25_winlogon'):
                 events = winlogon_events(text)
                 ready, interactive = events.count('core_ready'), events.count('session_interactive')
                 results = events.count('gina_logged_out_result')
@@ -299,6 +369,7 @@ def wait(args):
                 lab.screen(q, 'wait-' + outcome.split(':')[0])
             except Exception:
                 pass
+    stop_host_load()
     lab.checkpoint(stage='wait_' + outcome.split(':')[0], logons=logons)
     print(outcome)
     if outcome == 'guest_shutdown' and not args.no_finish:
@@ -331,9 +402,22 @@ def scan(args):
     raise SystemExit('scanner did not answer')
 
 
+def stop_host_load():
+    """Ends this run's host load (vm/host_load.py stops when its stop file appears) and keeps its record."""
+    directory = Path('host-load')
+    if directory.is_dir():
+        (directory / 'stop').write_text('stop\n')
+        for _ in range(120):
+            record = json.loads((directory / 'host-load.json').read_text())
+            if 'ended' in record:
+                break
+            time.sleep(1)
+
+
 def fail(args):
     out = RUNS / args.run
     os.chdir(out)
+    stop_host_load()
     record = {'reason': args.reason, 'utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'preserved': True}
     if Path('qmp.sock').exists():
         try:
@@ -357,6 +441,7 @@ def main():
     p = sub.add_parser('launch')
     p.add_argument('--name', required=True)
     p.add_argument('--mode', choices=('up', 'mp', 'tcg'), required=True)
+    p.add_argument('--image', choices=sorted(security_paths.IMAGES), help='boot a packaged hardened image (vm/security_paths.py)')
     p.add_argument('--base', type=Path)
     p.add_argument('--base-sha256')
     p.add_argument('--winlogon', type=Path, help='install this natively built XP25 Winlogon; the original is kept as recovery-winlogon.exe')
@@ -365,6 +450,9 @@ def main():
     p.add_argument('--ai-build', type=Path, help='build/ directory of a native XP25 AI collection to install over the image\'s AI binaries')
     p.add_argument('--role', choices=fixtures.ROLES, help='generate and stage the Startup fixture of this role (vm/security_fixtures.py)')
     p.add_argument('--build', type=Path, help='directory with XP25Sec.exe, XP25Audit.exe and security_probe.exe')
+    p.add_argument('--repeat', type=int, default=1, help='iterations of the repeated part of a role (ai-repeat)')
+    p.add_argument('--ai-probe', type=Path, help='a rebuilt ai_probe.exe instead of the frozen reference one')
+    p.add_argument('--host-load', type=int, metavar='CPUS', help='run vm/host_load.py (moderate defaults) with this many busy processes and a disk writer')
     p.add_argument('--stage', action='append')
     p.add_argument('--startup', type=Path, help='self-removing Startup fixture for the XP25 account')
     p.add_argument('--provider', action='store_true', help='run the XP25 gateway and the OpenAI test double in the namespace')

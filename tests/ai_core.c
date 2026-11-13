@@ -174,6 +174,19 @@ static void test_policy(void)
     CHECK(xp25_policy_service("RemoteRegistry", "start", NULL, 1, reason, sizeof(reason)) == XP25_PERM_DENIED);
     CHECK(xp25_policy_service("WebClient", "start", NULL, 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
     CHECK(xp25_policy_service("Themes", "restart", NULL, 0, reason, sizeof(reason)) == XP25_PERM_PRIVILEGED);
+    /* Without an administrator's policy a standard user gets the short list only: nothing that
+       carries the network or schedules work for the system. An administrator keeps the full list,
+       and can delegate a service to everyone explicitly. */
+    CHECK(xp25_policy_service("Dnscache", "stop", NULL, 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("Dhcp", "restart", "", 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("Schedule", "stop", NULL, 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("BITS", "start", NULL, 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("Dnscache", "stop", NULL, 1, reason, sizeof(reason)) == XP25_PERM_APPROVAL);
+    CHECK(xp25_policy_service("Dnscache", "restart", "Dnscache,Spooler", 0, reason, sizeof(reason)) == XP25_PERM_PRIVILEGED);
+    CHECK(xp25_policy_service("Spooler", "restart", "Dnscache", 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
+    CHECK(xp25_policy_service("AudioSrv", "restart", NULL, 0, reason, sizeof(reason)) == XP25_PERM_PRIVILEGED);
+    CHECK(xp25_policy_service("stisvc", "stop", NULL, 0, reason, sizeof(reason)) == XP25_PERM_PRIVILEGED);
+    CHECK(xp25_policy_service("SharedAccess", "stop", "SharedAccess", 0, reason, sizeof(reason)) == XP25_PERM_DENIED);
     CHECK(xp25_policy_process(1234, "cpuhog.exe", "terminate", reason, sizeof(reason)) == XP25_PERM_APPROVAL);
     CHECK(xp25_policy_process(600, "LSASS.EXE", "terminate", reason, sizeof(reason)) == XP25_PERM_DENIED);
     CHECK(xp25_policy_process(4, "System", "terminate", reason, sizeof(reason)) == XP25_PERM_DENIED);

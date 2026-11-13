@@ -30,7 +30,7 @@ TARGETS = {
                                'oleaut32', 'uuid', 'msvcrt']},
 }
 PROBE = REPO / 'tests/guest/security_probe.c'
-PROBE_LIBS = ['kernel32', 'advapi32', 'user32', 'netapi32', 'shell32', 'userenv', 'msvcrt']
+PROBE_LIBS = ['kernel32', 'advapi32', 'user32', 'netapi32', 'shell32', 'userenv', 'ws2_32', 'msvcrt']
 
 
 def digest(path):

@@ -283,6 +283,32 @@ It passes the same 62 guest cases under one-vCPU KVM, two-vCPU KVM and TCG in
 the hardened image ([record](security-regression.md)). Image-05 and the
 `XP25-AI` virtual machine still carry build 10.
 
+**Update, 2026-11-13 (Milestone 8.1, `xp25-security`): native builds 13 and 14.**
+Build 13 hardens the broker: it refuses restricted tokens, tokens with
+deny-only groups (the browser's containment) and guests; without an
+administrator's machine policy a standard user may only have `AudioSrv`,
+`Spooler`, `stisvc` and `Themes` started, stopped or restarted (administrators
+keep the list above; `XP25_CONFIG.service_allowlist` is now empty unless the
+machine policy sets it); the pipe is created once as its first instance and
+kept, users have no create-instance right, clients open it at identification
+level and refuse a pipe not owned by SYSTEM or Administrators; reads and writes
+are bounded to 5 s; the request allowance is per caller; the broker's audit
+file moved to `%SystemRoot%\XP25\Broker`. Build 14 fixes a RoverAI race found
+under host load: the background indexer saved before applying change
+notifications that had already arrived, and a forced re-index could be
+overwritten by its older listing; it now drains delivered changes first and,
+when another writer saved since its own last save, rescans before saving
+(`rover_watch_adopt_store`, exported by `xp25agent.dll`). Build 14
+(`.work/security81-20261112/ai-native-14/collect.json`): `xp25agent.dll`
+`458c088f1be0fa7b6586d77a7db11f089f80d7b7f93749009cbfc3b48e00de80`,
+`XP25Broker.exe` `7e157693a37ff76c9200f2158dd334b2c7d5b12fa1eca8002c190456e248a4ce`,
+`ClippyAI.exe` `f45299f1960be78aac0dd430ff56ec8001ffd63ecfd578d397ce3289c690ea04`,
+`RoverAI.exe` `4501cb0d35f202703d43954e762bfa0ccc258a6a813c553c6180d21c6442198e`,
+`RoverAIBand.dll` `ed6b9257e7051ae9041e8c6b7a790468f1cbb708e39c801b3af04037cca4e789`.
+The AI probe now waits for ClippyAI to finish each step it checks instead of
+sleeping for a fixed time. Results in the
+[8.1 record](security-regression.md#task-3--clippyai-and-roverai-stability).
+
 | Native build 10 artifact (`W/native-10/collect.json`) | SHA-256 |
 | --- | --- |
 | `xp25agent.dll` (153,600 bytes) | `1230582a847516ba83c0359411c5135c6a95be7a2efc492b36c3d7cab4fa312e` |

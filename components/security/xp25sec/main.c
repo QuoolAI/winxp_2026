@@ -412,6 +412,31 @@ static DWORD acl_pass(const SEC_ACL_RULE *rule, int action, ACL_PASS *pass, BOOL
     ZeroMemory(pass, sizeof(*pass));
     pass->rule = rule; pass->action = action;
     *root_exists = FALSE;
+    if (rule->kind == SEC_ACL_SERVICE) {
+        /* One object, and only its DACL: recorded once, then replaced by the rule's. */
+        char sddl[SEC_BACKUP_DATA_MAX];
+        BOOL others = FALSE;
+        DWORD used = (DWORD)lstrlenA(rule->root) + 1;
+        secw_wide(rule->root, root, 600);
+        error = secw_service_dacl(root, sddl, (int)(sizeof(sddl) - used), &others);
+        if (error == ERROR_SERVICE_DOES_NOT_EXIST) return ERROR_SUCCESS;
+        if (error) return error;
+        *root_exists = TRUE;
+        if (others) { ++pass->exposed; lstrcpynA(pass->first, rule->root, sizeof(pass->first)); }
+        if (action == 1 && !acl_record_find(rule->id, rule->root)) {
+            SEC_BACKUP_RECORD *r = backup_add(SEC_ITEM_ACL, rule->id);
+            if (!r) return ERROR_BUFFER_OVERFLOW;
+            CopyMemory(r->data, rule->root, used);
+            CopyMemory(r->data + used, sddl, (SIZE_T)lstrlenA(sddl));
+            r->size = used + (DWORD)lstrlenA(sddl);
+            r->present = 1;
+        } else if (action == 2) {
+            error = secw_service_dacl_set(root, rule->sddl);
+            if (error) return error;
+            ++pass->changed;
+        }
+        return ERROR_SUCCESS;
+    }
     if (rule->kind == SEC_ACL_TREE_REGISTRY || rule->kind == SEC_ACL_REPAIR_KEYS) {
         HKEY key;
         secw_wide(rule->root, root, 600);
@@ -456,6 +481,7 @@ static void acl_result(const char *command, const SEC_ACL_RULE *rule, const ACL_
     sec_json_string(&json, "item", "acl");
     sec_json_string(&json, "id", rule->id);
     if (rule->kind == SEC_ACL_TREE_REGISTRY || rule->kind == SEC_ACL_REPAIR_KEYS) wsprintfA(root, "HKLM\\%.500s", rule->root);
+    else if (rule->kind == SEC_ACL_SERVICE) wsprintfA(root, "service:%.500s", rule->root);
     else if (!sec_acl_root(rule, windows_dir, programs_dir, root, sizeof(root))) root[0] = 0;
     sec_json_string(&json, "root", root);
     sec_json_bool(&json, "present", exists);
@@ -857,7 +883,16 @@ static int rollback(const WCHAR *file)
             if (!rule || r->size >= SEC_BACKUP_DATA_MAX) { result("rollback", "acl", r->id, "failed", ERROR_INVALID_DATA); ++failed; continue; }
             r->data[r->size] = 0;
             if (!rule) error = ERROR_INVALID_DATA;
-            else if (rule->kind == SEC_ACL_TREE_REGISTRY || rule->kind == SEC_ACL_REPAIR_KEYS) {
+            else if (rule->kind == SEC_ACL_SERVICE) {
+                /* The record can only name the rule's own service, and only its DACL is written. */
+                error = sec_acl_in_scope(rule, path, "", "") ? ERROR_SUCCESS : ERROR_INVALID_DATA;
+                secw_wide(rule->root, wide, 600);
+                if (!error) error = secw_service_dacl_set(wide, sddl);
+                if (error == ERROR_SERVICE_DOES_NOT_EXIST) { result("rollback", "acl", path, "object_gone", 0); ++absent; }
+                else if (error) { result("rollback", "acl", path, "failed", error); ++failed; }
+                else { result("rollback", "acl", path, "restored", 0); ++changed; }
+                continue;
+            } else if (rule->kind == SEC_ACL_TREE_REGISTRY || rule->kind == SEC_ACL_REPAIR_KEYS) {
                 HKEY key = NULL;
                 error = sec_acl_in_scope(rule, path, "", "") && lstrlenA(path) < 580 ? ERROR_SUCCESS : ERROR_INVALID_DATA;
                 secw_wide(path, wide, 600);

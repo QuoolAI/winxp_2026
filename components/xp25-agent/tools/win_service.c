@@ -235,20 +235,53 @@ int tool_service_control(const XP25_TOOL *tool, const XP25_JNODE *args, XP25_BUF
     return xp25w_service_change(name, action, out);
 }
 
+/* The pipe must have been created by the system: its owner is SYSTEM or the Administrators group.
+   A pipe of the same name served by an ordinary process (possible only while the broker service is
+   not running) fails this, and nothing is sent to it. */
+static int broker_pipe_is_system(HANDLE pipe)
+{
+    BYTE buffer[512];
+    DWORD needed = 0;
+    PSID owner = NULL;
+    BOOL defaulted = FALSE;
+    if (!GetKernelObjectSecurity(pipe, OWNER_SECURITY_INFORMATION, (PSECURITY_DESCRIPTOR)buffer, sizeof(buffer), &needed) ||
+        !GetSecurityDescriptorOwner((PSECURITY_DESCRIPTOR)buffer, &owner, &defaulted) || !owner) return 0;
+    return IsWellKnownSid(owner, WinLocalSystemSid) || IsWellKnownSid(owner, WinBuiltinAdministratorsSid);
+}
+
 int xp25w_broker_call(const char *request_json, XP25_BUF *reply)
 {
     char buffer[16384];
-    DWORD got = 0;
+    DWORD got = 0, mode = PIPE_READMODE_MESSAGE, tries;
+    HANDLE pipe = INVALID_HANDLE_VALUE;
     XP25_JDOC doc;
     int ok;
-    if (!WaitNamedPipeW(XP25_BROKER_PIPE, 3000)) {
+    /* Identification only: the broker needs to know who is asking, never to act as the caller, and
+       a process that is not the broker must not be able to either. Opened without the right to add
+       pipe instances, which the broker does not grant. */
+    for (tries = 0; tries < 3 && pipe == INVALID_HANDLE_VALUE; ++tries) {
+        pipe = CreateFileW(XP25_BROKER_PIPE, GENERIC_READ | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
+                           SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, NULL);
+        if (pipe == INVALID_HANDLE_VALUE && (GetLastError() != ERROR_PIPE_BUSY || !WaitNamedPipeW(XP25_BROKER_PIPE, 10000))) break;
+    }
+    if (pipe == INVALID_HANDLE_VALUE) {
         xp25_result_error(reply, "broker_unavailable",
                           "This change needs administrator rights and the XP25 privileged broker service is not running.");
         return 0;
     }
-    if (!CallNamedPipeW(XP25_BROKER_PIPE, (void *)request_json, (DWORD)strlen(request_json), buffer,
-                        sizeof(buffer) - 1, &got, 60000))
-        return tool_win32_error(reply, "broker_failed", "The XP25 broker did not answer", GetLastError());
+    if (!broker_pipe_is_system(pipe)) {
+        CloseHandle(pipe);
+        xp25_result_error(reply, "broker_untrusted",
+                          "The XP25 broker pipe is not served by the system, so nothing was sent to it.");
+        return 0;
+    }
+    if (!SetNamedPipeHandleState(pipe, &mode, NULL, NULL) ||
+        !TransactNamedPipe(pipe, (void *)request_json, (DWORD)strlen(request_json), buffer, sizeof(buffer) - 1, &got, NULL)) {
+        DWORD error = GetLastError();
+        CloseHandle(pipe);
+        return tool_win32_error(reply, "broker_failed", "The XP25 broker did not answer", error);
+    }
+    CloseHandle(pipe);
     buffer[got] = 0;
     if (!xp25_json_parse(&doc, buffer, got) || doc.root->type != XP25_JOBJ) {
         xp25_json_free(&doc);

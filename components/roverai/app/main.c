@@ -141,6 +141,7 @@ static int background(void)
     watch = rover_watch_start(&settings, &index, &lock);
     rover_store_reconcile(&index, &settings, &lock, 300, &stats);
     LeaveCriticalSection(&lock);
+    rover_watch_adopt_store(watch);
     /* Message loop so logoff (WM_QUIT/end session) ends the indexer cleanly. */
     while (GetMessageW(&msg, NULL, 0, 0) > 0) DispatchMessageW(&msg);
     rover_watch_stop(watch);

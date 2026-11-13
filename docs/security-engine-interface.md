@@ -87,6 +87,7 @@ an assistant can key explanations on:
 | `service.baseline_deviation` | A service the baseline disables is enabled or running |
 | `network.firewall_off`, `network.legacy_listener` | Firewall state; a legacy service bound to a network address |
 | `acl.*` | A system file, XP25 object, service key or COM registration can be modified without administrator rights |
+| `acl.protection_service_controllable` | (Milestone 8.1) Someone other than SYSTEM and Administrators may stop, pause, reconfigure, re-secure or delete the firewall, Security Center or XP25 broker service; the finding carries the service's DACL |
 | `path.*`, `process.*` | Unquoted or user-writable program paths; service-account code from user-writable locations |
 | `autostart.*` | A logon/system start setting differs from its installed default, or a rarely used location is in use |
 | `config.added`, `config.changed`, `config.removed` | Difference from the reference snapshot (services, drivers, autostart entries, accounts, group members, user rights, startup files, tasks) |

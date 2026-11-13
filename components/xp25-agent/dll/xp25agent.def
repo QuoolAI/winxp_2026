@@ -169,6 +169,7 @@ EXPORTS
     rover_watch_start
     rover_watch_stop
     rover_watch_applied
+    rover_watch_adopt_store
     rover_query_run
     rover_results_free
     rover_results_json

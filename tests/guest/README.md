@@ -113,7 +113,7 @@ record](../../docs/xp25-winlogon-oem-branding.md) and [the VM configuration
 record](../../docs/xp25-vm-configuration.md).
 
 `build/security_build.py` builds `security_probe.exe` (Kernel32, User32, Advapi32,
-Netapi32, Shell32, UserEnv, msvcrt) together with the XP25 security tools.
+Netapi32, Shell32, UserEnv, Winsock 2, msvcrt) together with the XP25 security tools.
 `security_probe.exe admin [--hardened] [--xp25-winlogon] [--tools <dir>]` is run
 by the logged-on administrator. It creates a temporary ordinary account with a
 random password, runs itself as that account through the Secondary Logon
@@ -132,7 +132,32 @@ baseline-dependent cases are `observed`, not gates; a case whose object does
 not exist is `not_run`, never a pass. Records go to COM1 as
 `{"security_case":...,"context":"admin|ordinary_account|restricted_token"}`
 followed by `SECURITY_PROBE_COMPLETE context=... passes=N failures=M`; the exit
-code is the number of failures. `security_probe.exe power shutdown|restart`
+code is the number of failures. `security_probe.exe power shutdown|restart|logoff`
 calls `ExitWindowsEx`, because `shutdown.exe` does not work under the XP25
-Winlogon. Use it only through [`vm/security_lab.py`](../../vm/security_lab.py);
-see [the regression record](../../docs/security-regression.md).
+Winlogon. Since Milestone 8.1 the unprivileged contexts also try the firewall
+service, its driver, keys and device, `netsh`/`net stop`, 21 machine-wide
+autostart and hijack keys, system files and directories, the All Users
+folders, 13 broker requests and a takeover of the broker's pipe name; the
+administrator restarts anything an unprivileged case managed to stop. Further
+modes: `fwcheck <tag>` (the firewall as the guest sees it: service and driver
+running, start type, profile values, who may control the service);
+`listen <port> <dir> [broadcast]` (TCP banner and UDP echo, optionally a
+broadcast from its UDP port every half second; never answers its own
+broadcasts or echoes; stops when `<dir>\listener.stop` exists);
+`hostwait <label> [seconds]` (waits until the lab's observer has finished the
+observation the suite asked for with `XP25_HOST_REQUEST=<kind>:<label>`);
+`desktop <file> [--hardened] [slow]` (a standard user's own session: profile,
+shell identity, Luna, files, programs, IE, ClippyAI, RoverAI, broker, shutdown
+right; results to the file and, where the account may open it, COM1);
+`apps <file> [slow]` (the programs and games installed with Windows, each in
+a console of its own: window, responsiveness, close, crash detection through
+Windows Error Reporting); `aireset` (ends RoverAI and ClippyAI the way a user
+does between repeated AI suites). Use it only through
+[`vm/security_lab.py`](../../vm/security_lab.py); see
+[the regression record](../../docs/security-regression.md).
+
+`ai_probe.c` sends the requests whose completion it then checks with
+`SendMessageTimeoutW`, so a case is decided when ClippyAI has finished the step
+(minimize, restore, settings OK), not after a fixed sleep, and records each
+step's duration as an `ai_timing` note; `ai_probe.exe reset` ends ClippyAI and
+RoverAI.

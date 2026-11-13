@@ -2,8 +2,14 @@
    the RoverAI Explorer bar through their real windows, dialogs and command
    lines, and reports one JSON record per case to COM1 and C:\xp25\ai.
    No C runtime. Usage: ai_probe.exe suite [slow] | ai_probe.exe burn |
-   ai_probe.exe provider <secret> [slow] | ai_probe.exe dpapi | ai_probe.exe cpu.
-   Exit code = failed cases. */
+   ai_probe.exe provider <secret> [slow] | ai_probe.exe dpapi | ai_probe.exe cpu |
+   ai_probe.exe reset (ends ClippyAI and RoverAI between repeated suites).
+   Exit code = failed cases.
+
+   Requests that change ClippyAI's state are sent with SendMessageTimeout where
+   the window procedure completes them synchronously, so a case is decided
+   when the application has finished the step, not after a fixed sleep. The
+   time each step took is recorded as an ai_timing note. */
 #define WINVER 0x0501
 #define _WIN32_WINNT 0x0501
 #include <windows.h>
@@ -24,6 +30,7 @@
 #define IDC_AP_COMMAND 2003
 #define IDM_SETTINGS 3010
 #define IDM_TRAY_OPEN 3030
+#define IDM_EXIT 3003
 #define IDC_ST_PROVIDER 2201
 #define IDC_ST_ENDPOINT 2203
 #define IDC_ST_MODEL 2204
@@ -66,6 +73,33 @@ static void note(const char *name, const char *detail)
     char row[700];
     wsprintfA(row, "{\"ai_note\":\"%s\",\"detail\":\"%s\"}\r\n", name, detail);
     emit(row);
+}
+
+static void timing(const char *name, DWORD ms, const char *extra)
+{
+    char row[400];
+    wsprintfA(row, "{\"ai_timing\":\"%s\",\"ms\":%lu,\"detail\":\"%s\"}\r\n", name, ms, extra ? extra : "");
+    emit(row);
+}
+
+/* How long the window's thread takes to process one sent message right now: the responsiveness of
+   the application's user-interface thread at the moment a case starts. */
+static DWORD ui_latency(HWND window, DWORD limit)
+{
+    DWORD_PTR r;
+    DWORD t0 = GetTickCount();
+    if (!SendMessageTimeoutW(window, WM_NULL, 0, 0, SMTO_NORMAL, limit, &r)) return limit;
+    return GetTickCount() - t0;
+}
+
+/* Sends a message and waits until the window procedure has returned (bounded). */
+static BOOL send_sync(HWND window, UINT message, WPARAM wp, LPARAM lp, DWORD limit, DWORD *ms)
+{
+    DWORD_PTR r;
+    DWORD t0 = GetTickCount();
+    BOOL ok = SendMessageTimeoutW(window, message, wp, lp, SMTO_NORMAL, limit, &r) != 0;
+    *ms = GetTickCount() - t0;
+    return ok;
 }
 
 static void cat(WCHAR *dst, const WCHAR *a, const WCHAR *b) { lstrcpyW(dst, a); lstrcatW(dst, b); }
@@ -539,9 +573,19 @@ static void section_explorer(void)
         wsprintfA(detail, "%d items", n);
         report("explorer_roverai_search_results", n > 0 && item_named(list, L"report-q3.pdf") >= 0, detail);
         PostMessageW(cabinet, WM_COMMAND, CMD_SEARCH_BAR, 0);
-        Sleep(3000);
-        report("explorer_roverai_closes", !descendant(cabinet, L"XP25RoverAIPanel") ||
-               !IsWindowVisible(descendant(cabinet, L"XP25RoverAIPanel")), "");
+        {
+            /* Explorer hides the band when it has processed the command; wait for that (bounded). */
+            HWND band;
+            DWORD start = GetTickCount();
+            BOOL closed;
+            do {
+                Sleep(250);
+                band = descendant(cabinet, L"XP25RoverAIPanel");
+                closed = !band || !IsWindowVisible(band);
+            } while (!closed && GetTickCount() - start < 20000 * scale);
+            wsprintfA(detail, "after %lu ms", GetTickCount() - start);
+            report("explorer_roverai_closes", closed, detail);
+        }
     }
     PostMessageW(cabinet, WM_CLOSE, 0, 0);
     Sleep(4000);
@@ -816,17 +860,28 @@ static void section_handoff(void)
 
 static void section_tray(void)
 {
-    PostMessageW(clippy, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-    Sleep(2000);
-    report("clippy_minimizes_to_tray", !IsWindowVisible(clippy) && IsWindow(clippy), "");
-    PostMessageW(clippy, WM_COMMAND, IDM_TRAY_OPEN, 0);
-    Sleep(2000);
-    report("clippy_restores_from_tray", IsWindowVisible(clippy), "");
+    /* Minimizing runs entirely inside the window procedure (DefWindowProc minimizes, ClippyAI hides
+       the window on WM_SIZE): once the sent message returns, the result is final. The earlier
+       version posted the message and looked after a fixed 2 s; the recorded processing time shows
+       how long the step really takes on a loaded guest. */
+    DWORD latency = ui_latency(clippy, 60000 * scale), ms;
+    char detail[120];
+    BOOL done;
+    timing("clippy_ui_latency_before_tray", latency, "");
+    done = send_sync(clippy, WM_SYSCOMMAND, SC_MINIMIZE, 0, 60000 * scale, &ms);
+    wsprintfA(detail, "processed %d after %lu ms", done, ms);
+    timing("clippy_minimize_processed", ms, ms > 2000 ? "longer than the former fixed 2 s check" : "");
+    report("clippy_minimizes_to_tray", done && !IsWindowVisible(clippy) && IsWindow(clippy), detail);
+    done = send_sync(clippy, WM_COMMAND, IDM_TRAY_OPEN, 0, 60000 * scale, &ms);
+    wsprintfA(detail, "processed %d after %lu ms", done, ms);
+    timing("clippy_restore_processed", ms, ms > 2000 ? "longer than the former fixed 2 s check" : "");
+    report("clippy_restores_from_tray", done && IsWindowVisible(clippy), detail);
 }
 
 static BOOL configure(int provider, const WCHAR *endpoint, const WCHAR *secret)
 {
     HWND dlg;
+    timing("clippy_ui_latency_before_settings", ui_latency(clippy, 60000 * scale), "");
     PostMessageW(clippy, WM_COMMAND, IDM_SETTINGS, 0);
     dlg = wait_window(L"#32770", L"ClippyAI Settings", 20000);
     if (!dlg) return FALSE;
@@ -835,15 +890,34 @@ static BOOL configure(int provider, const WCHAR *endpoint, const WCHAR *secret)
     put_text(dlg, IDC_ST_MODEL, L"xp25-mock-model");
     put_text(dlg, IDC_ST_CLIENT, L"xp25");
     /* The key field is a password edit, which does not accept text from another
-       process; type it the way a user does, then confirm. */
+       process; type it the way a user does. The characters are posted, so they are
+       processed in order: confirm only when the field holds all of them. */
     {
         HWND key = GetDlgItem(dlg, IDC_ST_SECRET);
         const WCHAR *c;
+        DWORD start = GetTickCount(), length = 0, ms;
+        DWORD_PTR r;
+        BOOL processed;
+        char detail[200];
         for (c = secret; *c; ++c) PostMessageW(key, WM_CHAR, (WPARAM)*c, 1);
+        while (GetTickCount() - start < 60000 * scale) {
+            if (SendMessageTimeoutW(key, WM_GETTEXTLENGTH, 0, 0, SMTO_NORMAL, 5000, &r) && r == (DWORD_PTR)lstrlenW(secret)) { length = (DWORD)r; break; }
+            Sleep(100);
+        }
+        timing("settings_secret_typed", GetTickCount() - start, length == (DWORD)lstrlenW(secret) ? "" : "the field never held the whole key");
+        /* OK stores the key (Windows Data Protection or Credential Manager, both calls into LSA),
+           saves the settings and ends the dialog, all inside the window procedure. */
+        processed = send_sync(dlg, WM_COMMAND, IDOK, 0, 120000 * scale, &ms);
+        wsprintfA(detail, "processed %d", processed);
+        timing("settings_ok_processed", ms, ms > 1500 ? "longer than the former fixed 1.5 s check" : detail);
     }
-    PostMessageW(dlg, WM_COMMAND, IDOK, 0);
-    Sleep(1500);
-    if (IsWindow(dlg)) {
+    {
+        /* Accepted: the dialog goes away when its modal loop sees the end flag. Refused: it stays,
+           with the reason in its result field. */
+        DWORD start = GetTickCount();
+        while (IsWindow(dlg) && IsWindowVisible(dlg) && GetTickCount() - start < 30000 * scale) Sleep(100);
+    }
+    if (IsWindow(dlg) && IsWindowVisible(dlg)) {
         WCHAR why[400];
         char detail[400];
         take_text(dlg, IDC_ST_RESULT, why, 400);
@@ -925,6 +999,38 @@ static void section_provider(const WCHAR *secret)
     report("provider_restored_offline", configure(0, L"", L""), "");
 }
 
+/* Ends ClippyAI and RoverAI so that a repeated suite starts from a fresh process and an empty
+   transcript (a case decided from the transcript must not pass on text from an earlier round). */
+static void section_reset(void)
+{
+    HWND window;
+    DWORD pid = 0, ms;
+    HANDLE process;
+    char detail[120];
+    BOOL ended = TRUE;
+    while ((window = FindWindowW(L"XP25RoverAI", NULL)) != NULL) {
+        GetWindowThreadProcessId(window, &pid);
+        process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+        PostMessageW(window, WM_CLOSE, 0, 0);
+        if (process) { ended &= WaitForSingleObject(process, 30000 * scale) == WAIT_OBJECT_0; CloseHandle(process); }
+        else Sleep(1000);
+    }
+    window = FindWindowW(L"XP25ClippyAI", NULL);
+    if (window) {
+        GetWindowThreadProcessId(window, &pid);
+        process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+        send_sync(window, WM_COMMAND, IDM_EXIT, 0, 60000 * scale, &ms);
+        if (process) {
+            DWORD t0 = GetTickCount();
+            ended &= WaitForSingleObject(process, 60000 * scale) == WAIT_OBJECT_0;
+            timing("clippy_exit", GetTickCount() - t0 + ms, "");
+            CloseHandle(process);
+        }
+    }
+    wsprintfA(detail, "%s", ended ? "ended" : "a process did not end");
+    note("reset", detail);
+}
+
 static WCHAR *argv_at(int index)
 {
     int argc = 0;
@@ -950,7 +1056,8 @@ void WINAPI ProbeMain(void)
     cat(fixtures, docs, L"\\XP25AI-Fixtures");
     if ((arg2 && !lstrcmpiW(arg2, L"slow")) || (arg3 && !lstrcmpiW(arg3, L"slow"))) scale = 4;
     emit("AI_PROBE_STARTED\r\n");
-    if (mode && !lstrcmpiW(mode, L"cpu")) section_cpu();
+    if (mode && !lstrcmpiW(mode, L"reset")) section_reset();
+    else if (mode && !lstrcmpiW(mode, L"cpu")) section_cpu();
     else if (mode && !lstrcmpiW(mode, L"dpapi")) section_dpapi();
     else if (mode && !lstrcmpiW(mode, L"provider") && arg2) {
         clippy = wait_window(L"XP25ClippyAI", L"ClippyAI", 30000);

@@ -6,7 +6,7 @@
 #define XP25_SEC_CORE_H
 #include <stddef.h>
 
-#define SEC_BASELINE_VERSION 1UL
+#define SEC_BASELINE_VERSION 2UL        /* 2: Milestone 8.1 (scheduled-task directory, service objects) */
 
 /* Service start types as stored by the Service Control Manager. */
 #define SEC_START_AUTO 2UL
@@ -66,13 +66,15 @@ int sec_registry_dword_ok(const SEC_REGISTRY_RULE *rule, int present, unsigned l
 
 /* Access-control baseline. A REPAIR rule looks at each file directly in a
    system directory and resets only those an unprivileged or individual
-   account can modify; a TREE rule gives an XP25-owned directory or registry
-   tree one protected descriptor. %W% is the Windows directory, %P% Program
-   Files and %D% the system drive ("C:"). */
+   account can modify; a TREE rule gives a directory or registry tree one
+   protected descriptor; a SERVICE rule decides who may stop, pause,
+   reconfigure, re-secure or delete one service. %W% is the Windows
+   directory, %P% Program Files and %D% the system drive ("C:"). */
 #define SEC_ACL_REPAIR_FILES 1u     /* files directly in a directory */
 #define SEC_ACL_TREE_FILES 2u
 #define SEC_ACL_TREE_REGISTRY 3u
 #define SEC_ACL_REPAIR_KEYS 4u      /* every key below a registry key */
+#define SEC_ACL_SERVICE 5u          /* one service object: root is the service name, sddl its DACL */
 
 typedef struct {
     const char *id;
@@ -90,7 +92,8 @@ const SEC_ACL_RULE *sec_acl_rule(const char *id);
 int sec_acl_root(const SEC_ACL_RULE *rule, const char *windows, const char *programs, char *out, size_t size);
 /* 1 when path is the rule root or below it and has no "." or ".." component:
    a backup record can only name objects its rule covers. REPAIR rules cover
-   files directly in the root only, REPAIR_KEYS rules any key below the root. */
+   files directly in the root only, REPAIR_KEYS rules any key below the root,
+   SERVICE rules the named service alone. */
 int sec_acl_in_scope(const SEC_ACL_RULE *rule, const char *path, const char *windows, const char *programs);
 
 /* NT 5.1 audit categories (POLICY_AUDIT_EVENT_TYPE order) and the baseline

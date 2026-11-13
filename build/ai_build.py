@@ -164,7 +164,11 @@ def main():
     parser.add_argument('--toolchain', type=Path, required=True, help='directory with i686-w64-mingw32-* tools')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--probe', action='store_true', help='also build the guest test probe tests/guest/ai_probe.c')
+    parser.add_argument('--guest-modules', type=Path, help='WINDOWS/system32 extracted from the image the binaries are for')
     args = parser.parse_args()
+    if args.guest_modules:
+        global GUEST_MODULES
+        GUEST_MODULES = args.guest_modules.resolve()
     out = args.output.resolve()
     if not out.is_relative_to(REPO / '.work'):
         parser.error('output must be a fresh .work/ directory')
