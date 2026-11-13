@@ -169,6 +169,30 @@ Guest testing uses `vm/security_lab.py` (`launch --role ... | wait | scan | fail
   focused field. `net user /add` asks a question for passwords over 14 characters.
 - `xp_lab.py screen` cannot run while `security_lab.py wait` holds the run's QMP socket.
 
+## Historical CVE remediation (`components/cve`, Milestone 8.2)
+
+Source-level fixes for historical Windows XP CVEs live as unified diffs in
+`components/cve/` with `patches.json` recording each original file's SHA-256.
+`build/cve_source.py` applies them exactly to disposable copies (the reference tree is
+never written) and `extract_function()` pulls a function verbatim from either tree for
+the host tests. `tests/test_cve.py` + `tests/cve/*.c` compile the real vulnerable
+functions with AddressSanitizer: the original must be caught out of bounds, the patched
+code bounded, valid inputs unchanged (`cc -fshort-wchar` for 16-bit `WCHAR`; `nt_shim.h`
+supplies the NT types). Native rebuilds go through `build/prepare_cve.py` →
+`build/native-cve-build.cmd` → `vm/native_build_run.py` → `build/cve_collect_native.py`,
+with a **control** build (same dirs, unchanged source) so a control-vs-patched diff is the
+patch alone; `build/cve_compare_builds.py` checks a build reproduces the installed binary
+(`reproduce`) and, by symbol (reading PDB 2.00 publics), that only the patched functions
+changed (`symbols`). The one installed fix (MS04-011 in `lsasrv.dll`) is packaged by
+`build/cve_package_image.py` into `XP25-CVE-Hardened-8.2.qcow2` (offline `lsasrv.dll`
+replacement, NTFS security descriptor preserved) and verified by the `cve` lab role
+(`vm/security_fixtures.py`/`security_results.py`). Only `lsasrv.dll` is source-built and
+reachable; MS08-067/MS03-026 are fixed at source but their installed binaries are already
+patched SP3 builds, so they are not installed. See `docs/historical-cve-audit.md` and
+`docs/historical-cve-remediation.md`. On this XP workstation SKU the DsRole promotion
+request returns ERROR_NOT_SUPPORTED before logging, so the MS04-011 overflow is not
+runtime-reachable through that API; it is proven and fixed at the source/host level.
+
 The rest of the repo is build/VM tooling around the reference tree: `build/inventory.py`,
 `stage.py` and `attempt.py` (hashed inventory, disposable source copy, protected native
 launch), `build/onecore.py` (pinned One-Core-API forwarder experiment, `onecore.lock.json`),

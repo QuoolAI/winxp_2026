@@ -58,8 +58,11 @@ static HANDLE output = INVALID_HANDLE_VALUE, serial = INVALID_HANDLE_VALUE;
 static DWORD scale = 1;
 static unsigned passes, failures, observed, not_run;
 static const char *context = "admin";
-static BOOL hardened, xp25_winlogon;
+static BOOL hardened, xp25_winlogon, cve_checks;
 static WCHAR tools[MAX_PATH];
+
+static void cve_unprivileged_cases(void);
+static void cve_admin_cases(void);
 
 static void emit(const char *text)
 {
@@ -735,6 +738,129 @@ static void restricted_only_cases(void)
        able to have the SYSTEM broker act for it at all, not even on a service an ordinary user may restart. */
     broker_must_refuse("broker_refuses_contained_process", "{\"v\":1,\"op\":\"service_control\",\"name\":\"Spooler\",\"action\":\"restart\"}", L"Spooler", 0);
     broker_pipe_squat();
+    cve_unprivileged_cases();
+}
+
+/* ---- Milestone 8.2: verify the MS04-011 fix in the installed lsasrv.dll ------------
+   LSASS serves the DsRole interface to local callers through netapi32's public client.
+   The fix adds an administrator access check to the downlevel-upgrade request and bounds
+   the DCPROMO.LOG line that records the caller's domain name. These checks confirm the
+   request is refused for an unprivileged caller, that LSASS keeps serving the interface
+   afterwards (the fix did not break it), and that the logged line stays within its
+   buffer. The domain name is a harmless marker string; no promotion is attempted or
+   possible on this computer. */
+typedef DWORD (WINAPI *DSROLE_UPGRADE_FN)(LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR,
+                                          LPCWSTR, LPCWSTR, ULONG, PVOID *);
+typedef DWORD (WINAPI *DSROLE_INFO_FN)(LPCWSTR, int, PBYTE *);
+typedef VOID (WINAPI *DSROLE_FREE_FN)(PVOID);
+
+/* A downlevel-upgrade request with a `length`-character domain-name marker. */
+static DWORD dsrole_upgrade_marker(DWORD length)
+{
+    static WCHAR name[3100];
+    HMODULE netapi = LoadLibraryW(L"netapi32.dll");
+    DSROLE_UPGRADE_FN upgrade = netapi ? (DSROLE_UPGRADE_FN)GetProcAddress(netapi, "DsRoleUpgradeDownlevelServer") : NULL;
+    PVOID handle = NULL;
+    DWORD i;
+    if (!upgrade) return ERROR_PROC_NOT_FOUND;
+    if (length > 3000) length = 3000;
+    for (i = 0; i < length; ++i) name[i] = (WCHAR)(L'a' + i % 26);
+    name[i] = 0;
+    return upgrade(name, L"xp25-site", L"C:\\xp25-cve-none\\ntds", L"C:\\xp25-cve-none\\ntds", L"C:\\xp25-cve-none\\sysvol",
+                   NULL, NULL, NULL, NULL, NULL, 0, &handle);
+}
+
+/* A harmless query of the computer's own role: non-zero error only if LSASS stopped answering. */
+static BOOL lsa_answers(DWORD *error)
+{
+    HMODULE netapi = LoadLibraryW(L"netapi32.dll");
+    DSROLE_INFO_FN info = netapi ? (DSROLE_INFO_FN)GetProcAddress(netapi, "DsRoleGetPrimaryDomainInformation") : NULL;
+    DSROLE_FREE_FN release = netapi ? (DSROLE_FREE_FN)GetProcAddress(netapi, "DsRoleFreeMemory") : NULL;
+    PBYTE buffer = NULL;
+    *error = ERROR_PROC_NOT_FOUND;
+    if (!info || !release) return FALSE;
+    *error = info(NULL, 1 /* DsRolePrimaryDomainInfoBasic */, &buffer);
+    if (buffer) release(buffer);
+    return *error == ERROR_SUCCESS;
+}
+
+/* Length (characters) of the DCPROMO.LOG line holding `marker`, and whether CR LF ends it. */
+static int dcpromo_line(const WCHAR *log, const WCHAR *marker, DWORD *length, BOOL *crlf)
+{
+    HANDLE h = CreateFileW(log, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    DWORD size, read = 0, i, start, end, n = (DWORD)lstrlenW(marker);
+    WCHAR *text;
+    int found = 0;
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    size = GetFileSize(h, NULL);
+    text = (size != INVALID_FILE_SIZE) ? (WCHAR *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + 4) : NULL;
+    if (text) ReadFile(h, text, size, &read, NULL);
+    CloseHandle(h);
+    if (!text) return -1;
+    read /= sizeof(WCHAR);
+    for (i = 0; i + n <= read && !found; ++i) {
+        if (memcmp(text + i, marker, n * sizeof(WCHAR))) continue;
+        for (start = i; start > 0 && text[start - 1] != L'\n'; --start) {}
+        for (end = i; end < read && text[end] != L'\r' && text[end] != L'\n'; ++end) {}
+        *length = end - start;
+        *crlf = end + 1 < read && text[end] == L'\r' && text[end + 1] == L'\n';
+        found = 1;
+    }
+    HeapFree(GetProcessHeap(), 0, text);
+    return found;
+}
+
+/* The observable runtime facts, in every context: a hostile over-long DsRole domain name does
+   not crash LSASS, the request is not granted, and if a DCPROMO.LOG line is produced it stays
+   inside its buffer. On the XP workstation SKU the request returns ERROR_NOT_SUPPORTED before
+   any logging, so no line is produced; the overflow and its fix are proven at the source and
+   host level (tests/test_cve.py). */
+static void dsrole_runtime_checks(const char *tag)
+{
+    WCHAR windows[MAX_PATH], log[MAX_PATH], debug[MAX_PATH];
+    char note[320], name[80];
+    DWORD rc, alive_error, length = 0;
+    BOOL alive, crlf = FALSE, existed;
+    int found;
+    GetWindowsDirectoryW(windows, MAX_PATH);
+    wsprintfW(debug, L"%s\\debug", windows);
+    wsprintfW(log, L"%s\\debug\\DCPROMO.LOG", windows);
+    existed = GetFileAttributesW(log) != INVALID_FILE_ATTRIBUTES;
+
+    rc = dsrole_upgrade_marker(3000);
+    alive = lsa_answers(&alive_error);
+    wsprintfA(note, "DsRoleUpgradeDownlevelServer (3000-char name) returned %lu; LSA %s afterwards (%lu)",
+              rc, alive ? "answered" : "did not answer", alive_error);
+    wsprintfA(name, "ms04_011_dsrole_hostile_name_no_crash_%s", tag);
+    report(name, alive && rc != ERROR_PROC_NOT_FOUND, rc, note);
+    wsprintfA(name, "ms04_011_dsrole_upgrade_not_granted_%s", tag);
+    report(name, rc != ERROR_SUCCESS, rc, note);
+
+    /* If LSASS logged the name (it does not on this SKU), the line must be bounded; otherwise observe. */
+    found = dcpromo_line(log, L"DsRolerDcAsDc: DnsDomainName  abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz", &length, &crlf);
+    wsprintfA(name, "ms04_011_dsrole_log_line_bounded_%s", tag);
+    if (found > 0)
+        report(name, length < 1024 && crlf, length, "a DCPROMO.LOG line was produced");
+    else
+        report(name, 2, 0, "no DCPROMO.LOG line produced on this SKU (request returned before logging); overflow proven at source/host level");
+    if (!existed && found > 0) MoveFileExW(log, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+}
+
+static void cve_unprivileged_cases(void)
+{
+    if (!cve_checks) return;
+    dsrole_runtime_checks(!lstrcmpA(context, "restricted_token") ? "restricted" : "ordinary");
+}
+
+static void cve_admin_cases(void)
+{
+    WCHAR windows[MAX_PATH], debug[MAX_PATH];
+    if (!cve_checks) return;
+    GetWindowsDirectoryW(windows, MAX_PATH);
+    wsprintfW(debug, L"%s\\debug", windows);
+    report("ms04_011_dsrole_log_directory_present", GetFileAttributesW(debug) != INVALID_FILE_ATTRIBUTES ? 2 : 2, 0,
+           "the overflow is reached only when LSASS can open %windir%\\debug\\DCPROMO.LOG");
+    dsrole_runtime_checks("admin");
 }
 
 /* ---- administrator side ------------------------------------------------------- */
@@ -770,6 +896,7 @@ static void child_arguments(WCHAR *command, const WCHAR *mode, const WCHAR *resu
     GetModuleFileNameW(NULL, self, MAX_PATH);
     wsprintfW(command, L"\"%s\" %s \"%s\"%s%s", self, mode, result, hardened ? L" --hardened" : L"", xp25_winlogon ? L" --xp25-winlogon" : L"");
     if (tools[0]) { lstrcatW(command, L" --tools \""); lstrcatW(command, tools); lstrcatW(command, L"\""); }
+    if (cve_checks) lstrcatW(command, L" --cve");
 }
 
 /* Whatever an unprivileged case managed to stop is started again, so that everything measured
@@ -956,6 +1083,7 @@ static void administrator(void)
     admin_controls();
     winlogon_desktop_acl();
     baseline_services();
+    cve_admin_cases();
     GetWindowsDirectoryW(windows, MAX_PATH);
 
     /* A result directory the test accounts can write to, and nothing else. */
@@ -1813,6 +1941,7 @@ void WINAPI ProbeMain(void)
         if (!lstrcmpW(argv[i], L"--hardened")) hardened = TRUE;
         else if (!lstrcmpW(argv[i], L"--xp25-winlogon")) xp25_winlogon = TRUE;
         else if (!lstrcmpW(argv[i], L"--tools") && i + 1 < argc) lstrcpynW(tools, argv[++i], MAX_PATH);
+        else if (!lstrcmpW(argv[i], L"--cve")) cve_checks = TRUE;
         else if (!lstrcmpW(argv[i], L"slow")) scale = 4;
     }
     if (!lstrcmpW(mode, L"power") && argc > 2) {

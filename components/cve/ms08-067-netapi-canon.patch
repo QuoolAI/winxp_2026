@@ -1,0 +1,39 @@
+--- a/ds/netapi/netlib/canon.c
++++ b/ds/netapi/netlib/canon.c
+@@ -170,8 +170,9 @@
+     if (ARGUMENT_PRESENT(PathPrefix)) {
+         prefixLen = STRLEN(PathPrefix);
+         if (prefixLen) {
+-            // Make sure we don't overrun our buffer
+-            if (prefixLen > MAX_PATH*2 ) {
++            // Make sure we don't overrun our buffer: leave room for the
++            // separator that may be appended below and the terminator
++            if (prefixLen > MAX_PATH*2 - 1) {
+                 return ERROR_INVALID_NAME;
+             }
+             STRCPY(pathBuffer, PathPrefix);
+@@ -505,7 +506,13 @@
+                         break;
+                     }
+                     ptr = lastSlash = previousLastSlash;
+-                    previousLastSlash = BackUpPath(Path, ptr - 1);
++
++                    //
++                    // The component removed may have started at the first
++                    // character: there is no earlier separator then, and the
++                    // search must not start before the buffer (MS08-067).
++                    //
++                    previousLastSlash = (ptr > Path) ? BackUpPath(Path, ptr - 1) : NULL;
+                 }
+             } else if (nextCh == TCHAR_BACKSLASH) {
+                 LPTSTR  src = lastSlash ? ptr + 1 : ptr + 2;
+@@ -553,6 +560,9 @@
+ --*/
+ 
+ {
++    if (Path < Stopper) {
++        return NULL;
++    }
+     while ((*Path != TCHAR_BACKSLASH) && (Path != Stopper)) {
+         --Path;
+     }

@@ -38,7 +38,7 @@ WORK_FILES = {
                  'audit-rolled-back'],
     'regression': [], 'image-install': [],
     'firewall': ['verify-fw-boot1', 'verify-fw-boot2'],
-    'ai-repeat': [], 'image-upgrade': [], 'apps': ['apps-admin'],
+    'ai-repeat': [], 'image-upgrade': [], 'apps': ['apps-admin'], 'cve': [],
     'standard-user': ['std-desktop-1', 'std-apps-1', 'std-desktop-2'],
 }
 FIREWALL_TEXT = ['fw-sc-qc', 'fw-sc-sdshow', 'fw-sc-ipnat-qc', 'fw-sc-query-boot1', 'fw-sc-ipnat-boot1', 'fw-state-boot1', 'fw-config-boot1',
@@ -465,6 +465,25 @@ def main():
         gate('service_start_types_restored', original and original == current,
              {name: (original.get(name), current.get(name)) for name in original if original.get(name) != current.get(name)})
         gate('remote_registry_works_again', marker('REGSVC_PROBE_EXIT') == [0])
+
+    if role == 'cve':
+        # The login gate (xp25_winlogon_logon_each_boot, above) already proves the rebuilt lsasrv.dll
+        # authenticates. These gates confirm the MS04-011 fix in that installed binary.
+        probe = re.findall(r'SECURITY_PROBE_COMPLETE context=(\w+) passes=(\d+) failures=(\d+) observed=(\d+) not_run=(\d+)', serial)
+        gate('security_probe_administrator', any(p[0] == 'admin' and p[2] == '0' and int(p[1]) >= 30 for p in probe) and
+             marker('XP25_SEC_PROBE_EXIT') == [0], probe)
+        gate('security_probe_ordinary_account', any(p[0] == 'ordinary_account' and p[2] == '0' and int(p[1]) >= 60 for p in probe), probe)
+        gate('security_probe_restricted_token', any(p[0] == 'restricted_token' and p[2] == '0' and int(p[1]) >= 60 for p in probe), probe)
+        cve_cases = [json.loads(line[line.index('{'):]) for line in lines
+                     if '"security_case"' in line and 'ms04_011' in line]
+        failed = [(c['security_case'], c['context'], c.get('note', '')[:70]) for c in cve_cases if c.get('status') == 'fail']
+        # The hostile over-long DsRole name does not crash LSASS and is not granted. The privileged
+        # path (admin) and the browser-containment boundary (restricted token) must both show it; the
+        # ordinary-account case is the same boundary and is included when the seclogon child reports it.
+        for stem in ('ms04_011_dsrole_hostile_name_no_crash_', 'ms04_011_dsrole_upgrade_not_granted_'):
+            passed = {c['security_case'][len(stem):] for c in cve_cases if c['security_case'].startswith(stem) and c.get('status') == 'pass'}
+            gate('cve_' + stem.rstrip('_'), {'admin', 'restricted'} <= passed, sorted(passed))
+        gate('ms04_011_no_failed_cve_case', not failed, failed[:6])
 
     record = {'run': args.run, 'role': role, 'mode': mode, 'kernel': inputs.get('kernel'), 'base_sha256': inputs['base_sha256'],
               'staged': {target: item['sha256'] for target, item in inputs['staged'].items()},

@@ -1,0 +1,51 @@
+{
+ "source_root": "Source/XPSP1/NT",
+ "note": "Each patch changes only the files listed; the hashes are those of the audited 5.1.2600.1106 originals. build/cve_source.py applies them exactly to staged copies; the reference tree is never written.",
+ "patches": [
+  {
+   "id": "ms04-011-dsrole-log",
+   "bulletin": "MS04-011",
+   "cve": "CVE-2003-0533",
+   "title": "LSASS DsRole log line overflow; unauthenticated DsRolerUpgradeDownlevelServer",
+   "binary": "lsasrv.dll",
+   "build_dirs": ["ds\\security\\dsrole\\server", "ds\\security\\base\\lsa\\server\\dsdll"],
+   "outputs": ["ds\\security\\base\\lsa\\server\\dsdll\\obj\\i386\\lsasrv.dll", "ds\\security\\base\\lsa\\server\\dsdll\\obj\\i386\\lsasrv.pdb"],
+   "patch": "ms04-011-dsrole-log.patch",
+   "files": {
+    "ds/security/dsrole/server/dispatch.c": "7a38a7410aeb34cee696675de71f12b4e640867f113812215ece412f50bc2612",
+    "ds/security/dsrole/server/log.c": "ac54d7a75f86f4932455e2c4b4b6a8489b5a8e387d3f69ee2fb2cc8c64660935"
+   }
+  },
+  {
+   "id": "ms08-067-netapi-canon",
+   "bulletin": "MS08-067",
+   "cve": "CVE-2008-4250",
+   "title": "netapi32 CanonicalizePathName path-traversal out-of-bounds pointer",
+   "binary": "netapi32.dll (via netlib.lib)",
+   "build_dirs": ["ds\\netapi\\netlib"],
+   "outputs": ["ds\\netapi\\netlib\\obj\\i386\\netlib.lib"],
+   "install": false,
+   "install_note": "The installed netapi32.dll is the Service Pack 3 binary 5.1.2600.6260, already past MS08-067; a 1106-era rebuild would regress its other fixes. The fix is verified at the source and netlib.lib level; it is not installed. Relinking the full netapi32.dll needs ds\\lib\\dsrole.lib, which is not in the frozen build tree.",
+   "patch": "ms08-067-netapi-canon.patch",
+   "files": {
+    "ds/netapi/netlib/canon.c": "88f3ff44bb07f643cb3dfcad9b167867b9add61ca8a886f59ce5495e2a1f2c08"
+   }
+  },
+  {
+   "id": "ms03-026-rpcss-getmachinename",
+   "bulletin": "MS03-026",
+   "cve": "CVE-2003-0352",
+   "title": "RPCSS DCOM activation GetMachineName UNC server-name stack overflow",
+   "binary": "rpcss.dll (via olescm.lib)",
+   "build_dirs": ["com\\ole32\\dcomss\\olescm\\daytona", "com\\ole32\\dcomss\\wrapper\\daytona"],
+   "outputs": ["com\\ole32\\dcomss\\wrapper\\daytona\\obj\\i386\\rpcss.dll"],
+   "install": false,
+   "install_note": "Verified at the source and host level only. The installed rpcss.dll is the Service Pack 3 binary 5.1.2600.5755, already past MS03-026; a 1106-era rebuild would regress its other fixes. A native rpcss.dll rebuild (olescm + wrapper) is proposed for Milestone 8.3.",
+   "native_build": false,
+   "patch": "ms03-026-rpcss-getmachinename.patch",
+   "files": {
+    "com/ole32/dcomss/olescm/actmisc.cxx": "46139cd7723524e23bb8a59889089053afb3665967933809bb999eed5738069e"
+   }
+  }
+ ]
+}

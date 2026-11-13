@@ -2,6 +2,33 @@
 
 ## Current checkpoint
 
+2026-11-13, Milestone 8.2 — historical Windows XP CVE audit and source-level
+remediation (`xp25-cve`, from Milestone 8.1 `a90f3fa80`): **all seven target
+vulnerability groups mapped and classified
+([audit](historical-cve-audit.md)); three confirmed source vulnerabilities fixed
+and proven, one installed.** Evidence root `.work/cve82-20261112/` (`W82`).
+**Installed fix — MS04-011 / CVE-2003-0533 (LSASS DsRole):** the image's
+`lsasrv.dll` is the 1106 source-built binary, and its `DsRolepDebugDumpRoutine`
+overflows a 1024-WCHAR stack buffer with a caller-supplied domain name logged
+before any access check. Fixed (bounded `_vsnwprintf`; `DsRolepCheckPromoteAccess`
+before logging), rebuilt, verified to differ from an unpatched control build only
+in the three patched functions, and installed in the new image
+`XP25-CVE-Hardened-8.2.qcow2` (SHA-256 `5a84781f3adee8861f8b7e3cd5b57ee11778e87a3b7683111ebf9e31ba80eada`), upgraded from the unchanged
+Milestone 8.1 image. The full regression (Winlogon auth, Explorer/Luna,
+ClippyAI/RoverAI 55 + 7, firewall, programs) and the MS04-011 guest checks pass on
+the patched binary under one-vCPU KVM, two-vCPU KVM and TCG.
+**Source-fixed, not installed (installed binary already a patched Service Pack 3
+build):** MS08-067 / CVE-2008-4250 (`netapi32` `CanonicalizePathName` read
+underflow, fixed and compiled in `netlib.lib`) and MS03-026 / CVE-2003-0352
+(`rpcss` `GetMachineName` stack overflow, fixed and host-proven; native rebuild
+proposed for 8.3). Each fix has a host test that AddressSanitizer catches on the
+original and passes on the patched code (16 tests, `tests/test_cve.py`).
+**Documented, deferred to 8.3:** CVE-2019-0708/BlueKeep (binary-only + RDP
+disabled), MS17-010/EternalBlue (binary-only, unloadable, SMB disabled),
+MS10-046 (installed `shell32` already patched), MS14-064 (no source, only a stub).
+No existing baseline protection was weakened; the parent 8.1 image and `Source/`
+are unchanged. [audit](historical-cve-audit.md) · [remediation](historical-cve-remediation.md)
+
 2026-11-12, `XP25-Security-8.1` in virt-manager: a persistent `qemu:///system`
 VM on a standalone reflink copy of the accepted 8.1 image (copy hashed
 `501c7986…fda4`), lab hardware profile (1 vCPU, 512 MiB), `XP25-Isolated`

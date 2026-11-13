@@ -1,0 +1,20 @@
+--- a/com/ole32/dcomss/olescm/actmisc.cxx
++++ b/com/ole32/dcomss/olescm/actmisc.cxx
+@@ -184,8 +184,16 @@
+ 
+     pwszServerName = wszMachineName;
+ 
+-    while ( *pwszTemp != L'\\' )
++    //
++    // Copy the server name out of the UNC path, but never past the end of
++    // wszMachineName (MS03-026).  A name longer than a legal computer name, or
++    // one with no terminating backslash, is rejected instead of overflowing.
++    //
++    while ( *pwszTemp != L'\\' &&
++            pwszServerName < wszMachineName + MAX_COMPUTERNAME_LENGTH )
+         *pwszServerName++ = *pwszTemp++;
++    if ( *pwszTemp != L'\\' )
++        return CO_E_BAD_PATH;
+     *pwszServerName = 0;
+ 
+ #ifdef DFSACTIVATION

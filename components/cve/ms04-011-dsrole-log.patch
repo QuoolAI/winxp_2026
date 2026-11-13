@@ -1,0 +1,81 @@
+--- a/ds/security/dsrole/server/dispatch.c
++++ b/ds/security/dsrole/server/dispatch.c
+@@ -1829,6 +1829,17 @@
+ 
+     }
+ 
++    //
++    // Promoting a downlevel server is an administrator's operation, like
++    // the other promotion requests: check the caller before anything it
++    // supplied is logged or acted on (MS04-011).
++    //
++    Win32Err = DsRolepCheckPromoteAccess();
++    if ( ERROR_SUCCESS != Win32Err ) {
++
++        goto DsRolepUpgradeError;
++    }
++
+     DsRolepInitializeLog();
+ 
+     DsRolepLogPrint(( DEB_TRACE,
+--- a/ds/security/dsrole/server/log.c
++++ b/ds/security/dsrole/server/log.c
+@@ -34,6 +34,7 @@
+ #include <nspapi.h>
+ #include <dsgetdcp.h>
+ #include <lmremutl.h>
++#include <stdio.h>
+ 
+ #define UNICODE_BYTE_ORDER_MARK 0xFEFF
+ 
+@@ -362,6 +363,8 @@
+ 
+     WCHAR OutputBuffer[DsRolepDebugDumpRoutine_BUFFERSIZE];
+     ULONG length;
++    ULONG remaining;
++    int formatted;
+     DWORD BytesWritten;
+     SYSTEMTIME SystemTime;
+     static BeginningOfLine = TRUE;
+@@ -413,9 +416,29 @@
+     //
+     // Put a the information requested by the caller onto the line
+     //
+-    length += (ULONG) wvsprintfW(&OutputBuffer[length],
+-                                 Format, 
+-                                 arglist);
++    // wvsprintfW limits its own output to 1024 characters wherever it
++    // starts writing, so after the prolog caller-supplied text could run
++    // past the end of OutputBuffer (MS04-011).  Bound the text by the
++    // space that is left, keeping two characters for the "\r\n"
++    // conversion below and one for the terminator.
++    //
++    ASSERT( length + 3 < DsRolepDebugDumpRoutine_BUFFERSIZE );
++    remaining = DsRolepDebugDumpRoutine_BUFFERSIZE - length - 3;
++    formatted = _vsnwprintf( &OutputBuffer[length],
++                             remaining,
++                             Format,
++                             arglist );
++    if ( formatted < 0 || (ULONG) formatted > remaining ) {
++
++        //
++        // Truncated: keep what fits and end the line there.
++        //
++        formatted = (int) remaining;
++        OutputBuffer[length + remaining - 1] = L'\n';
++    }
++    length += (ULONG) formatted;
++    OutputBuffer[length] = L'\0';
++
+     BeginningOfLine = (length > 0 && OutputBuffer[length-1] == L'\n' );
+     if ( BeginningOfLine ) {
+ 
+@@ -425,7 +448,7 @@
+         length++;
+     }
+ 
+-    ASSERT( length <= sizeof( OutputBuffer ) / sizeof( WCHAR ) );
++    ASSERT( length < sizeof( OutputBuffer ) / sizeof( WCHAR ) );
+ 
+     //
+     // Grab the lock

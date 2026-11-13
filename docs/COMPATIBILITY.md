@@ -6,6 +6,25 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Historical CVE remediation (Milestone 8.2) checkpoint, 2026-11-13
+
+Image `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…eada`): the Milestone 8.1 image with the
+rebuilt `lsasrv.dll` that fixes MS04-011 (CVE-2003-0533). Evidence root
+`.work/cve82-20261112/`. Only `lsasrv.dll` changed from the parent.
+
+| Test | 1 vCPU KVM | 2 vCPU KVM | TCG |
+| --- | --- | --- | --- |
+| Cold boot, XP25 Winlogon logon, `licdll` admission, Explorer identity (patched lsasrv.dll authenticates) | Pass | Pass | Pass |
+| MS04-011 DsRole: hostile over-long name does not crash LSASS; upgrade not granted (`cve82-verify-*`) | Pass | Pass | Pass |
+| Full regression: AI 55/0 + 7/0, compatibility suite, firewall, programs (`cve82-proof-up-01`) | Pass | Not re-run (same binary as UP) | Not re-run |
+| MS04-011 overflow reachable at runtime through the DsRole API | No — the request returns ERROR_NOT_SUPPORTED on this workstation SKU before logging; the overflow is proven and fixed at the source/host level | — | — |
+
+No compatibility change from Milestone 8.1: the fix is a bounds check plus an
+access check inside LSASS and does not alter any interface behaviour for a
+legitimate caller. Not tested: real networks and hardware, domain promotion
+(unsupported on this SKU), the deferred CVEs. [Audit](historical-cve-audit.md) ·
+[remediation](historical-cve-remediation.md).
+
 ## Security baseline 8.1 (Milestone 8.1) checkpoint, 2026-11-13
 
 Image `XP25-Security-Baseline-8.1.qcow2` (`501c7986…fda4`): the Milestone 8 image

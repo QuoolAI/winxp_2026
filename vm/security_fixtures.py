@@ -404,6 +404,14 @@ def suite(role, mode, xp25_winlogon=True, provider=True, repeat=1):
         text = HEAD + 'echo XP25_SEC_APPS_STARTED > COM1\n' + APPS.format(tag='admin', slow=slow) + END
     elif role == 'image-upgrade':
         text = HEAD + two_phase + UPGRADE + RESTART + ':phase2\necho XP25_SEC_PHASE2_STARTED > COM1\n' + IMAGE_END.replace('{prefix}', 'upgrade-81')
+    elif role == 'cve':
+        # Milestone 8.2: verify the installed (patched) lsasrv.dll. The login itself exercises the
+        # rebuilt LSASS authentication path; the admin probe adds the MS04-011 DsRole checks across
+        # the administrator, ordinary-account and restricted-token contexts (--cve) plus the baseline
+        # privilege checks (--hardened).
+        text = HEAD + 'echo XP25_SEC_CVE_STARTED > COM1\n' + \
+            '%%W%%\\tools\\security_probe.exe admin %s --cve --hardened --tools "%%I%%"\n' % flags + \
+            'echo XP25_SEC_PROBE_EXIT=%ERRORLEVEL% > COM1\n' + END
     else:
         raise ValueError(role)
     return text.replace('\r\n', '\n').replace('\n', '\r\n')
@@ -417,7 +425,7 @@ def extra_files(role, mode):
     return {}
 
 
-ROLES = ('regression', 'audit', 'harden', 'image-install', 'proof', 'rollback', 'firewall', 'ai-repeat', 'standard-user', 'image-upgrade', 'apps')
+ROLES = ('regression', 'audit', 'harden', 'image-install', 'proof', 'rollback', 'firewall', 'ai-repeat', 'standard-user', 'image-upgrade', 'apps', 'cve')
 STD_USER = 'xp25user'
 # Interactive sessions of a role, in order, when they are not all the XP25 administrator.
 LOGONS = {'standard-user': ('admin', 'standard', 'standard')}
@@ -434,6 +442,7 @@ PAYLOAD = {
     'standard-user': ('security_probe.exe',),
     'image-upgrade': ('XP25Sec.exe', 'XP25Audit.exe', 'security_probe.exe'),
     'apps': ('security_probe.exe',),
+    'cve': ('security_probe.exe',),
 }
 # Roles that run the AI provider checks need the gateway and the OpenAI test double.
 PROVIDER = ('regression', 'harden', 'proof', 'ai-repeat')

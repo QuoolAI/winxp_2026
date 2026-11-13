@@ -732,3 +732,15 @@ lists every action). The volume is shared with the other worktrees, so this
 41.25 GB is an upper bound for what the reclaim freed; btrfs does not report
 per-file compressed sizes to an unprivileged user. The images and the Winlogon
 engineering image were re-hashed after the reclaim and are unchanged.
+
+
+# Milestone 8.2 — historical CVE remediation
+
+Milestone 8.2 (`xp25-cve`) audits seven historical Windows XP CVE groups and
+fixes the confirmed, fixable ones at the source level. Its evidence root is
+`.work/cve82-20261112/` and its records are [historical-cve-audit.md](historical-cve-audit.md)
+and [historical-cve-remediation.md](historical-cve-remediation.md). The one
+installed fix (MS04-011 in `lsasrv.dll`) ships in `XP25-CVE-Hardened-8.2.qcow2`,
+which passes the full regression suite above (`cve82-proof-up-01`, 35 gates) and
+the MS04-011 guest checks under one-vCPU KVM, two-vCPU KVM and TCG
+(`cve82-verify-up-02`/`-mp-01`/`-tcg-01`, `cve82-image-up-01`).
