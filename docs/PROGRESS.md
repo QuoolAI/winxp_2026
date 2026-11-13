@@ -2,6 +2,14 @@
 
 ## Current checkpoint
 
+2026-11-12, `XP25-Security-8.1` in virt-manager: a persistent `qemu:///system`
+VM on a standalone reflink copy of the accepted 8.1 image (copy hashed
+`501c7986…fda4`), lab hardware profile (1 vCPU, 512 MiB), `XP25-Isolated`
+with XP25-AI's gateway-only filter. Observed by screenshot: boot, logon as
+`XP25` with licensing admission, desktop. No other libvirt definition, the
+running XP25-AI or the accepted image changed. Left running.
+[record](virt-manager-xp25-security-81.md)
+
 2026-11-13, Milestone 8.1 — security stabilization, firewall verification and final
 acceptance (`xp25-security`): **`XP25-Security-Baseline-8.1.qcow2` (SHA-256
 `501c79862d41824a2748c96f5b4715f22ba25443630cb1e3ff0c13674999fda4`), upgraded from the unchanged Milestone 8

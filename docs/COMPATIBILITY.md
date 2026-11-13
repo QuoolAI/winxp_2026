@@ -35,7 +35,10 @@ Compatibility changes of baseline version 2:
 | XP25 broker for standard users: AudioSrv, Spooler, stisvc, Themes only (without an administrator's policy) | ClippyAI cannot restart DNS Client, DHCP, BITS, Task Scheduler and the other network or system services for a standard user; an administrator can allow them |
 
 Observed: Internet Explorer 8 shows its "Set Up Windows Internet Explorer 8"
-wizard on each user's first start. Not tested: real networks and hardware,
+wizard on each user's first start. Under libvirt (`XP25-Security-8.1`, adds a
+USB tablet and an empty CD-ROM drive; screenshots only) the image boots, logs on
+with licensing admission and reaches the desktop; the Found New Hardware Wizard
+opens at the first logon ([record](virt-manager-xp25-security-81.md)). Not tested: real networks and hardware,
 third-party applications and games, Fast User Switching, Remote Desktop,
 printing. [Record](security-regression.md).
 
