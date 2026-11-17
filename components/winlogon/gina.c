@@ -152,6 +152,27 @@ void wl_theme_user_change(unsigned type,HANDLE token)
     notice((int)type,token);wl_log("theme_user_change",type);
 }
 
+typedef struct { DWORD size, classes; } WL_COMMON_CONTROLS; /* INITCOMMONCONTROLSEX */
+#define WL_ICC_WINLOGON_REINIT 0x80000000u /* comctrlp.h */
+void wl_common_controls_reset(void)
+{
+    BOOL (WINAPI *init)(WL_COMMON_CONTROLS*);HMODULE module;WL_COMMON_CONTROLS request;
+    /* USER empties the window station's global atom table at each user logoff
+       (EndShutdown), but comctl32 keeps its subclass-property atom cached.
+       MSGINA subclasses the logon and unlock edits through comctl32; with a
+       stale atom their subclass data is not found and comctl32 resets them to
+       DefWindowProc, which neither paints nor takes input. comctl32's rule for
+       Winlogon is InitCommonControlsEx(ICC_WINLOGON_REINIT) after a logoff
+       (InitForWinlogon); the original Winlogon's internal "Reset ComCtl32"
+       notification makes the same call. */
+    module=GetModuleHandleW(L"comctl32.dll");
+    if(!module){wl_log("comctl32_reset_not_loaded",GetLastError());return;}
+    init=(BOOL(WINAPI*)(WL_COMMON_CONTROLS*))GetProcAddress(module,"InitCommonControlsEx");
+    if(!init){wl_log("comctl32_reset_unavailable",GetLastError());return;}
+    request.size=sizeof(request);request.classes=WL_ICC_WINLOGON_REINIT;
+    wl_log("comctl32_winlogon_reset",init(&request)?0:GetLastError());
+}
+
 static void free_string(PWSTR *s,BOOL secret)
 {if(*s){if(secret)SecureZeroMemory(*s,lstrlenW(*s)*sizeof(WCHAR));LocalFree(*s);*s=NULL;}}
 void wl_free_gina_result(void)

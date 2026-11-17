@@ -2,6 +2,45 @@
 
 ## Current checkpoint
 
+2026-11-17, XP25 Winlogon account-switching fix (`xp25-winlogon-ui`, from
+`fb31686c0`): **root cause established and fixed; verified under one-vCPU KVM,
+two-vCPU KVM and TCG.** Evidence `.work/winlogon-ui-20261116/` (`W16`).
+After an account switch the logon dialog's user-name and password edits were
+blank on every other switch, and they also ignored typing: a password typed into
+them acted as dialog shortcuts and powered the guest off (`W16/runs/stock-2acct-up-01`).
+**Cause:** win32k's `EndShutdown` empties the station's global atom table at
+every logoff. comctl32 caches its subclass-property atom, so MSGINA's
+subclassed logon edits lost their subclass data whenever the station
+re-assigned `CC32SubclassInfo` a different atom (`0xC017` vs the cached
+`0xC019`, alternating). comctl32 then resets them to `DefWindowProcW`. Trace
+builds showed the blank edits' window procedure is `user32!DefWindowProcW`,
+and that the cached/station atom mismatch matches the blank cycles exactly.
+**Fix:** after the Winlogon's own `ExitWindowsEx(EWX_LOGOFF)`, call
+`InitCommonControlsEx(ICC_WINLOGON_REINIT)`. This is comctl32's documented
+Winlogon contract, and the original Winlogon's "Reset ComCtl32" notification
+makes the same call. It is 23 lines in `components/winlogon` with an unchanged
+import table. No repaint, sleep or other session change was needed. The
+earlier "framebuffer"/desktop-presentation explanation is withdrawn.
+**Verification** (build `63308b0f…`; the committed source rebuilt as
+`f24bba5b…`, equal after link-metadata normalization and also run directly):
+- Pixel oracle with two password accounts alternating through logoff and a
+  refused wrong password: 9/9 (KVM UP), 9/9 (KVM MP), 5/5 (TCG), 9/9 (`fix02`).
+  The stock Winlogon fails at the first switch.
+- Winlogon lifecycle (18 gates incl. lock/unlock, Windows Security, Explorer
+  recovery, logoff, relogon, isolated network 17/17): pass under KVM UP, KVM MP
+  and TCG.
+- Lock/unlock after the switch, desktop restart (guest `RESET`) and relogon,
+  desktop Turn Off (guest `SHUTDOWN`, overlays frozen): pass under KVM UP,
+  KVM MP and TCG.
+- Host: 134 tests (15 skipped for private inputs absent in this worktree);
+  session coordinator under ASan/UBSan, 913 checks, 0 failures.
+
+Kept failures: `fix01-2acct-mp-01` (operator error: two vCPUs on the 8.1
+uniprocessor HAL, `0x7E` before the Winlogon ran) and the oracle's
+never-working PNG conversion (now records the PPMs). **Not done:** no packaged
+image or virt-manager VM carries the fix yet (8.1 `501c7986…` and 8.2
+`5a84781f…` still have `e3a9cdca…`). [Root cause and verification](winlogon-account-switch-paint.md)
+
 2026-11-13, Milestone 8.2 — historical Windows XP CVE audit and source-level
 remediation (`xp25-cve`, from Milestone 8.1 `a90f3fa80`): **all seven target
 vulnerability groups mapped and classified

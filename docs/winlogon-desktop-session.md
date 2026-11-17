@@ -19,9 +19,10 @@ two-vCPU KVM and TCG, each run ending in a guest-requested shutdown event; a
 separate desktop restart cycle (guest reset, reboot, re-logon) also passes.
 
 This is not full parity with the original Winlogon. The precise remaining gaps
-(Terminal Services session state, logon-desktop theming and post-logoff GINA
-edit painting, the Welcome screen, Fast User Switching, event sounds, Group
-Policy processing) are listed under [Known gaps](#known-gaps-and-defects).
+(Terminal Services session state, logon-desktop theming, post-logoff GINA
+edit painting in build 10 (fixed in source since), the Welcome screen, Fast
+User Switching, event sounds, Group Policy processing) are listed under
+[Known gaps](#known-gaps-and-defects).
 
 ## Licensing admission without fabricated results
 
@@ -161,8 +162,13 @@ paused through QMP (not shut down, disks unchanged) to free the host for TCG.
   signals sessions in Active/Connected/Disconnected state; the logon desktop is
   never themed (classic edit borders; the original's boot-time classic dialog is
   themed, `L/wl-original-classic-kvm-01`). After a logoff, MSGINA's name and
-  password edits are enabled and accept input (re-logon succeeds) but do not
-  paint. The original Winlogon paints them in the same classic-logon test.
+  password edits did not paint on alternate switches. They were reset to
+  `DefWindowProc` and also ignored typing; a blank-password re-logon only
+  appeared to work. **Fixed 2026-11-17** (build `63308b0f…`, not yet in a
+  packaged image): win32k empties the station's atoms at logoff and the
+  Winlogon now makes comctl32's `ICC_WINLOGON_REINIT` call, as the original's
+  "Reset ComCtl32" step does
+  ([root cause and verification](winlogon-account-switch-paint.md)).
 * **Welcome screen.** MSGINA's status-host contract (ordinals 11, 12, 18, 22,
   27, 28) is not driven, so the classic logon dialog is used where the original
   shows the Welcome screen.

@@ -1,153 +1,261 @@
-# Account-switching logon-control paint defect — investigation
+# Account-switching logon controls — root cause and fix
 
-Worktree `xp25-winlogon-ui` (branch `xp25-winlogon-ui`), from `46f8173e9`. Evidence
-root `.work/winlogon-ui-20261113/` (`W`). This records the investigation into why the
-logon controls sometimes fail to appear after switching users, the fix approaches
-tried, and the conclusion.
+Worktree `xp25-winlogon-ui` (branch `xp25-winlogon-ui`). Evidence roots:
+`.work/winlogon-ui-20261113/` (`W13`, the first investigation) and
+`.work/winlogon-ui-20261116/` (`W16`, root cause, fix and verification).
+Lifecycle runs are under the main tree's `.work/boot-debug-20261022/` (`L`), made
+with the Winlogon milestone harness `.work/winlogon-licensing-20261025/` (`WL`).
+
+**Status:** root cause established from guest evidence; fixed in
+`components/winlogon` (one comctl32 reset after the logoff that empties the
+atom table); the fixed binary is verified on fresh overlays under one-vCPU KVM,
+two-vCPU KVM and TCG. The packaged images (`XP25-Security-Baseline-8.1`
+`501c7986…`, `XP25-CVE-Hardened-8.2` `5a84781f…`) and the virt-manager VMs still
+carry the unfixed Winlogon `e3a9cdca…`; they were not changed.
 
 ## Symptom
 
 On the first logon after boot the classic logon dialog's **User name** and
-**Password** edit fields render correctly (white interior, sunken 3D border, the
-`XP25` name prefilled). After a user switch (logoff → the dialog is shown again), the
-dialog paints fully — title bar, Windows logo, OK/Cancel/Options buttons, the field
-labels — **except the two edit fields, which render flush grey** (no white fill, no
-border, no text), intermittently. Reference frames:
-`xp25-security/.work/security81-20261112/runs/logon-focus-01/boot-dialog.png` (correct)
-vs `logoff-dialog.png` (the two fields blank).
+**Password** edits render correctly. After an account switch (logoff → the
+dialog is shown again) the dialog paints fully except the two edits, which are
+flush grey: no white fill, no sunken border, no user name. With the corrected
+oracle (`vm/winlogon_switch_probe.py`) this is a strict alternation — switches
+1, 3, 5, 7 blank, 0, 2, 4, 6 painted (`W13/runs/base-fixed-01`).
 
-## A reproducible, pixel-measured harness
+It is not only cosmetic. A blank edit also ignores typing. In
+`W16/runs/stock-2acct-up-01` (the image's own Winlogon, two accounts) the first
+switch offered `XP25B` with both fields blank; the typed password never reached
+the edit, its first letter acted as the dialog's **S**hut Down mnemonic, MSGINA
+returned `WLX_SAS_ACTION_SHUTDOWN_POWER_OFF` (10) and the guest powered off
+(QMP `SHUTDOWN`, `guest-shutdown`). This is the failure the Milestone 8.1
+standard-user runs met (`std-up-02/03`) and worked around with restarts.
 
-`vm/winlogon_switch_probe.py` boots a fresh, NIC-free overlay of the Milestone 8.1
-image, optionally replaces `winlogon.exe` with a build under test, and makes a Startup
-script log the `XP25` account off a few seconds after each logon so the logon dialog is
-shown over and over. For each cycle it **waits until the logon dialog's beige body is on
-screen** before measuring (the switch to the secure desktop first shows nothing, so a
-serial marker alone is not enough — an early version keyed off the GINA's dialog marker
-and sometimes captured the black gap between dialogs, scoring it as "blank", which
-polluted the first measurements; the harness now confirms the dialog on screen first).
-It then captures the framebuffer with a QMP `screendump` and measures the fraction of
-the user-name field that is white. The reference frames calibrate the measure: the field
-is **97.7 % white when painted and 0 % white when blank**, so `>= 0.6` is "painted".
+## Root cause
 
-With the dialog confirmed on screen every cycle, the Milestone 8.1 image's own
-(unmodified) Winlogon gives a clean, deterministic signal: the logon fields paint and
-fail to paint on **strictly alternating** account switches —
+1. At every successful user logoff, win32k's `EndShutdown`
+   (`windows/core/ntuser/kernel/exitwin.c:407`) empties the window station's
+   global atom table: `RtlEmptyAtomTable(pwinsta->pGlobalAtomTable, FALSE)`.
+   CSR's `_ExitWindowsEx` calls it before returning, so it has run when the
+   Winlogon's own `ExitWindowsEx(EWX_LOGOFF)` returns
+   (`windows/core/ntuser/server/exitwin.c`).
+2. comctl32 keeps its window-subclass data in a window property keyed by the
+   global atom `CC32SubclassInfo`, and **caches that atom** in
+   `g_aCC32Subclass`. It adds the property by string (a fresh atom after the
+   purge) but looks it up by the cached atom (`shell/comctl32/v5/subclass.c`,
+   `SetSubclassHeader` / `FastGetSubclassHeader`).
+3. MSGINA subclasses exactly the logon edits through comctl32:
+   `SetWindowSubclass(IDD_LOGON_NAME/IDD_LOGON_PASSWORD, DisableEditSubClassProc)`
+   (`ds/security/gina/msgina/mslogon.c:1045`; the unlock edits likewise,
+   `mslock.c:717`).
+4. When the fresh atom differs from the cached one, comctl32's master subclass
+   procedure finds no subclass data, takes `SubclassDeath` and resets the window
+   procedure to `ZombieWndProc`, which is `DefWindowProc` in retail builds. A
+   `DefWindowProc` window draws nothing and does not accept characters.
+5. comctl32 defines the remedy for exactly this case (`InitForWinlogon`):
+   *"for C2 security reasons, all global atoms are nuked from the window station
+   when you log off. So the rule is that all winlogon clients of comctl32 must
+   call `InitCommonControlsEx(ICC_WINLOGON_REINIT)`"*. In comctl32 5.82 this
+   re-adds the atom, re-keys existing subclassed windows and refreshes the cache
+   (`FixupSubclassRecordsAfterLogoff`, called at `0x5d0d1371`). The XP25
+   Winlogon never made that call.
 
-```
-cycle 0 (boot) painted · 1 blank · 2 painted · 3 blank · 4 painted · 5 blank · 6 painted · 7 blank
-```
-
-— a period-2 toggle, not random flakiness (`base-fixed-01`). The blanks are persistent
-(still blank 45 s later, `logon-focus-01/logoff-plus-45s.png`).
-
-## What is actually wrong (measured, not inferred)
-
-A diagnostic Winlogon build logged each edit control's state at the moment it forced a
-repaint, in blank cycles:
-
-```
-edit_1502_vis_1_rect_84_112_243x20_style_50010080_ex_00000204_update_0
-edit_1503_vis_1_rect_84_139_243x20_style_500100a0_ex_00000204_update_0
-```
-
-So in a blank cycle each edit is **visible** (`IsWindowVisible = 1`), correctly sized
-and positioned (243×20 at 84,112 in the dialog), has `WS_EX_CLIENTEDGE` (the sunken
-border), and after a forced `RedrawWindow(..., RDW_UPDATENOW)` has an **empty update
-region** (`update_0`). That means win32k *did* paint the control into its surface — the
-painted pixels simply never reached the QEMU VGA framebuffer that `screendump` (and a
-real monitor) reads.
-
-Two further facts pin this below the window manager:
-
-- The failure is a clean **every-other-switch alternation** once timing stabilises
-  (paint, blank, paint, blank, …), deterministic rather than random.
-- In some cycles the captured image **changes over time with no Winlogon action**
-  between the captures (a field blank at 2.5 s is painted at 7.5 s, or the reverse),
-  i.e. the displayed framebuffer is catching up to, or diverging from, the surface on
-  its own.
-
-So the paint reaches win32k's surface but not the framebuffer, after a desktop switch.
-The next section's control run shows this is driven by the Winlogon (not the display
-driver): the same `framebuf.dll` paints correctly under Microsoft's Winlogon.
-
-## Fix approaches tried, re-measured, and ruled out
-
-All were native-built (`/W4 /WX`, clean). After the harness was corrected to confirm the
-dialog on screen, each was re-measured against the clean period-2 baseline (`retest-*`):
-
-| Approach | Where | Result (corrected harness) |
-| --- | --- | --- |
-| Repaint the dialog / each child (`RedrawWindow`, frame + erase, foreground), spread over ~1.5 s | `gina.c` dialog host | Leaves the alternation |
-| `SWP_FRAMECHANGED` frame/clip recalculation per control | `gina.c` dialog host | Leaves the alternation |
-| Full secure-desktop re-blit (`RedrawWindow(GetDesktopWindow(), …)`) | `gina.c` dialog host | Identical alternation (`retest-reblit-01`) |
-| `WS_CLIPCHILDREN` on the dialog (keep the parent erase off the controls) | `gina.c` dialog host | Still alternates, shifted phase (`retest-clip-01`) |
-| Lock/switch re-ordering (lock-then-switch secure, switch-then-unlock user) | `security.c` desktop switch | No change (`order-up-01`); a valid correctness/security improvement in its own right — see below |
-| Drop the window-station lock entirely | `security.c` desktop switch | No change |
-| Switch desktop away and back after the dialog paints | `gina.c` + desktop switch | Identical to baseline (`retest-resync-01`) |
-| A persistent full-screen background window on the secure desktop | `main.c` | Identical to baseline (`retest-bg-01`) |
-
-Every one of these leaves the strict period-2 alternation (some shift its phase). The
-toggle is in the core desktop-switch/display path and survives additive repaint,
-re-blit, clipping, lock and background-window changes.
-
-(An earlier reading of these — before the harness was corrected — mistook the black gap
-between dialogs for a blank field and reported a "paint then blank over time" and a
-`framebuf.dll` fault. The corrected harness shows the signal is a clean, persistent
-every-other-switch blank, and the control below shows it is the Winlogon.)
-
-## The decisive control: identical display stack, only the Winlogon differs
-
-The project's own records say "the original Winlogon paints them in the same
-classic-logon test." That reference run
-(`winxp_2026/.work/boot-debug-20261022/wl-original-classic-kvm-01`) booted Microsoft's
-installed `winlogon.exe` on the `XP25-Components-Engineering` image, and its
-`classic-after-logoff.png` shows the logon fields **painted correctly** after a logoff.
-
-Extracting the display stack from that image and from the one these tests use:
-
-| Binary | Components image (Microsoft winlogon, paints) | Baseline 8.1 image (XP25 winlogon, fails) |
-| --- | --- | --- |
-| `framebuf.dll` | `2054ab5d…` | **`2054ab5d…` — identical** |
-| `win32k.sys` | `b28afb2f…` | **`b28afb2f…` — identical** |
-| `gdi32.dll` | `09698075…` | **`09698075…` — identical** |
-| `winlogon.exe` | `7cd68891…` (Microsoft, 509 KB) | `e3a9cdca…` (XP25, 43 KB) |
-
-The display driver, the kernel graphics subsystem and GDI are **byte-identical**. The
-only difference is `winlogon.exe`. Microsoft's Winlogon drives the same `framebuf.dll`
-to paint the post-switch fields correctly; the XP25 Winlogon does not. **The defect is
-in the XP25 Winlogon, not the display driver.** (An earlier draft of this document
-wrongly blamed `framebuf.dll`; this control disproves that.)
-
-## Where this leaves the fix
-
-The defect is **in the XP25 Winlogon and is fixable there** (the identical-stack control
-proves it is not the display driver), but it is a period-2 toggle in the core
-desktop-switch/display path that none of the obvious levers — repaint, re-blit,
-clipping, lock ordering, background window — reach. The XP25 Winlogon is 43 KB against
-Microsoft's 509 KB; Microsoft's does substantially more around presenting the secure
-desktop, and the specific action it takes that keeps alternate switches from blanking
-has not yet been isolated. Identifying it needs either a closer reconstruction of the
-classic Winlogon's secure-desktop presentation or win32k-level instrumentation of what
-state toggles between a painted and a blank switch.
-
-`vm/winlogon_switch_probe.py` is the regression oracle for that work: it reproduces the
-defect on the unmodified image and scores painted-vs-blank objectively, under KVM and
-TCG, so any candidate can be judged in one run.
-
-### A separate, valid improvement found on the way
-
-`components/winlogon/security.c` switches the secure desktop **before** locking the
-window station (`wl_switch_secure` does `SwitchDesktop` then `LockWindowStation`) and
-unlocks **before** switching to the user desktop. The canonical, more secure order is
-the reverse — lock, then switch to the secure desktop; switch to the user desktop, then
-unlock — so the station is never unlocked while the secure desktop is presented. This
-does not fix the paint defect (tested), and is recorded here as a standalone follow-up.
+Why period 2: after each purge the station hands the `CC32SubclassInfo` atom
+alternately `0xC017` and `0xC019`, while comctl32's cache stays `0xC019`.
 
 ## Evidence
 
-`.work/winlogon-ui-20261113/`: the harness runs (`runs/control-up-02`,
-`runs/*-up-0*`), each with `result.json` (per-cycle white-fraction verdicts) and the
-`cycle-*-*.ppm/.png` screenshots; the native Winlogon builds (`wl-build-0*`,
-`wl-collect-0*`) and build media; the frozen build VM and base image under `reference/`.
-The base image (`501c7986…`) is unchanged; `Source/` is untouched.
+**The blank edit's window procedure is `DefWindowProcW`.** A trace build
+(`W16/winlogon-trace01.exe` `cdde0da4…`, `W16/trace-01.patch`) subclassed the
+two edits read-only after MSGINA's `WM_INITDIALOG` and logged every paint
+message (`W16/runs/trace01-up-01`). In painted dialogs the edits' procedure is
+`0x5d09607d`, inside `system32\COMCTL32.dll` 5.82 just past `DefSubclassProc`
+(comctl32's unexported master subclass procedure). In blank dialogs it is
+`0x69e4a4ce`, which the export table of the image's `user32.dll`
+(`a51976dd…`) resolves to **`DefWindowProcW`**: `WM_ERASEBKGND` returns 0, no
+`WM_CTLCOLOREDIT` is ever sent, and `WM_PAINT`/`WM_PRINTCLIENT` draw nothing.
+The earlier reading — "painted in win32k but not reaching the framebuffer" —
+was wrong: the control never draws.
+
+**The atom mismatch alternates exactly with the blank cycles.** Two further
+trace builds read comctl32 5.82's cached atom (`g_aCC32Subclass`, a WORD at
+RVA `0x720bc`, found from the code that stores the `GlobalAddAtomW` result),
+the station's current atom (`GlobalFindAtomW`) and both property lookups, at
+each logon dialog and after each logoff (`W16/trace-02.patch`, stock code;
+`W16/trace-03.patch`, with the fix). Summary (`W16/atom-trace-summary.txt`):
+
+| Cycle | Stock: cached / station atom | Stock: edit procedure | Stock: oracle | Fixed: cached / station | Fixed: edit procedure | Fixed: oracle |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 (boot) | `C019` / `C019` | comctl32 subclass | painted | `C019` / `C019` | comctl32 subclass | painted |
+| 1, 3, 5, 7 | `C019` / **`C017`** | **`DefWindowProcW`** | **blank** | `C019` / `C019` | comctl32 subclass | painted |
+| 2, 4, 6 | `C019` / `C019` | comctl32 subclass | painted | `C019` / `C019` | comctl32 subclass | painted |
+
+In the blank cycles `GetProp(edit, cached atom)` fails while
+`GetProp(edit, "CC32SubclassInfo")` succeeds. That is the stale cache. After
+every logoff both builds log the station atom as `0000` (purged); in the fixed
+build the reset re-adds it as `C019` before the next dialog. The read of
+comctl32's private global exists only in the trace builds, never in the
+committed code.
+
+**The original Winlogon makes this call.** Microsoft's `winlogon.exe`
+(`7cd68891…`) registers an internal notification named `Reset ComCtl32`
+(`0x10321c9`; which session event its mask selects was not established). Its
+handler (`0x1032c67`) calls
+`GetModuleHandleW(L"COMCTL32")`, `GetProcAddress(…, "InitCommonControlsEx")`
+and calls it with `{8, 0x80000000}` (`ICC_WINLOGON_REINIT`), then repeats this
+for the COMCTL32 of its activation context. This explains the earlier control
+result, where Microsoft's Winlogon paints after a logoff on a byte-identical
+display stack (framebuf/win32k/gdi32).
+
+**Why the earlier attempts could not work.** Dialog repaint, desktop re-blit,
+`WS_CLIPCHILDREN`, lock ordering, switch-away-and-back and a background window
+all act on painting or desktop presentation. By then the controls are already
+`DefWindowProc` windows, so there was nothing to repaint. The desktop-switch,
+`SwitchDesktop` and surface hypotheses of the first write-up are withdrawn.
+
+## The fix
+
+`components/winlogon/gina.c` adds `wl_common_controls_reset()`, which calls
+`InitCommonControlsEx({sizeof, ICC_WINLOGON_REINIT})` of the loaded
+`comctl32.dll` (resolved with `GetModuleHandleW`/`GetProcAddress`, so the import
+table is unchanged — 141 imports, identical to `e3a9cdca…`).
+`components/winlogon/session.c` calls it in `native_end_processes` directly
+after the Winlogon's own `ExitWindowsEx(EWX_LOGOFF)` succeeds. That is the call
+whose end of session emptied the atoms. It is the engine's `end_processes`
+driver operation, so every path that ends a user session runs through it:
+`wl_engine_logoff` (user, GINA, Windows Security, locked and pre-power-off
+logoffs) and `wl_engine_abort` (rollback after a shell start was attempted).
+It runs before any later GINA dialog. The result is logged as `comctl32_winlogon_reset`. Nothing
+else changes: authentication, licensing admission, security descriptors,
+desktop switching and session ordering are untouched. No sleep or repaint was
+added. The winlogon process has no activation context, so only the system32
+comctl32 5.82 (`853c4a03…`) is loaded. The traces show the logon edits are
+subclassed through it.
+
+## Verification
+
+Binary under test: `W16/winlogon-fix01.exe`, SHA-256
+`63308b0f9c6a2bec4692a5ff879e6dcd86d49b1ae6a711659f6c1ca933017cf8`, 43,008
+bytes, PDB `0fab721b…`. It was built natively in the frozen build VM
+(`wl-build-12`, `/W4 /WX`, 15 files compiled, no warnings, no
+`nmake.exe failed`) from media `W16/wl-media-fix01` (ISO `feaf9959…`). The
+committed source differs from that build only in the wording of one comment.
+It was rebuilt as `W16/winlogon-fix02.exe` (`wl-build-15`, SHA-256
+`f24bba5b2561b183a33d1cda106941138c28b1cc8dc50fde79f23f4511f733d3`, PDB
+`7820593c…`, media ISO `c5d360d9…`, all 23 sources byte-identical to the
+committed tree). `build/compare_pe.py` finds `fix01` and `fix02` equal after
+normalization: only the checksum, COFF and debug time stamps and the PDB
+signature differ, with no other differing byte. `fix02` was also run directly
+(below).
+
+### Pixel oracle on the 8.1 image (`XP25-Security-Baseline-8.1` `501c7986…`)
+
+Each run is a fresh NIC-free overlay with only `winlogon.exe` replaced (plus the
+verified MP kernel/HAL for two vCPUs). The two-account mode creates `XP25B`
+(password `sw1tch25`) in the first session and alternates `XP25` ↔ `XP25B`
+through logoff. Each cycle measures both fields in two captures 4 s apart
+(painted: ≥ 60 % white; observed 0.977/0.969 user name, 0.996 password, blank
+0.0), confirms each logon from the Winlogon's serial SID record, and in
+cycle 3 first enters a wrong password, which must be refused.
+
+| Run | Winlogon | Mode | Switches painted (both fields, both captures) | Accounts | Wrong password |
+| --- | --- | --- | --- | --- | --- |
+| `W13/runs/base-fixed-01` | stock `e3a9cdca…` | 1 vCPU KVM, one account | 3/7 (alternating) | — | — |
+| `W16/runs/stock-2acct-up-01` | stock `e3a9cdca…` | 1 vCPU KVM, two accounts | **0/1**: switch 1 blank; logon impossible, guest powered off | 1 | — |
+| `W16/runs/fix01-up-01` | fixed | 1 vCPU KVM, one account | **7/7** | — | — |
+| `W16/runs/fix01-2acct-up-01` | fixed | 1 vCPU KVM | **9/9** | 1003 ↔ 1008, 10 logons | refused (MSGINA logon message), dialog painted after it |
+| `W16/runs/fix01-2acct-mp-02` | fixed | 2 vCPU KVM, MP kernel `42662074…` + HAL `69ca3e71…` | **9/9** | 1003 ↔ 1008, 10 logons | refused |
+| `W16/runs/fix01-2acct-tcg-01` | fixed | TCG | **5/5** | 1003 ↔ 1008, 6 logons | refused |
+| `W16/runs/fix02-2acct-up-01` | fixed, final build `f24bba5b…` | 1 vCPU KVM | **9/9** | 1003 ↔ 1008, 10 logons | refused |
+
+No input retries were needed in any fixed run.
+
+### Winlogon lifecycle regression (engineering image, isolated network)
+
+`WL/launch-native.py` installs only the fixed `winlogon.exe` on the
+hash-verified engineering image (22 component hashes checked before and after;
+the MP mode uses the verified MP engineering base). `WL/lifecycle.py` decides
+every gate from serial records. `W16/after-switch-power.py` then continues in
+the re-logged-on session (after a logoff), then `WL/desktop-power.py shutdown`
+and `WL/finish-normal.py`.
+
+| Gate | 1 vCPU KVM `L/wl-switchfix-kvm-01` | 2 vCPU KVM `L/wl-switchfix-kvm-mp-01` | TCG `L/wl-switchfix-tcg-01` |
+| --- | --- | --- | --- |
+| Wrong password rejected; logon; licensing admission; Explorer identity | pass | pass | pass |
+| xp/session/service/shell probes (incl. Luna active), no failed case | pass | pass | pass |
+| `Win+L` lock, password unlock; Task Manager hotkey; Windows Security cancel | pass | pass | pass |
+| Explorer killed → recovered; logoff (no LUID processes); relogon | pass | pass | pass |
+| Isolated network probe | 17/17 | 17/17 | 17/17 |
+| Lock and unlock **after the account switch** (unlock dialog painted) | pass | pass | pass |
+| Desktop Restart → guest `RESET` → reboot → logon dialog → relogon | pass | pass | pass |
+| Desktop Turn Off → guest-requested `SHUTDOWN`; overlay frozen | pass (`660baf31…`) | pass (`b28b0688…`) | pass (`2a7baae7…`) |
+
+### Host tests
+
+`python3 -m unittest discover -s tests`: 134 tests pass (15 skipped because
+their private inputs are not in this worktree's `.work`). The session
+coordinator under AddressSanitizer/UBSan (the `CLAUDE.md` command) reports
+`cases=52 checks=913 failures=0`. The new `tests/test_winlogon_switch_probe.py`
+checks the oracle without a guest: field and dialog detection on synthetic
+frames, SID parsing, and refusal of inconsistent options. The portable C core
+is unchanged; the fix is in the native adapters, which only the guest runs
+above exercise.
+
+## Failures and corrections kept
+
+* `W16/runs/fix01-2acct-mp-01`: bugcheck `0x7E` (`C0000005`) before the
+  Winlogon's first record (empty `serial.log`). This was an operator error: two vCPUs
+  on the 8.1 image's uniprocessor HAL, the known failure recorded in
+  [PROGRESS](PROGRESS.md) (`fstab-mp-*`). `mp-02` stages the verified MP
+  kernel/HAL as the security lab does.
+* An attempt to start the MP and TCG oracle runs failed in the host shell (empty
+  paths); no guest started.
+* The oracle's PNG conversion (`qemu-img convert -f ppm`) never worked; the
+  `screenshot` fields of runs before this fix name `.png` files that do not
+  exist. The `.ppm` screendumps are the evidence; the oracle now records them.
+* The first write-up's claims that the paint "does not reach the framebuffer"
+  and that the fault lies in desktop presentation are withdrawn (see Evidence).
+
+## Limitations
+
+* The fix is verified on overlays, not installed in any packaged image or
+  virt-manager VM; those still show the defect until repackaged.
+* The unlock dialog after a switch was observed painted (and unlocked) with the
+  fix on the engineering image. Its stock behaviour after a switch was not
+  separately measured.
+* comctl32 v6 (side-by-side) is not loaded by this Winlogon. If a future
+  manifest or GINA brings it in, it needs the same reset (as the original
+  Winlogon does for its activation context).
+* The logoff in `EndShutdown` also unloads non-permanent fonts
+  (`GreRemoveAllButPermanentFonts`). This change does not address that; no
+  font defect was observed here.
+
+## Reproduction
+
+```sh
+W16=.work/winlogon-ui-20261116
+python3 build/prepare_winlogon.py --output $W16/wl-media-NEW
+python3 vm/native_build_run.py --name wl-build-NEW --base .work/winlogon-ui-20261113/reference/build-vm-disk.qcow2 \
+  --media $W16/wl-media-NEW/native-winlogon.iso --started XP25_WINLOGON_BUILD_STARTED --exit-marker XP25_WINLOGON_BUILD_EXIT
+python3 vm/read_guest.py .work/boot-debug-20261022/wl-build-NEW/disk.qcow2 $W16/collect-NEW \
+  /nt/xp25/winlogon/obj/i386/winlogon.exe /nt/xp25/winlogon/obj/i386/winlogon.pdb
+IMG=.work/winlogon-ui-20261113/reference/XP25-Security-Baseline-8.1.qcow2
+SHA=501c79862d41824a2748c96f5b4715f22ba25443630cb1e3ff0c13674999fda4
+python3 vm/winlogon_switch_probe.py --name RUN --image $IMG --image-sha256 $SHA \
+  --probe .work/winlogon-ui-20261113/security_probe.exe --winlogon WINLOGON.exe \
+  --second-user XP25B --second-password sw1tch25 --wrong-password-cycle 3 --cycles 10 --out-root $W16/runs \
+  [--accel tcg --cycles 6] [--cpus 2 --stage /WINDOWS/system32/xp25krnl.exe=$W16/reference-mp/ntkrnlmp-kx01.exe \
+   --stage /WINDOWS/system32/xp25hal.dll=$W16/reference-mp/halmacpi.dll]
+# lifecycle (from the main winxp_2026 tree):
+python3 .work/winlogon-licensing-20261025/launch-native.py NAME up|mp|tcg WINLOGON.exe
+python3 vm/xp_lab.py .work/boot-debug-20261022/NAME qmp cont
+python3 .work/winlogon-licensing-20261025/lifecycle.py NAME [--slow]
+python3 <xp25-winlogon-ui>/$W16/after-switch-power.py NAME [--slow]
+python3 .work/winlogon-licensing-20261025/desktop-power.py NAME shutdown
+python3 .work/winlogon-licensing-20261025/finish-normal.py NAME desktop-shutdown-event.json "TRIGGER"
+```
+
+`W16/reference-mp/` holds read-only copies of the Milestone 8 references
+`kernel-kx01/ntkrnlmp.exe` and `mp/halmacpi.dll`, hash-checked against their
+manifest. Trace builds are made by applying `W16/trace-0N.patch` to the
+committed tree; they are never committed. `Source/` is untouched; the frozen
+base images are unchanged.

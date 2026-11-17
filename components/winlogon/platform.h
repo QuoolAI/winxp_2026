@@ -94,6 +94,7 @@ void wl_free_gina_result(void);
 #define WL_THEME_LOGOFF 1u
 #define WL_THEME_START_SHELL 3u
 void wl_theme_user_change(unsigned type,HANDLE token);
+void wl_common_controls_reset(void);
 void wl_attention(DWORD type);
 BOOL wl_session_start(void);
 BOOL wl_session_end(void);

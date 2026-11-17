@@ -580,6 +580,14 @@ password made `net user /add` ask a question, the console-program case ended
 the Startup script, IE8's first-run tab) — see each `failure.json`, and the
 `correction.json` of the `logon-focus-*` runs.
 
+*Update 2026-11-17:* root-caused and fixed in source
+([account-switch fix](winlogon-account-switch-paint.md)). The blank edits had
+been reset to `DefWindowProc` by comctl32 after the logoff's atom purge, so
+they ignored typing. That is why blind keys acted as dialog shortcuts. With the
+fixed Winlogon on fresh overlays of the 8.1 image, logoff-based switching
+between two password-protected accounts passes under all three modes. The 8.1
+image itself is unchanged.
+
 **Conclusion.** A standard account works as the daily XP25 desktop, including
 the AI components, the browser and the built-in programs, with account
 switching done by a restart. Recommended as the default once the post-logoff

@@ -42,7 +42,7 @@ HAL.
 | Programs and games installed with Windows: start, respond, close | Pass; Hearts crashes on close (also on the unhardened base) | Same | Same |
 | Standard user: logon, desktop, AI, IE8, programs, restart, power-off (`std-*`) | Pass | Pass | Pass |
 | Rollback of the security configuration | Pass (Milestone 8) | Pass (`rollback-mp-01`) | Not run |
-| Logoff, then logon as another account without a restart | **Not established**: after a logoff the logon dialog's fields do not paint (known XP25 Winlogon defect; also on the unhardened base); the lab could not log on through them | Not run | Not run |
+| Logoff, then logon as another account without a restart | **Not established on this image**: after a logoff the logon dialog's fields do not paint (XP25 Winlogon defect; also on the unhardened base); the lab could not log on through them. Root cause and fix: [account-switch fix](winlogon-account-switch-paint.md) (2026-11-17); with the fixed Winlogon on fresh overlays of this image: **pass** (9/9 switches, two accounts) | Same; fixed Winlogon on overlays: **pass** (9/9) | Same; fixed Winlogon on overlays: **pass** (5/5) |
 
 Compatibility changes of baseline version 2:
 
@@ -357,7 +357,11 @@ Not supported or not verified with this Winlogon: the Welcome screen (classic
 logon only), Fast User Switching, Terminal Services session state (console shows
 `Conn` without a user), Task Manager's Users tab data, event sounds, Group Policy
 processing, domain logon, activation reminders/wizard, and themed logon-desktop
-controls. After a logoff, MSGINA's edit fields do not paint although input works.
+controls. After a logoff, MSGINA's edit fields did not paint (and did not
+accept typing) on alternate account switches; fixed in source on 2026-11-17
+(missing comctl32 `ICC_WINLOGON_REINIT` after the logoff's atom purge,
+[account-switch fix](winlogon-account-switch-paint.md)). Packaged images still
+carry the unfixed Winlogon `e3a9cdca…`.
 
 ## Winlogon policy/session continuation, 2026-10-24
 

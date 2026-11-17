@@ -330,6 +330,9 @@ exactly one line is added and that the routine is implemented in the tree.
    [known gap](winlogon-desktop-session.md#known-gaps-and-defects), seen again
    in Milestone 8.1 runs `logon-focus-*`), then make a standard account the
    default XP25 desktop: Milestone 8.1 found nothing else in its way.
+   *Fixed in source and verified on overlays 2026-11-17
+   ([account-switch fix](winlogon-account-switch-paint.md)); installing it in a
+   packaged image remains.*
 1. Rebuild the source-built components with `/GS` and SafeSEH, and plan the
    kernel fixes that matter most for local escalation.
 2. Give the daily account a password and move daily use to an ordinary account;

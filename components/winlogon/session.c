@@ -282,6 +282,8 @@ static unsigned long native_end_processes(void *context)
     result=ExitWindowsEx(EWX_LOGOFF,0);error=result?0:GetLastError();
     if(!RevertToSelf())wl_fail("session_logoff_revert_failed",GetLastError());
     if(!result)return error?error:ERROR_CANCELLED;
+    /* That call's end of session emptied the station's global atoms. */
+    wl_common_controls_reset();
     if(!no_user_processes(30000))return GetLastError();
     if(!wl_clear_user_security())return native_error(FALSE);
     /* As SYSTEM (.DEFAULT) the logon desktop returns to the default settings. */
