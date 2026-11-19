@@ -9,9 +9,13 @@ with the Winlogon milestone harness `.work/winlogon-licensing-20261025/` (`WL`).
 **Status:** root cause established from guest evidence; fixed in
 `components/winlogon` (one comctl32 reset after the logoff that empties the
 atom table); the fixed binary is verified on fresh overlays under one-vCPU KVM,
-two-vCPU KVM and TCG. The packaged images (`XP25-Security-Baseline-8.1`
-`501c7986…`, `XP25-CVE-Hardened-8.2` `5a84781f…`) and the virt-manager VMs still
-carry the unfixed Winlogon `e3a9cdca…`; they were not changed.
+two-vCPU KVM and TCG. The accepted images (`XP25-Security-Baseline-8.1`
+`501c7986…`, `XP25-CVE-Hardened-8.2` `5a84781f…`) and the XP25-Security-8.1 VM
+still carry the unfixed Winlogon `e3a9cdca…`; they were not changed. Since
+2026-11-18 the engineering image `XP25-Winlogon-Fix-8.2` (`fe633d15…`, the 8.2
+image with only `winlogon.exe` replaced) carries the fix. It passed the
+two-account oracle (9/9) and backs the virt-manager VM
+[XP25-Winlogon-Fix](virt-manager-xp25-winlogon-fix.md).
 
 ## Symptom
 
@@ -217,8 +221,11 @@ above exercise.
 
 ## Limitations
 
-* The fix is verified on overlays, not installed in any packaged image or
-  virt-manager VM; those still show the defect until repackaged.
+* The fix is not in the accepted 8.1 and 8.2 images or the XP25-Security-8.1
+  VM; those still show the defect. It is installed in the engineering image
+  `XP25-Winlogon-Fix-8.2` (`fe633d15…`) and the XP25-Winlogon-Fix VM. On that
+  image only the one-vCPU KVM oracle was run; the MP, TCG and lifecycle results
+  come from overlays of the 8.1 image.
 * The unlock dialog after a switch was observed painted (and unlocked) with the
   fix on the engineering image. Its stock behaviour after a switch was not
   separately measured.

@@ -2,6 +2,22 @@
 
 ## Current checkpoint
 
+2026-11-18, account-switching fix packaged and in virt-manager
+(`xp25-winlogon-ui`): `build/winlogon_package_image.py` built the engineering
+image `.work/winlogon-vm-20261118/image-01/XP25-Winlogon-Fix-8.2.qcow2`
+(`fe633d1570f042b3cc8f869ad0fe1f6fabfc0e048ab57437b8d5c6e89f1ec173`). It is the
+accepted 8.2 image `5a84781f…` with only `winlogon.exe` replaced offline
+(`e3a9cdca…` → `f24bba5b…`, the build of commit `558cd3cda`). The two-account
+oracle on that exact image, with nothing staged, **passed** on one-vCPU KVM: 9/9
+switches painted, accounts alternating, wrong password refused
+(`runs/image01-2acct-up-01`). The persistent `qemu:///system` VM
+**XP25-Winlogon-Fix** runs a standalone reflink copy of it (MAC `:07`,
+XP25-Isolated, gateway-only filter). By screenshot: logon, then two logoffs, each
+back at a painted logon dialog. It was left running at the logon dialog. No
+other domain, network, filter or running VM changed; the 8.1 and 8.2 accepted
+images are unchanged. MP, TCG and lifecycle runs were not repeated on this image.
+[VM record](virt-manager-xp25-winlogon-fix.md)
+
 2026-11-17, XP25 Winlogon account-switching fix (`xp25-winlogon-ui`, from
 `fb31686c0`): **root cause established and fixed; verified under one-vCPU KVM,
 two-vCPU KVM and TCG.** Evidence `.work/winlogon-ui-20261116/` (`W16`).

@@ -360,8 +360,11 @@ processing, domain logon, activation reminders/wizard, and themed logon-desktop
 controls. After a logoff, MSGINA's edit fields did not paint (and did not
 accept typing) on alternate account switches; fixed in source on 2026-11-17
 (missing comctl32 `ICC_WINLOGON_REINIT` after the logoff's atom purge,
-[account-switch fix](winlogon-account-switch-paint.md)). Packaged images still
-carry the unfixed Winlogon `e3a9cdca…`.
+[account-switch fix](winlogon-account-switch-paint.md)). The accepted 8.1 and
+8.2 images still carry the unfixed Winlogon `e3a9cdca…`. The engineering image
+`XP25-Winlogon-Fix-8.2` (`fe633d15…`) carries the fix: two-account oracle 9/9 on
+one-vCPU KVM, and two logoffs observed painted in the
+[XP25-Winlogon-Fix VM](virt-manager-xp25-winlogon-fix.md).
 
 ## Winlogon policy/session continuation, 2026-10-24
 
