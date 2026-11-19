@@ -19,6 +19,7 @@ and what would prove it done. Item IDs are referenced from the
 | XP25 AI binaries | No stack cookies (SA-9) | Hardening | `/GS` via `BUFFER_OVERFLOW_CHECKS` | Low | **Done** (8.4) for 5 targets |
 | Winlogon, XP25Sec, XP25Audit | No stack cookies | Hardening | `/GS`; explicit `__security_init_cookie` for the `UMENTRYABS` tools | Medium (Winlogon is SYSTEM and session-critical) | R-2 |
 | Source-built Microsoft components (25) | Checked builds, no `/GS`, no SafeSEH | High (Milestone 8 baseline) | Free builds; `/GS` where the tree supports it | High | R-2, R-3 |
+| Source-built `lsasrv`, `services`, `ws2_32`, `win32k`, `user32`, `gdi32` | Missing every fix after 1106 | High | Assess post-1106 bulletins; fix what is located in source | Medium (core binaries) | **R-1 done**: 6 fixes in win32k/user32/gdi32; dozens suspected, not located ([record](source-built-component-assessment.md)); R-1b |
 | RoverAI background indexer | Stop path frees state under a scanning thread; lock order inverted (latent, SA-3) | Low | Cancellable watcher scans, unbounded join or no free, lock order fix, or remove the dead stop path | Low | R-6 |
 | XP25Broker | Cancelled connect not awaited; spin on event creation failure (SA-4, SA-5) | Low | Wait after `CancelIo`; fail closed | Low | R-7 |
 | RoverAI → ClippyAI IPC | Argument quoting (SA-6); duplicated sender (SA-12) | Low | One sender; `CommandLineToArgvW`-compatible quoting | Low | R-5 |
@@ -56,7 +57,15 @@ correctly). Keep one handle open for the process lifetime, or move
 diagnostics off COM1 in production builds and keep the file log. That log has
 no size limit today; add one.
 
-**R-1 — Analysis of the source-built Microsoft components.** Milestone 8.4
+**R-1 — Analysis of the source-built Microsoft components. Done**
+([record](source-built-component-assessment.md)). The bulletin index found 8
+LSASS, 0 SCM, 0 effective Winsock, 36 win32k and 15 GDI/USER bulletins affecting
+XP after 1106. Six defects were located in our source and fixed
+(win32k ×4, user32, gdi32). Three LSASS and dozens of win32k/GDI bulletins
+remain *suspected*: Microsoft never published their mechanisms.
+**R-1b** locates those by comparing the 1106 binaries with Microsoft's final XP
+builds function by function, and assesses the kernel and CSRSS. The original
+item: Milestone 8.4
 analyzed XP25's own code only. For the 25 rebuilt Microsoft binaries, start
 with the ones that face untrusted input and run privileged: `lsasrv.dll`
 (partly done in 8.2), `services.exe`, `ws2_32.dll`, `win32k.sys`. No CL-compatible

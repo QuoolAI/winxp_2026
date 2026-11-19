@@ -1,0 +1,210 @@
+--- a/windows/core/ntuser/client/acons.c
++++ b/windows/core/ntuser/client/acons.c
+@@ -51,7 +51,8 @@
+ BOOL ReadChunk(
+     IN  PFILEINFO pfi,
+     IN      PRTAG ptag,
+-    OUT     PVOID pv);
++    OUT     PVOID pv,
++    IN      DWORD cbMax);
+ 
+ BOOL SkipChunk(
+     IN PFILEINFO pfi,
+@@ -152,8 +153,16 @@
+     IN  DWORD     cb)
+ {
+     *ppBuf = pfi->pFilePtr;
++    /*
++     * XP25 R-1: compare with the bytes left, never form a pointer past the
++     * end (a large cb from the file wraps on 32-bit and passed the old test).
++     */
++    if (pfi->pFilePtr > pfi->pFileEnd ||
++            cb > (DWORD)(pfi->pFileEnd - pfi->pFilePtr)) {
++        return FALSE;
++    }
+     pfi->pFilePtr += cb;
+-    return (pfi->pFilePtr <= pfi->pFileEnd);
++    return TRUE;
+ }
+ 
+ 
+@@ -173,8 +182,16 @@
+     IN  DWORD     cb)
+ {
+     *ppBuf = pfi->pFilePtr;
++    /*
++     * XP25 R-1: compare with the bytes left, never form a pointer past the
++     * end (a large cb from the file wraps on 32-bit and passed the old test).
++     */
++    if (pfi->pFilePtr > pfi->pFileEnd ||
++            cb > (DWORD)(pfi->pFileEnd - pfi->pFilePtr)) {
++        return FALSE;
++    }
+     pfi->pFilePtr += cb;
+-    return (pfi->pFilePtr <= pfi->pFileEnd);
++    return TRUE;
+ }
+ 
+ 
+@@ -193,7 +210,11 @@
+     IN OUT LPVOID pBuf,
+     IN     DWORD cb)
+ {
+-    if (pfi->pFilePtr + cb > pfi->pFileEnd) {
++    /*
++     * XP25 R-1: bytes left, not pointer arithmetic that can wrap (see ReadFilePtr).
++     */
++    if (pfi->pFilePtr > pfi->pFileEnd ||
++            cb > (DWORD)(pfi->pFileEnd - pfi->pFilePtr)) {
+         return(FALSE);
+     }
+     RtlCopyMemory(pBuf, pfi->pFilePtr, cb);
+@@ -226,8 +247,18 @@
+ BOOL ReadChunk(
+     IN  PFILEINFO pfi,
+     IN  PRTAG     ptag,
+-    OUT PVOID     pv)
++    OUT PVOID     pv,
++    IN  DWORD     cbMax)
+ {
++    /*
++     * XP25 R-1 (MS07-017, CVE-2007-0038): the chunk size comes from the file;
++     * it must fit the caller's buffer.
++     */
++    if (ptag->ckSize > cbMax) {
++        RIPMSG2(RIP_WARNING, "ReadChunk: chunk of %#lx bytes for a %#lx byte buffer", ptag->ckSize, cbMax);
++        return FALSE;
++    }
++
+     if (!ReadFilePtrCopy(pfi, pv, ptag->ckSize))
+         return FALSE;
+ 
+@@ -254,8 +285,14 @@
+      * Round ptag->ckSize up to nearest word boundary
+      * to maintain alignment
+      */
+-    pfi->pFilePtr += (ptag->ckSize + 1) & (~1);
+-    if (pfi->pFilePtr <= pfi->pFileEnd) {
++    DWORD cb = (ptag->ckSize + 1) & (~1);
++
++    /*
++     * XP25 R-1: bytes left, not pointer arithmetic that can wrap.
++     */
++    if (cb >= ptag->ckSize && pfi->pFilePtr <= pfi->pFileEnd &&
++            cb <= (DWORD)(pfi->pFileEnd - pfi->pFilePtr)) {
++        pfi->pFilePtr += cb;
+         return TRUE;
+     } else {
+         RIPMSG0(RIP_WARNING, "SkipChunk: Advanced pointer past end of file map");
+@@ -330,7 +367,10 @@
+ 
+                 ANIHEADER anih;
+ 
+-                if (!ReadChunk(pfi, &tag, &anih)) {
++                /*
++                 * XP25 R-1 (MS07-017): an 'anih' chunk is exactly one ANIHEADER.
++                 */
++                if (tag.ckSize != sizeof(anih) || !ReadChunk(pfi, &tag, &anih, sizeof(anih))) {
+                     return NULL;
+                 }
+ 
+@@ -495,7 +535,13 @@
+         /*
+          * Read the resource directory from the icon file.
+          */
+-        ReadFilePtrUnaligned(pfi, &pird, sizeof(ICONFILERESDIR));
++        /*
++         * XP25 R-1: every directory entry must be inside the file.
++         */
++        if (!ReadFilePtrUnaligned(pfi, &pird, sizeof(ICONFILERESDIR))) {
++            UserLocalFree(pnh);
++            return NULL;
++        }
+ 
+         /*
+          * Convert from the icon editor's resource directory format
+@@ -847,10 +893,17 @@
+ 
+         switch( tag.ckID ) {
+         case FOURCC_anih:
+-            if (!ReadChunk(pfi, &tag, &anih))
++            /*
++             * XP25 R-1 (MS07-017, CVE-2007-0038): exactly one ANIHEADER, once,
++             * with frame and step counts the kernel accepts (16 bits) so the
++             * table size below cannot overflow.
++             */
++            if (phcur != NULL || tag.ckSize != sizeof(anih) ||
++                    !ReadChunk(pfi, &tag, &anih, sizeof(anih)))
+                 goto laiFileErr;
+ 
+-            if (!(anih.fl & AF_ICON) || (anih.cFrames == 0))
++            if (!(anih.fl & AF_ICON) || (anih.cFrames == 0) ||
++                    (anih.cSteps == 0) || (anih.cFrames > 0xFFFF) || (anih.cSteps > 0xFFFF))
+                 goto laiFileErr;
+ 
+             /*
+@@ -883,9 +936,15 @@
+              * If we find a rate chunk, read it into its preallocated
+              * space.
+              */
++            /*
++             * XP25 R-1: only after 'anih' has sized the table, and no larger
++             * than its rate part.
++             */
++            if (phcur == NULL)
++                goto laiFileErr;
+             pjifRate = (PJIF)((PBYTE)phcur + cpcur * sizeof(HCURSOR));
+             UserAssert(pjifRate == NATURAL_ALIGNED_PTR(JIF, pjifRate));
+-            if(!ReadChunk(pfi, &tag, (PBYTE)pjifRate))
++            if(!ReadChunk(pfi, &tag, (PBYTE)pjifRate, cicur * sizeof(JIF)))
+                 goto laiFileErr;
+             break;
+ 
+@@ -895,10 +954,16 @@
+              * If we find a seq chunk, read it into its preallocated
+              * space.
+              */
++            /*
++             * XP25 R-1: only after 'anih', no larger than the sequence part.
++             * The kernel checks each entry against the frame count.
++             */
++            if (phcur == NULL)
++                goto laiFileErr;
+             picur = (DWORD *)((PBYTE)phcur + cpcur * sizeof(HCURSOR) +
+                     cicur * sizeof(JIF));
+             UserAssert(picur == NATURAL_ALIGNED_PTR(DWORD, picur));
+-            if(!ReadChunk(pfi, &tag, (PBYTE)picur))
++            if(!ReadChunk(pfi, &tag, (PBYTE)picur, cicur * sizeof(DWORD)))
+                 goto laiFileErr;
+             break;
+ 
+@@ -916,6 +981,12 @@
+ 
+                 cbChunk -= sizeof(tag.ckID);
+ 
++                /*
++                 * XP25 R-1: frames are stored in the table 'anih' sized.
++                 */
++                if (tag.ckID == FOURCC_fram && phcur == NULL)
++                    goto laiFileErr;
++
+                 if (tag.ckID != FOURCC_fram) {
+                     /*
+                      * Not the fram list (probably the INFO list).  Skip
+@@ -936,6 +1007,16 @@
+                     if(tag.ckID == FOURCC_icon) {
+ 
+                         /*
++                         * XP25 R-1 (MS07-017): never more frames than 'anih'
++                         * declared; the table has room for cpcur of them.
++                         */
++                        if (ipcur >= cpcur) {
++                            for (i = 0; i < ipcur; i++)
++                                NtUserDestroyCursor(phcur[i], 0);
++                            goto laiFileErr;
++                        }
++
++                        /*
+                          * Ok, load the icon/cursor bits, create a cursor from
+                          * them, and save a pointer to it away in the ACON
+                          * cursor pointer array.

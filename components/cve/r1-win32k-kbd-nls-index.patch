@@ -1,0 +1,49 @@
+--- a/windows/core/ntuser/kernel/fekbd.c
++++ b/windows/core/ntuser/kernel/fekbd.c
+@@ -914,6 +914,16 @@
+     iFuncIndex = pVkToF->NLSFEProc[nMod].NLSFEProcIndex;
+     dwParam = pVkToF->NLSFEProc[nMod].NLSFEProcParam;
+ 
++    /*
++     * XP25 R-1 (MS10-073): the index comes from the keyboard layout's NLS
++     * table, which any user can load; it must name an entry of aNLSKEProc.
++     * A key with an invalid entry is passed on unchanged.
++     */
++    if ((ULONG)iFuncIndex >= sizeof(aNLSKEProc) / sizeof(aNLSKEProc[0])) {
++        RIPMSG1(RIP_WARNING, "GenerateNlsVkKey: invalid NLS function index %d", iFuncIndex);
++        return TRUE;
++    }
++
+     return((aNLSKEProc[iFuncIndex])(pKe, dwExtraInfo, dwParam));
+ }
+ 
+@@ -925,6 +935,14 @@
+     iFuncIndex = pVkToF->NLSFEProcAlt[nMod].NLSFEProcIndex;
+     dwParam = pVkToF->NLSFEProcAlt[nMod].NLSFEProcParam;
+ 
++    /*
++     * XP25 R-1 (MS10-073): see GenerateNlsVkKey.
++     */
++    if ((ULONG)iFuncIndex >= sizeof(aNLSKEProc) / sizeof(aNLSKEProc[0])) {
++        RIPMSG1(RIP_WARNING, "GenerateNlsVkAltKey: invalid NLS function index %d", iFuncIndex);
++        return TRUE;
++    }
++
+     return((aNLSKEProc[iFuncIndex])(pKe,dwExtraInfo,dwParam));
+ }
+ 
+@@ -1057,6 +1075,14 @@
+ 
+         while(iNumVk) {
+             if (pVkToF[iNumVk-1].Vk == LOBYTE(pKe->usFlaggedVk)) {
++                /*
++                 * XP25 R-1 (MS10-073): the type also comes from the layout's
++                 * table and indexes aNLSVKFProc.
++                 */
++                if ((ULONG)pVkToF[iNumVk-1].NLSFEProcType >= sizeof(aNLSVKFProc) / sizeof(aNLSVKFProc[0])) {
++                    RIPMSG1(RIP_WARNING, "xxxKENLSProcs: invalid NLS function type %d", pVkToF[iNumVk-1].NLSFEProcType);
++                    return TRUE;
++                }
+                 return aNLSVKFProc[pVkToF[iNumVk-1].NLSFEProcType](&pVkToF[iNumVk-1], pKe, dwExtraInfo);
+             }
+             iNumVk--;

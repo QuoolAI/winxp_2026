@@ -6,6 +6,22 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Source-built core fixes (R-1) checkpoint, 2026-11-19
+
+Fresh overlays of `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…`). Patched build 02
+staged in each run: `win32k.sys` `f698e04d…`, `user32.dll` `4cccacd3…`,
+`gdi32.dll` `13e538d3…`. Evidence `.work/r1-20261119/`.
+
+| Test | 1 vCPU KVM | 2 vCPU KVM | TCG |
+| --- | --- | --- | --- |
+| `r1core` probe: no handle to the GDI table section; 34 `.ani` + 150 `.cur` load and draw; WMF and EMF play | Pass (`r1-up-03`; shipped binaries hold the handle: `r1-base-up-02`) | Pass | Pass |
+| Security lab `proof` (AI build 17, R-0 Winlogon) | Pass, 35/35 | Pass, 35/35 | Pass, 35/35 |
+
+**Not tested** in the guest: Far East (NLS) keyboard layouts, path-flattening
+allocation failures, and malformed cursor, icon or WMF files (covered by host
+ASan tests only where portable). The patched binaries are in no packaged image.
+[Record](source-built-component-assessment.md)
+
 ## Screen savers and idle lock (R-0) checkpoint, 2026-11-19
 
 Fresh overlays of `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…`, unchanged) with

@@ -219,5 +219,90 @@ class Ms03026GetMachineNameTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, '%s\n%s%s' % (tree, result.stdout, result.stderr[-3000:]))
 
 
+@unittest.skipUnless(CC, 'no C compiler')
+class R1User32AniTests(unittest.TestCase):
+    """user32.dll: LoadAniIcon copies RIFF chunks whose sizes come from the .ani file into
+    a stack ANIHEADER and into tables sized by the file's frame and step counts, and stores
+    frames without checking the declared count (R-1; MS07-017 / MS05-002 class)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.built = Built(cls.tmp.name, 'r1_user32_ani.c',
+                          [('windows/core/ntuser/client/acons.c',
+                            ['ReadFilePtr', 'ReadFilePtrUnaligned', 'ReadFilePtrCopy', 'ReadTag',
+                             'ReadChunk', 'SkipChunk', 'LoadAniIcon'])])
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_valid_animation_loads_identically(self):
+        outputs = []
+        for tree in ('original', 'patched'):
+            result = self.built.run(tree, 'valid')
+            self.assertEqual(result.returncode, 0, '%s\n%s%s' % (tree, result.stdout, result.stderr[-3000:]))
+            outputs.append(result.stdout.split('handle=')[1].split(' ', 1)[1])
+        self.assertEqual(outputs[0], outputs[1])
+
+    def test_original_overruns_on_oversized_chunks_and_extra_frames(self):
+        for mode, function in (('anih-size', 'LoadAniIcon'), ('rate-size', 'ReadFilePtrCopy'),
+                               ('seq-size', 'ReadFilePtrCopy'), ('frames', 'LoadAniIcon')):
+            result = self.built.run('original', mode)
+            self.assertNotEqual(result.returncode, 0, mode)
+            self.assertIn('AddressSanitizer', result.stderr, mode)
+            self.assertIn(function, result.stderr, mode)
+
+    def test_patched_rejects_every_malformed_layout(self):
+        for mode in ('anih-size', 'rate-size', 'seq-size', 'order', 'frames', 'truncated'):
+            result = self.built.run('patched', mode)
+            self.assertEqual(result.returncode, 0, '%s\n%s%s' % (mode, result.stdout, result.stderr[-3000:]))
+
+
+def table_entries(name):
+    """Entry count of a function table initializer in fekbd.c (the bound the patch checks)."""
+    body = re.search(r'%s\[\]\s*=\s*\{(.*?)\};' % name, source_text('windows/core/ntuser/kernel/fekbd.c'), re.S).group(1)
+    return len([item for item in re.sub(r'//[^\n]*', '', body).split(',') if item.strip()])
+
+
+@unittest.skipUnless(CC, 'no C compiler')
+class R1Win32kKeyboardNlsTests(unittest.TestCase):
+    """win32k.sys: a keyboard layout's NLS table selects functions by index and type from
+    win32k's tables without a bound (R-1; MS10-073 class)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.built = Built(cls.tmp.name, 'r1_win32k_kbdnls.c',
+                          [('windows/core/ntuser/kernel/fekbd.c',
+                            ['GenerateNlsVkKey', 'GenerateNlsVkAltKey', 'xxxKENLSProcs'])],
+                          defines=('NLSKE_COUNT=%d' % table_entries('aNLSKEProc'),
+                                   'NLSVKF_COUNT=%d' % table_entries('aNLSVKFProc')))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_valid_layout_dispatches_identically(self):
+        for tree in ('original', 'patched'):
+            result = self.built.run(tree, 'valid')
+            self.assertEqual(result.returncode, 0, '%s\n%s%s' % (tree, result.stdout, result.stderr[-3000:]))
+            self.assertEqual(result.stdout, 'called=1 result=1\ncalled=2 result=1\n')
+
+    def test_original_reads_past_the_function_tables(self):
+        for mode, function in (('index', 'GenerateNlsVkKey'), ('alt-index', 'GenerateNlsVkAltKey'), ('type', 'xxxKENLSProcs')):
+            result = self.built.run('original', mode)
+            self.assertNotEqual(result.returncode, 0, mode)
+            # One past the end lands in ASan's redzone; index 255 lands far beyond it, where
+            # UBSan's array-bounds check reports it.
+            self.assertTrue('global-buffer-overflow' in result.stderr or 'out of bounds for type' in result.stderr, mode)
+            self.assertIn(function, result.stderr, mode)
+
+    def test_patched_passes_the_key_on_without_a_call(self):
+        for mode in ('index', 'alt-index', 'type'):
+            result = self.built.run('patched', mode)
+            self.assertEqual(result.returncode, 0, '%s\n%s%s' % (mode, result.stdout, result.stderr[-3000:]))
+
+
 if __name__ == '__main__':
     unittest.main()

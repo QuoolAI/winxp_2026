@@ -1,0 +1,15 @@
+--- a/windows/core/ntgdi/gre/pathflat.cxx
++++ b/windows/core/ntgdi/gre/pathflat.cxx
+@@ -613,6 +613,12 @@
+ 
+     *pppr = ppa->pprfreestart;
+ 
++// XP25 R-1 (MS13-053): callers link the new record into the path before they
++// fill in its forward link; if they fail before that, the path must not hold
++// a stale pointer from the reused allocation.
++
++    (*pppr)->pprnext = (PPATHREC) NULL;
++
+     return(TRUE);
+ }
+ 

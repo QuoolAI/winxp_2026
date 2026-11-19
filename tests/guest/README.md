@@ -197,3 +197,15 @@ run from a Startup fixture by `vm/security_lab.py`
   `.DEFAULT`'s timeout to N, restores its own and logs off. The second session
   restores `.DEFAULT` (600 s). Exit 0 when every case passed.
   ([record](../../docs/winlogon-screen-saver.md))
+* `r1core` (kernel32, user32, gdi32): roadmap R-1, for the rebuilt `win32k.sys`,
+  `user32.dll` and `gdi32.dll`. It only observes and makes ordinary API calls:
+  nothing is mapped writable and no malformed file is used.
+  - It lists this process's section handles. It reports how many refer to the
+    GDI shared handle table: committed, not image- or file-backed, sized like
+    the read-only view at `PEB->GdiSharedHandleTable`. `NtQuerySection` does not
+    report `SEC_NO_CHANGE`, which is why the size is used.
+  - It loads every `.ani` and `.cur` file in `%windir%\Cursors` and draws each
+    animated cursor through its steps.
+  - It records a WMF, then plays it and its EMF conversion into a bitmap.
+  Exit 0 when the cursors and metafiles work and no GDI section handle is held.
+  ([record](../../docs/source-built-component-assessment.md))

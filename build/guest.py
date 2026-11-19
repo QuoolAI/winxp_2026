@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
     parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem",
-                                            "clippyexit", "gscookie", "roverbench", "idle", "screensaver"), default="xp",
+                                            "clippyexit", "gscookie", "roverbench", "idle", "screensaver", "r1core"), default="xp",
                         help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
@@ -104,7 +104,7 @@ def main():
         expected_dlls |= {'advapi32.dll'}
     if args.probe == 'profile':
         expected_dlls |= {'netapi32.dll'}
-    if args.probe in ("branding", "oem"):
+    if args.probe in ("branding", "oem", "r1core"):
         expected_dlls |= {"gdi32.dll"}
     command = [tools["cc"], "-Os", "-Wall", "-Wextra", "-Werror", "-ffreestanding",
                "-fno-builtin", "-fno-stack-protector", "-nostdlib",
@@ -118,7 +118,7 @@ def main():
         command += ["-ladvapi32"]
     elif args.probe == "network":
         command += ["-ladvapi32", "-lws2_32", "-liphlpapi"]
-    if args.probe in ("branding", "oem"):
+    if args.probe in ("branding", "oem", "r1core"):
         command += ["-lgdi32"]
     if args.probe == 'shell':
         command += ['-lshell32']

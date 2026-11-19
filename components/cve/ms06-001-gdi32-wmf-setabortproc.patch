@@ -1,0 +1,21 @@
+--- a/windows/core/ntgdi/client/mfplay16.c
++++ b/windows/core/ntgdi/client/mfplay16.c
+@@ -1201,7 +1201,17 @@
+         case (META_ESCAPE & 255):
+             if (!(fStatus = PlayIntoAMetafile(lpMR, hdc)))
+             {
+-                if ((int)(UINT)lpMR->rdParm[0] != MFCOMMENT)
++                /*
++                 * XP25 R-1 (MS06-001, CVE-2005-4560): SETABORTPROC takes a
++                 * procedure address, and in a metafile record that address
++                 * would point into the file's own data. A metafile never
++                 * installs an abort procedure; the record is skipped.
++                 */
++                if ((int)(UINT)lpMR->rdParm[0] == SETABORTPROC)
++                {
++                    fStatus = TRUE;
++                }
++                else if ((int)(UINT)lpMR->rdParm[0] != MFCOMMENT)
+                 {
+                     fStatus = Escape(hdc,
+                         (int) (UINT) lpMR->rdParm[0],

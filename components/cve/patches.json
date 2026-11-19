@@ -8,8 +8,14 @@
    "cve": "CVE-2003-0533",
    "title": "LSASS DsRole log line overflow; unauthenticated DsRolerUpgradeDownlevelServer",
    "binary": "lsasrv.dll",
-   "build_dirs": ["ds\\security\\dsrole\\server", "ds\\security\\base\\lsa\\server\\dsdll"],
-   "outputs": ["ds\\security\\base\\lsa\\server\\dsdll\\obj\\i386\\lsasrv.dll", "ds\\security\\base\\lsa\\server\\dsdll\\obj\\i386\\lsasrv.pdb"],
+   "build_dirs": [
+    "ds\\security\\dsrole\\server",
+    "ds\\security\\base\\lsa\\server\\dsdll"
+   ],
+   "outputs": [
+    "ds\\security\\base\\lsa\\server\\dsdll\\obj\\i386\\lsasrv.dll",
+    "ds\\security\\base\\lsa\\server\\dsdll\\obj\\i386\\lsasrv.pdb"
+   ],
    "patch": "ms04-011-dsrole-log.patch",
    "files": {
     "ds/security/dsrole/server/dispatch.c": "7a38a7410aeb34cee696675de71f12b4e640867f113812215ece412f50bc2612",
@@ -22,8 +28,12 @@
    "cve": "CVE-2008-4250",
    "title": "netapi32 CanonicalizePathName path-traversal out-of-bounds pointer",
    "binary": "netapi32.dll (via netlib.lib)",
-   "build_dirs": ["ds\\netapi\\netlib"],
-   "outputs": ["ds\\netapi\\netlib\\obj\\i386\\netlib.lib"],
+   "build_dirs": [
+    "ds\\netapi\\netlib"
+   ],
+   "outputs": [
+    "ds\\netapi\\netlib\\obj\\i386\\netlib.lib"
+   ],
    "install": false,
    "install_note": "The installed netapi32.dll is the Service Pack 3 binary 5.1.2600.6260, already past MS08-067; a 1106-era rebuild would regress its other fixes. The fix is verified at the source and netlib.lib level; it is not installed. Relinking the full netapi32.dll needs ds\\lib\\dsrole.lib, which is not in the frozen build tree.",
    "patch": "ms08-067-netapi-canon.patch",
@@ -37,14 +47,135 @@
    "cve": "CVE-2003-0352",
    "title": "RPCSS DCOM activation GetMachineName UNC server-name stack overflow",
    "binary": "rpcss.dll (via olescm.lib)",
-   "build_dirs": ["com\\ole32\\dcomss\\olescm\\daytona", "com\\ole32\\dcomss\\wrapper\\daytona"],
-   "outputs": ["com\\ole32\\dcomss\\wrapper\\daytona\\obj\\i386\\rpcss.dll"],
+   "build_dirs": [
+    "com\\ole32\\dcomss\\olescm\\daytona",
+    "com\\ole32\\dcomss\\wrapper\\daytona"
+   ],
+   "outputs": [
+    "com\\ole32\\dcomss\\wrapper\\daytona\\obj\\i386\\rpcss.dll"
+   ],
    "install": false,
    "install_note": "Verified at the source and host level only. The installed rpcss.dll is the Service Pack 3 binary 5.1.2600.5755, already past MS03-026; a 1106-era rebuild would regress its other fixes. A native rpcss.dll rebuild (olescm + wrapper) is proposed for Milestone 8.3.",
    "native_build": false,
    "patch": "ms03-026-rpcss-getmachinename.patch",
    "files": {
     "com/ole32/dcomss/olescm/actmisc.cxx": "46139cd7723524e23bb8a59889089053afb3665967933809bb999eed5738069e"
+   }
+  },
+  {
+   "id": "r1-win32k-gdi-section-handle",
+   "bulletin": "MS07-017",
+   "cve": "CVE-2006-5758 (attributed by Microsoft's description; see docs)",
+   "title": "win32k left a SECTION_ALL_ACCESS handle to the GDI shared handle table section in every GUI process",
+   "binary": "win32k.sys",
+   "build_dirs": [
+    "windows\\core\\ntgdi\\gre\\daytona",
+    "windows\\core\\ntuser\\kernel\\daytona",
+    "windows\\core\\kmode\\daytona"
+   ],
+   "outputs": [
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.sys",
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.pdb"
+   ],
+   "patch": "r1-win32k-gdi-section-handle.patch",
+   "files": {
+    "windows/core/ntgdi/gre/cleanup.cxx": "60d68c11c38b92b1e6b1e544dc4210871aca3eb4a8e5cf7324b2a05965a13613"
+   }
+  },
+  {
+   "id": "r1-win32k-ani-sequence",
+   "bulletin": "MS05-002 / MS07-017 (cursor and icon format validation class)",
+   "cve": "none claimed",
+   "title": "win32k accepted animated-cursor sequence indexes and a starting step without checking them against the frame and step counts",
+   "binary": "win32k.sys",
+   "build_dirs": [
+    "windows\\core\\ntgdi\\gre\\daytona",
+    "windows\\core\\ntuser\\kernel\\daytona",
+    "windows\\core\\kmode\\daytona"
+   ],
+   "outputs": [
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.sys",
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.pdb"
+   ],
+   "patch": "r1-win32k-ani-sequence.patch",
+   "files": {
+    "windows/core/ntuser/kernel/acons.c": "bc307f25d21d3e4969179cfa5b3c7e981144017b23dd5c495129f42452e8d2f4"
+   }
+  },
+  {
+   "id": "r1-user32-ani-chunks",
+   "bulletin": "MS07-017 / MS05-002",
+   "cve": "CVE-2007-0038 (anih chunk into a stack ANIHEADER), plus the related chunk and file-map bounds",
+   "title": "user32 ANI/ICO file parsing: chunk sizes not bounded by their buffers, chunk order not enforced, wrapping file-map bounds checks",
+   "binary": "user32.dll",
+   "build_dirs": [
+    "windows\\core\\ntuser\\client\\daytona"
+   ],
+   "outputs": [
+    "windows\\core\\ntuser\\client\\daytona\\obj\\i386\\user32.dll",
+    "windows\\core\\ntuser\\client\\daytona\\obj\\i386\\user32.pdb"
+   ],
+   "patch": "r1-user32-ani-chunks.patch",
+   "files": {
+    "windows/core/ntuser/client/acons.c": "39cf5a7369140dde5b131d676da91cdf5e2553803c0e04c6c4b427003da2ad90"
+   }
+  },
+  {
+   "id": "ms06-001-gdi32-wmf-setabortproc",
+   "bulletin": "MS06-001",
+   "cve": "CVE-2005-4560",
+   "title": "gdi32 WMF playback installed an abort procedure from a META_ESCAPE SETABORTPROC record",
+   "binary": "gdi32.dll",
+   "build_dirs": [
+    "windows\\core\\ntgdi\\client\\daytona"
+   ],
+   "outputs": [
+    "windows\\core\\ntgdi\\client\\daytona\\obj\\i386\\gdi32.dll",
+    "windows\\core\\ntgdi\\client\\daytona\\obj\\i386\\gdi32.pdb"
+   ],
+   "patch": "ms06-001-gdi32-wmf-setabortproc.patch",
+   "files": {
+    "windows/core/ntgdi/client/mfplay16.c": "fe372a0b452971e0b68881283b970ebcc13177f6f44271bef05759c9eb596e3d"
+   }
+  },
+  {
+   "id": "r1-win32k-kbd-nls-index",
+   "bulletin": "MS10-073",
+   "cve": "CVE-2010-2743 (consistent with public analyses; Microsoft's text names it only)",
+   "title": "win32k used a keyboard layout's NLS function index and type to index its function tables without bounds",
+   "binary": "win32k.sys",
+   "build_dirs": [
+    "windows\\core\\ntgdi\\gre\\daytona",
+    "windows\\core\\ntuser\\kernel\\daytona",
+    "windows\\core\\kmode\\daytona"
+   ],
+   "outputs": [
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.sys",
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.pdb"
+   ],
+   "patch": "r1-win32k-kbd-nls-index.patch",
+   "files": {
+    "windows/core/ntuser/kernel/fekbd.c": "252482da049345f957026880a799557b51f1edc986275d01940aca18b2d61132"
+   }
+  },
+  {
+   "id": "r1-win32k-pathrec-next",
+   "bulletin": "MS13-053",
+   "cve": "CVE-2013-3660 (consistent with public analyses; Microsoft's text names it only)",
+   "title": "win32k linked a new path record into a path before initializing its forward link; a later allocation failure left a stale pointer in the path",
+   "binary": "win32k.sys",
+   "build_dirs": [
+    "windows\\core\\ntgdi\\gre\\daytona",
+    "windows\\core\\ntuser\\kernel\\daytona",
+    "windows\\core\\kmode\\daytona"
+   ],
+   "outputs": [
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.sys",
+    "windows\\core\\kmode\\daytona\\obj\\i386\\win32k.pdb"
+   ],
+   "patch": "r1-win32k-pathrec-next.patch",
+   "files": {
+    "windows/core/ntgdi/gre/pathflat.cxx": "d9e7d1364c6c4c0a4206ebcca5e4202d2c66db6c3be01388e1f384dd2a54581c"
    }
   }
  ]

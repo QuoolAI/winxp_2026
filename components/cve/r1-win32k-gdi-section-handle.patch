@@ -1,0 +1,32 @@
+--- a/windows/core/ntgdi/gre/cleanup.cxx
++++ b/windows/core/ntgdi/gre/cleanup.cxx
+@@ -515,10 +515,18 @@
+             UNICODE_STRING UnicodeString;
+             HANDLE SectionHandle = NULL;
+ 
++            //
++            // XP25 R-1 (MS07-017, CVE-2006-5758): the section holds kernel
++            // object addresses and is writable. Open it as a kernel handle with
++            // read access only and close it once mapped: a handle in the
++            // process's own table (SECTION_ALL_ACCESS, never closed) let the
++            // process map a second, writable view.
++            //
++
+             ntStatus = ObOpenObjectByPointer( gpHmgrSharedHandleSection,
+-                                            0L,
++                                            OBJ_KERNEL_HANDLE,
+                                             (PACCESS_STATE) NULL,
+-                                            SECTION_ALL_ACCESS,
++                                            SECTION_MAP_READ,
+                                             (POBJECT_TYPE) NULL,
+                                             KernelMode,
+                                             &SectionHandle);
+@@ -538,6 +546,8 @@
+                                 PAGE_READONLY
+                                 );
+ 
++                ZwClose(SectionHandle);
++
+                 if (NT_SUCCESS(ntStatus))
+                 {
+                     //

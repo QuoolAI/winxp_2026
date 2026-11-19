@@ -1,0 +1,31 @@
+--- a/windows/core/ntuser/kernel/acons.c
++++ b/windows/core/ntuser/kernel/acons.c
+@@ -538,6 +538,28 @@
+         }
+ 
+         /*
++         * XP25 R-1: the sequence table and the starting step come from the
++         * caller (an ANI file through LoadAniIcon, or any process calling
++         * NtUserSetCursorIconData). The animation code indexes aspcur with
++         * aicur[] and the rate table with the step, so every step must name an
++         * existing frame and the animation starts at its first step.
++         */
++        {
++            BOOL fValid = (pacon->cpcur > 0 && pacon->cicur > 0);
++
++            pacon->iicur = 0;
++            for (i = 0; fValid && i < pacon->cicur; i++) {
++                fValid = (pacon->aicur[i] < (DWORD)pacon->cpcur);
++            }
++            if (!fValid) {
++                UserFreePool(pacon->aspcur);
++                pacon->aspcur = NULL;
++                RIPMSG0(RIP_WARNING, "SetCursorIconData: invalid animation sequence");
++                return FALSE;
++            }
++        }
++
++        /*
+          * Convert handles into pointers and lock them in.
+          */
+         for (i = 0; i < pacon->cpcur; i++) {

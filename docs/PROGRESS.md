@@ -2,6 +2,40 @@
 
 ## Current checkpoint
 
+2026-11-19, R-1: assessment of the source-built Microsoft components after 1106
+(`xp25-modernization`; evidence `.work/r1-20261119/`). `build/bulletin_index.py`
+indexed all 1,001 bulletins MS02-001…MS14-085. Windows XP candidates: 8 LSASS,
+0 SCM, 1 Winsock (a false positive: `dnsapi`/`rasadhlp`), 36 win32k and 15
+GDI/USER.
+
+Located in our source and **fixed** (`components/cve/`), six defects:
+- `win32k`: the GDI handle-table section handle left in every GUI process with
+  `SECTION_ALL_ACCESS` (MS07-017, CVE-2006-5758 by description);
+- `win32k`: unchecked animated-cursor sequence indexes and starting step;
+- `win32k`: unchecked keyboard-layout NLS function index and type (MS10-073);
+- `win32k`: an uninitialized path-record link on a failure path (MS13-053);
+- `user32`: ANI chunk sizes, order and frame count, and wrapping file-map bounds
+  (MS07-017, CVE-2007-0038);
+- `gdi32`: WMF `SETABORTPROC` (MS06-001, CVE-2005-4560).
+
+One candidate (`SEC_NO_CHANGE` on the view) was withdrawn: the section already
+has it. Host ASan tests compile the real functions from both trees. The original
+overflows, and the patched code rejects every malformed layout. The control
+build reproduces the installed `win32k.sys`, `user32.dll` and `gdi32.dll` exactly
+(0 other differing bytes). Patched build 02 differs only in the six patched
+functions and relocated addresses.
+
+Guest (8.2 image): on the shipped binaries a GUI process holds `SECTION_ALL_ACCESS`
+handle `0x774` to the GDI table section. With the patched trio it holds none on
+UP, MP and TCG; all 34 `.ani` and 150 `.cur` cursors load and draw, WMF and EMF
+play, and `proof` passes 35/35 on UP, MP and TCG.
+
+Suspected and not located (mechanisms never published): three LSASS local EoPs
+(MS04-044, MS08-002, MS11-014) and most of win32k/GDI's bulletins, the largest
+residual risk. `services.exe`: no finding (MS06-011 DACLs verified offline).
+`ws2_32`: no finding in the reviewed paths. Kernel and CSRSS not assessed.
+Not installed in any image. [Record](source-built-component-assessment.md)
+
 2026-11-19, R-0: screen savers and the idle lock in the XP25 Winlogon
 (`xp25-modernization`; evidence `.work/screensaver-20261119/`). **Implemented and
 verified.** Winlogon now acts on USER's `LOGON_INPUT_TIMEOUT`. It starts the
