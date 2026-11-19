@@ -21,10 +21,12 @@ usage:
   security_lab.py scan RUN LABEL
   security_lab.py fail RUN REASON"""
 import argparse
+import datetime
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import sys
@@ -266,6 +268,7 @@ def wait(args):
     ui_tries, next_ui = 0, 0.0
     handled = -1
     outcome = None
+    timeline_lines = 0
     # One monitor connection for the whole wait, so no QMP event is missed.
     with lab.QMP() as q:
         while time.time() < deadline and not outcome:
@@ -287,6 +290,17 @@ def wait(args):
             if outcome:
                 break
             text = serial_text()
+            # serial-timeline.jsonl: when each Winlogon event and fixture marker was first seen on the
+            # host (at the 2 s poll granularity), for start-up timing; the guest's own lines carry no time.
+            lines = text.split('\n')
+            fresh = [l.strip() for l in lines[timeline_lines:len(lines) - 1]
+                     if l.startswith('{"xp25_winlogon"') or re.match(r'^XP25_[A-Z0-9_]+(=\S*)?\s*$', l.strip())]
+            if fresh:
+                stamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                with Path('serial-timeline.jsonl').open('a') as timeline:
+                    for line in fresh:
+                        timeline.write(json.dumps({'utc': stamp, 'line': line[:200]}) + '\n')
+            timeline_lines = max(timeline_lines, len(lines) - 1)
             if args.marker and args.marker in text:
                 outcome = 'marker'
                 break
