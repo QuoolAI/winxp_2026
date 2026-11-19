@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
     parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem",
-                                            "clippyexit", "roverbench"), default="xp",
+                                            "clippyexit", "gscookie", "roverbench"), default="xp",
                         help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
@@ -96,6 +96,8 @@ def main():
         expected_dlls |= {"advapi32.dll", "ws2_32.dll", "iphlpapi.dll"}
     if args.probe == 'shell':
         expected_dlls |= {'shell32.dll'}
+    if args.probe == 'gscookie':
+        expected_dlls |= {'advapi32.dll', 'shell32.dll'}
     if args.probe == 'roverbench':
         expected_dlls |= {'shell32.dll'}
     if args.probe == 'profile':
@@ -118,6 +120,8 @@ def main():
         command += ["-lgdi32"]
     if args.probe == 'shell':
         command += ['-lshell32']
+    if args.probe == 'gscookie':
+        command += ['-ladvapi32', '-lshell32']
     if args.probe == 'roverbench':
         command += ['-lshell32']
     if args.probe == 'profile':
