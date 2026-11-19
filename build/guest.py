@@ -52,7 +52,8 @@ def import_symbols(text, expected_dlls=ALLOWED_DLLS):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
-    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem"), default="xp",
+    parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem",
+                                            "clippyexit"), default="xp",
                         help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",

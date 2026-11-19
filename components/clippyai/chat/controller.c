@@ -135,14 +135,40 @@ void controller_send(const char *utf8)
 
 void controller_stop(void) { InterlockedExchange(&g_app.cancel, 1); }
 
+/* Waits for the worker while still delivering the questions it sends to this thread, which are
+   answered "no" during shutdown. */
+static int worker_ended(HANDLE worker, DWORD ms)
+{
+    DWORD start = GetTickCount(), spent;
+    MSG msg;
+    for (;;) {
+        spent = GetTickCount() - start;
+        if (spent >= ms) return WaitForSingleObject(worker, 0) == WAIT_OBJECT_0;
+        switch (MsgWaitForMultipleObjects(1, &worker, FALSE, ms - spent, QS_SENDMESSAGE)) {
+        case WAIT_OBJECT_0: return 1;
+        case WAIT_OBJECT_0 + 1: PeekMessageW(&msg, NULL, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE); break;
+        default: return WaitForSingleObject(worker, 0) == WAIT_OBJECT_0;
+        }
+    }
+}
+
 void controller_shutdown(void)
 {
+    int ended = 1;
+    g_app.shutting_down = 1;
     controller_stop();
     if (g_app.worker) {
-        WaitForSingleObject(g_app.worker, 15000);
-        CloseHandle(g_app.worker);
-        g_app.worker = NULL;
+        /* A worker waiting for the question this thread is showing (the window is being destroyed
+           from inside that dialog) cannot continue until this returns, so it is not waited for. */
+        ended = !g_app.asking && worker_ended(g_app.worker, 15000);
+        if (ended) {
+            CloseHandle(g_app.worker);
+            g_app.worker = NULL;
+        }
     }
+    /* A worker that is still running uses the agent, its tools and the provider. The process ends
+       after this window; they are left to it rather than freed under the worker. */
+    if (!ended) return;
     if (g_app.remote) xp25w_provider_destroy(g_app.remote);
     g_app.remote = NULL;
     xp25_agent_free(&g_app.agent);
@@ -273,8 +299,12 @@ void controller_event(XP25_EVENT *e)
 LRESULT controller_approve_message(WPARAM wp, LPARAM lp)
 {
     int ok;
+    if (g_app.shutting_down) return 0;
     if (g_app.mascot) g_app.mascot->set_state(g_app.mascot, MASCOT_ATTENTION);
+    g_app.asking = 1;
     ok = dialog_approval(g_app.window, (const char *)wp, (const XP25_PROPOSAL *)lp);
+    g_app.asking = 0;
+    if (g_app.shutting_down) return 0;    /* the window was destroyed while the question was open */
     if (g_app.mascot) g_app.mascot->set_state(g_app.mascot, ok ? MASCOT_WORKING : MASCOT_IDLE);
     return ok;
 }
@@ -282,5 +312,10 @@ LRESULT controller_approve_message(WPARAM wp, LPARAM lp)
 LRESULT controller_share_message(LPARAM lp)
 {
     SHARE_REQUEST *r = (SHARE_REQUEST *)lp;
-    return dialog_share(g_app.window, r->tool, r->provider, r->preview);
+    int ok;
+    if (g_app.shutting_down) return 0;
+    g_app.asking = 1;
+    ok = dialog_share(g_app.window, r->tool, r->provider, r->preview);
+    g_app.asking = 0;
+    return g_app.shutting_down ? 0 : ok;
 }

@@ -36,6 +36,8 @@ typedef struct {
     volatile LONG cancel;
     int busy;
     int tray_hint_shown;
+    int shutting_down;   /* WM_DESTROY began: questions from the worker are answered "no" */
+    int asking;          /* an approval or sharing question is on screen (the worker waits for it) */
 } CLIPPY_APP;
 
 extern CLIPPY_APP g_app;
