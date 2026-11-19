@@ -26,11 +26,20 @@ void rover_index_free(ROVER_INDEX *index)
     rover_index_init(index);
 }
 
+/* ASCII case folding as xp25_lower, without a call per character: paths below one folder share
+   long prefixes, and the index compares them millions of times per scan. */
+#define FOLD(c) ((c) >= 'A' && (c) <= 'Z' ? (c) + 32 : (c))
+
 int rover_path_compare(const char *a, const char *b)
 {
     for (;; ++a, ++b) {
-        int x = xp25_lower((unsigned char)*a), y = xp25_lower((unsigned char)*b);
-        if (x != y || !x) return x - y;
+        int x = (unsigned char)*a, y = (unsigned char)*b;
+        if (x != y) {
+            x = FOLD(x);
+            y = FOLD(y);
+            if (x != y) return x - y;
+        }
+        if (!x) return 0;
     }
 }
 
@@ -375,11 +384,20 @@ typedef struct {
     size_t count, cap;
 } PENDING;
 
+/* prefix (n bytes, ending in a backslash) followed by name. */
+static char *join_prefix(const char *prefix, size_t n, const char *name)
+{
+    size_t b = strlen(name);
+    char *full = (char *)xp25_alloc(n + b + 1);
+    if (full) { memcpy(full, prefix, n); memcpy(full + n, name, b); }
+    return full;
+}
+
 static void reconcile(ROVER_INDEX *index, PENDING *pending, STACK *stack, const ROVER_FS *fs,
                       const ROVER_SCAN_CONFIG *config, ROVER_SCAN_STATS *stats, const char *dir)
 {
     ROVER_DIRENT *list = NULL;
-    size_t n = 0, i, first, last;
+    size_t n = 0, i, first, last, cursor;
     char *prefix;
     size_t prefix_len;
     int status = fs->list(fs->ctx, dir, &list, &n);
@@ -400,9 +418,16 @@ static void reconcile(ROVER_INDEX *index, PENDING *pending, STACK *stack, const 
         if ((e->attrs & DEAD) || strchr(rest, '\\')) continue;
         if (!listed(list, n, rest)) stats->removed += (unsigned long)mark_tree(index, e->path, 1);
     }
+    /* The directory's subtree [first, last) is contiguous and in the same order as the sorted
+       listing: both sort by rover_path_compare and every path in it starts with prefix. Each listed
+       name is therefore found by moving one cursor forward and comparing names only; a search of
+       the whole index per name compared long shared prefixes millions of times per rescan. The
+       loop changes flags and content only, never the order, so the range stays valid. */
+    cursor = first;
     for (i = 0; i < n; ++i) {
-        char *full = join(dir, list[i].name);
-        ROVER_ENTRY *e;
+        char *full = prefix ? join_prefix(prefix, prefix_len, list[i].name) : join(dir, list[i].name);
+        const char *path = full;    /* stays valid when a new entry takes ownership of full */
+        ROVER_ENTRY *e = NULL;
         if (!full) continue;
         if (rover_index_excluded(config, full)) {
             ++stats->excluded;
@@ -411,7 +436,11 @@ static void reconcile(ROVER_INDEX *index, PENDING *pending, STACK *stack, const 
             continue;
         }
         if (!(list[i].attrs & ROVER_ATTR_DIRECTORY)) ++stats->files;
-        e = rover_index_find(index, full);
+        if (prefix) {
+            while (cursor < last && rover_path_compare(index->entries[cursor].path + prefix_len, list[i].name) < 0) ++cursor;
+            if (cursor < last && !(index->entries[cursor].attrs & DEAD) &&
+                !rover_path_compare(index->entries[cursor].path + prefix_len, list[i].name)) e = &index->entries[cursor];
+        } else e = rover_index_find(index, full);
         if (e) {
             if (!same_meta(e, &list[i])) {
                 set_meta(e, &list[i]);
@@ -434,7 +463,7 @@ static void reconcile(ROVER_INDEX *index, PENDING *pending, STACK *stack, const 
             ++stats->added;
         }
         if ((list[i].attrs & ROVER_ATTR_DIRECTORY) && !(list[i].attrs & ROVER_ATTR_REPARSE))
-            push(stack, join(dir, list[i].name));
+            push(stack, xp25_strdup(path));
         xp25_free(full);
     }
     xp25_free(prefix);

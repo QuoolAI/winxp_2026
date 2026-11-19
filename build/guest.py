@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
     parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem",
-                                            "clippyexit"), default="xp",
+                                            "clippyexit", "roverbench"), default="xp",
                         help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
@@ -96,6 +96,8 @@ def main():
         expected_dlls |= {"advapi32.dll", "ws2_32.dll", "iphlpapi.dll"}
     if args.probe == 'shell':
         expected_dlls |= {'shell32.dll'}
+    if args.probe == 'roverbench':
+        expected_dlls |= {'shell32.dll'}
     if args.probe == 'profile':
         expected_dlls |= {'netapi32.dll'}
     if args.probe in ("branding", "oem"):
@@ -115,6 +117,8 @@ def main():
     if args.probe in ("branding", "oem"):
         command += ["-lgdi32"]
     if args.probe == 'shell':
+        command += ['-lshell32']
+    if args.probe == 'roverbench':
         command += ['-lshell32']
     if args.probe == 'profile':
         command += ['-lnetapi32']
