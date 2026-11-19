@@ -2,6 +2,55 @@
 
 ## Current checkpoint
 
+2026-11-19, Milestone 8.4 — source audit, modernization and optimization
+(`xp25-modernization`, from `a77550aa6`; there was no Milestone 8.3). Evidence
+root `.work/modernization-20261118/` (`M`). **Repository inventoried, every
+XP25 subsystem assessed, five verified improvements committed separately.**
+`Source/` re-hashed unchanged (277,863 files, `9ff55c73…a151`); the accepted
+8.1/8.2 images are unchanged.
+**Audit.** `build/modernization_inventory.py` (378 tracked files outside
+`Source/`, 8 native targets, dependency graph, complexity, API use,
+duplicates), `build/static_analysis.py` (71 units through MinGW GCC
+`-fanalyzer` + extra warnings, portable cores with host GCC, pyflakes:
+120 diagnostics, all triaged). Sanitizer fuzzing of eight parser targets:
+3 × 3,000,000 inputs per target, 0 reports; JSON parser 99.5% line coverage.
+Manual review of the broker, IPC, policy and tools, the RoverAI watcher and
+Explorer bar, ClippyAI's worker and Winlogon.
+**Changes** (each native-built with `/W4 /WX`, checked, measured):
+- `eff7915c3` RoverAI Explorer bar search thread holds its module (DLL could
+  unload under it in Explorer; code-level, not reproduced).
+- `d9daa5711` ClippyAI exit while an approval is open: 15.06–15.19 s hang,
+  then state freed under the worker → 0.09–0.16 s, nothing freed under it
+  (`clippyexit` probe, also under full page heap).
+- `5400257ce` RoverAI reconcile with a cursor + inline case folding:
+  byte-identical to the old index on 900 randomized rounds; rescan 4.2×
+  faster on the host (1,848 → 436 ms), KVM rescan 2,687 → 2,125 ms, TCG full
+  scan 46.0 → 39.2 s.
+- `e4db3556b` `/GS` for the five AI binaries: 162 protected epilogues,
+  initializer wired (`build/gs_check.py`), cookies initialized at run time 8/8.
+- `5c690eb4c` Winlogon: the screen-saver notice USER repeats twice a second
+  while idle (no screen saver ever starts) is no longer logged per notice:
+  COM1 70/110 → 104/104 opens, log 23,520 → 0 bytes per idle minute. Found by
+  measurement. Screen savers and idle lock remain unsupported (roadmap R-0).
+**Regression** (overlays of the 8.2 image with AI build 17 and Winlogon
+`289abb03…`): `proof` 35/35 UP/MP/TCG, `firewall` 27/27 UP/MP/TCG,
+`ai-repeat` under host load 14/14 UP/MP, `standard-user` 12/12 UP/MP/TCG;
+Winlogon lifecycle harness pass UP/MP/TCG; account-switch oracle 9/9. Host:
+141 tests OK (12 skipped), session coordinator under ASan 913 checks 0
+failures. Kept failures: `m84-ai-native-15` (C4054 cast),
+`m84-rover-phases-up-01` (probe called `__stdcall` exports as `__cdecl`),
+`m84-rover-phases-tcg-01` (COM1 lost to the Winlogon idle notice — the defect
+fixed above), `m84-std-up-01` (two COM1 markers lost at logon),
+`m84-std-tcg-01` (two unexplained resets after RasMan start, no dump; rerun
+passed). Start-up timeline (new `serial-timeline.jsonl`): logon prompt by
+12.1 s and logon → desktop within 4 s under KVM. **Not done:** no image was
+repackaged; Winlogon, XP25Sec and XP25Audit without `/GS`; the 25 Microsoft
+binaries built from source stay checked builds without `/GS`; not pushed.
+[Audit](architecture-modernization-audit.md) ·
+[static analysis](static-analysis-findings.md) ·
+[optimization](optimization-opportunities.md) ·
+[roadmap](modernization-roadmap.md)
+
 2026-11-18, account-switching fix packaged and in virt-manager
 (`xp25-winlogon-ui`): `build/winlogon_package_image.py` built the engineering
 image `.work/winlogon-vm-20261118/image-01/XP25-Winlogon-Fix-8.2.qcow2`

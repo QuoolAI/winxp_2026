@@ -16,7 +16,6 @@ writes findings.json (one record per diagnostic: pass, file, line, rule, message
 import argparse
 import collections
 import json
-import os
 from pathlib import Path
 import re
 import shutil

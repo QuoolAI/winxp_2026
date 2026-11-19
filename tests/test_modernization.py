@@ -3,6 +3,7 @@ compared with its pre-8.4 implementation, a smoke run of the RoverAI benchmark, 
 tools' parsers. Synthetic inputs only; nothing here establishes native Windows behaviour.
 """
 import importlib.util
+import json
 import os
 from pathlib import Path
 import re
@@ -102,6 +103,50 @@ class RoverBenchTests(unittest.TestCase):
             self.assertIn(phase, phases)
         self.assertIn('"added":0', result.stdout)        # nothing changed between the scans
         self.assertNotIn('deserialize failed', result.stdout)
+
+
+TOOLCHAIN = Path(os.environ.get('XP25_MINGW', ROOT / '.work/toolchains/mingw-binutils/usr/bin'))
+
+
+class GuestProbeTests(unittest.TestCase):
+    def test_milestone_probes_build_for_nt51(self):
+        if not (TOOLCHAIN / 'i686-w64-mingw32-gcc-posix').is_file():
+            self.skipTest('private MinGW toolchain not present (set XP25_MINGW)')
+        expected = {'clippyexit': {'kernel32.dll', 'user32.dll'},
+                    'gscookie': {'kernel32.dll', 'user32.dll', 'advapi32.dll', 'shell32.dll'},
+                    'roverbench': {'kernel32.dll', 'user32.dll', 'shell32.dll'},
+                    'idle': {'kernel32.dll', 'user32.dll', 'advapi32.dll'}}
+        with tempfile.TemporaryDirectory() as d:
+            for probe, dlls in expected.items():
+                out = Path(d) / probe
+                run = subprocess.run([sys.executable, str(ROOT / 'build/guest.py'), '--toolchain', str(TOOLCHAIN),
+                                      '--probe', probe, '--output', str(out)], capture_output=True, text=True, timeout=300)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                result = json.loads((out / 'result.json').read_text())
+                self.assertEqual(result['status'], 'compiled_static_checks_passed', probe)
+                self.assertEqual(set(result['imports']), dlls, probe)
+
+
+class StartupTimelineTests(unittest.TestCase):
+    def test_phases_from_journal_and_serial_timeline(self):
+        timeline = load('startup_timeline', ROOT / 'vm/startup_timeline.py')
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d)
+            (run / 'journal.jsonl').write_text(
+                json.dumps({'event': {'event': 'RESUME'}, 'utc': '2026-11-19T10:00:00+00:00'}) + '\n' +
+                json.dumps({'logon_keys_sent': 1, 'utc': '2026-11-19T10:00:21+00:00'}) + '\n')
+            rows = [('10:00:10', '{"xp25_winlogon":"entry","status":0}'), ('10:00:12', '{"xp25_winlogon":"core_ready","status":0}'),
+                    ('10:00:12', '{"xp25_winlogon":"session_interactive","status":0}'),   # before the logon: ignored
+                    ('10:00:23', '{"xp25_winlogon":"profile_loaded","status":0}'),
+                    ('10:00:25', '{"xp25_winlogon":"session_interactive","status":1}'), ('10:00:27', 'XP25_M84_FIXTURE_STARTED')]
+            (run / 'serial-timeline.jsonl').write_text(''.join(
+                json.dumps({'utc': '2026-11-19T%s+00:00' % t, 'line': line}) + '\n' for t, line in rows))
+            result = timeline.phases(run)
+        self.assertEqual(result['winlogon_entry'], 10.0)
+        self.assertEqual(result['logon_prompt_ready'], 12.0)
+        self.assertEqual(result['session_interactive'], 25.0)
+        self.assertEqual(result['logon_to_interactive'], 4.0)
+        self.assertEqual(result['desktop_fixture'], 27.0)
 
 
 class AuditToolTests(unittest.TestCase):

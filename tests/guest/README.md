@@ -161,3 +161,29 @@ does between repeated AI suites). Use it only through
 (minimize, restore, settings OK), not after a fixed sleep, and records each
 step's duration as an `ai_timing` note; `ai_probe.exe reset` ends ClippyAI and
 RoverAI.
+
+# Milestone 8.4 probes
+
+Built with `build/guest.py --probe NAME`; each writes JSON records to COM1 and is
+run from a Startup fixture by `vm/security_lab.py`
+([record](../../docs/optimization-opportunities.md)).
+
+* `clippyexit` (kernel32, user32): three cycles of starting ClippyAI, asking for
+  a command that needs approval, waiting for the approval dialog and choosing
+  Exit (`WM_COMMAND` `IDM_EXIT`). Records how long the process takes to end and
+  its exit code, and checks the declined command never ran. Exit 0 when every
+  cycle ends within 5 s with code 0.
+* `gscookie` (kernel32, user32, advapi32, shell32): `module=rva` arguments give
+  the RVA of `__security_cookie` from the build's PDB (`build/gs_check.py`). For
+  every process with the module loaded, the probe reads the cookie and checks it
+  differs from the compiler's pre-initialization value. Values themselves are not
+  printed.
+* `roverbench` (kernel32, user32, shell32): loads the given `xp25agent.dll` and
+  times `rover_store_load`, `rover_index_scan` over the real file system and
+  `rover_index_serialize`, without saving. The DLL's exports are `__stdcall`
+  (the NT build's `/Gz`); the probe declares them `WINAPI`.
+* `idle` (kernel32, user32, advapi32): lowers this session's screen-saver
+  timeout to 60 s (not saved) and stays idle for 2 minutes. It then measures, for
+  1 minute, how often COM1 can be opened and how much `native-winlogon.log`
+  grows, restores the timeout and sends one Shift key press. Exit 0 when COM1
+  stayed available (≥ 90%) and the log grew by at most 1 KB.

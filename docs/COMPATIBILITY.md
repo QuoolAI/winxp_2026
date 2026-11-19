@@ -6,6 +6,44 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Modernization (Milestone 8.4) checkpoint, 2026-11-19
+
+Fresh overlays of `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…eada`, unchanged) with
+native AI build 17 (`xp25agent.dll` `e4638922…`, `XP25Broker.exe` `e328cc76…`,
+`ClippyAI.exe` `2d1555db…`, `RoverAI.exe` `c1352991…`, `RoverAIBand.dll`
+`480d6d5b…`) and the Milestone 8.4 Winlogon `289abb03…` installed in each run.
+No packaged image was produced. Evidence root `.work/modernization-20261118/`.
+
+| Test | 1 vCPU KVM | 2 vCPU KVM | TCG |
+| --- | --- | --- | --- |
+| Full regression (`proof`): logon, licensing, Explorer, AI suite 55 + provider 7, compatibility suite, security probes, baseline verification, programs and games, network capture — 35 gates | Pass | Pass | Pass |
+| Firewall (`firewall`): filtering, permitted port, administrator control, refusal, restart window, reboot persistence — 27 gates | Pass | Pass | Pass |
+| AI suite three times under host load (`ai-repeat`) — 14 gates | Pass | Pass | Not run |
+| Standard user (`standard-user`) — 12 gates | Pass (`m84-std-up-02`; `-01` kept: two COM1 markers lost at logon, see below) | Pass | Pass (`m84-std-tcg-02`; `-01` kept: two unplanned resets, see below) |
+| Winlogon lifecycle (main-tree harness: 18 gates, then lock/unlock after a logoff, restart and relogon, Turn Off) | Pass | Pass | Pass |
+| Two-account switch oracle (9 switches, wrong password refused) | Pass | Not run | Not run |
+| ClippyAI exit while an approval is open (`clippyexit`, 3 cycles, with and without full page heap) | Pass (94–157 ms; build 14: 15.06–15.19 s) | Not run | Not run |
+| Idle session past the screen-saver timeout (`idle`): COM1 openable, log growth | Pass (104/104, 0 B/min; 8.2 Winlogon: 70/110, 23,520 B/min) | Not run | Not run |
+| `/GS` cookies initialized at run time (`gscookie`, 8 readings in 4 processes) | Pass | Not run | Not run |
+
+Two standard-user runs failed and are kept. `m84-std-up-01` lost its first two
+COM1 markers at logon, because Winlogon opens the exclusive port for every event
+(roadmap R-0b); the account was created correctly. `m84-std-tcg-01` reset twice
+without a shutdown record, each time 5–7 s after the browser case started the
+Remote Access Connection Manager. No dump was written; the same start passed in
+Milestone 8.1's TCG run and in the rerun. This is consistent with an intermittent
+failure on the checked kernel (assertions bugcheck and restart with no debugger),
+but it is **not explained** (roadmap R-13).
+
+The changes keep every interface: no export, import, structure, registry value
+or file format changed. Screen savers still do not start, and a
+password-protected screen saver does not lock an idle session (roadmap R-0).
+Not tested: real networks and hardware, the Explorer-bar unload race
+(code-level fix, not reproduced), AI load under TCG.
+[Audit](architecture-modernization-audit.md) ·
+[static analysis](static-analysis-findings.md) ·
+[optimization](optimization-opportunities.md) · [roadmap](modernization-roadmap.md)
+
 ## Historical CVE remediation (Milestone 8.2) checkpoint, 2026-11-13
 
 Image `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…eada`): the Milestone 8.1 image with the
