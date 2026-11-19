@@ -40,9 +40,14 @@ typedef struct {
     int ai;
     ROVER_RESULTS results;
     int ok;
+    HMODULE module;     /* the search thread's own reference to the module that holds its code */
 } JOB;
 
 static PANEL *get(HWND hwnd) { return (PANEL *)GetWindowLongPtrW(hwnd, GWLP_USERDATA); }
+
+/* An address inside this module, for GetModuleHandleExW (a data address: C forbids casting a
+   function pointer to one). */
+static const char module_marker = 0;
 
 static HWND child(PANEL *p, const WCHAR *cls, const WCHAR *text, DWORD style, int id)
 {
@@ -216,6 +221,7 @@ static void set_status(PANEL *p, const char *utf8)
 static DWORD WINAPI search_thread(void *param)
 {
     JOB *job = (JOB *)param;
+    HMODULE module;
     XP25W_PATHS paths;
     XP25_CONFIG config;
     ROVER_SETTINGS settings;
@@ -232,12 +238,14 @@ static DWORD WINAPI search_thread(void *param)
     }
     if (provider) xp25w_provider_destroy(provider);
     CoUninitialize();
+    module = job->module;    /* job belongs to the panel once posted */
     if (!PostMessageW(job->panel, WM_ROVER_RESULTS, 0, (LPARAM)job)) {
         rover_results_free(&job->results);
         xp25_free(job->query);
         xp25_free(job->scope);
         xp25_free(job);
     }
+    if (module) FreeLibraryAndExitThread(module, 0);
     return 0;
 }
 
@@ -293,9 +301,16 @@ static void start_search(PANEL *p)
     }
     rover_play(p, L"Searching");
     EnableWindow(p->go, FALSE);
+    /* In the Explorer bar this code lives in RoverAIBand.dll, and COM may unload the DLL as soon as
+       the bar's objects are released (DllCanUnloadNow counts only those). A search outlives the bar
+       when Explorer closes it mid-search, so the thread holds its own reference and gives it back as
+       it exits. In RoverAI.exe the reference is to the program itself and changes nothing. */
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)&module_marker, &job->module))
+        job->module = NULL;
     thread = CreateThread(NULL, 0, search_thread, job, 0, &id);
     if (thread) CloseHandle(thread);
     else {
+        if (job->module) FreeLibrary(job->module);
         xp25_free(job->query);
         xp25_free(job->scope);
         xp25_free(job);
