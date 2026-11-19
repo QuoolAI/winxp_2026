@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
     parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem",
-                                            "clippyexit", "gscookie", "roverbench"), default="xp",
+                                            "clippyexit", "gscookie", "roverbench", "idle"), default="xp",
                         help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
@@ -100,6 +100,8 @@ def main():
         expected_dlls |= {'advapi32.dll', 'shell32.dll'}
     if args.probe == 'roverbench':
         expected_dlls |= {'shell32.dll'}
+    if args.probe == 'idle':
+        expected_dlls |= {'advapi32.dll'}
     if args.probe == 'profile':
         expected_dlls |= {'netapi32.dll'}
     if args.probe in ("branding", "oem"):
@@ -124,6 +126,8 @@ def main():
         command += ['-ladvapi32', '-lshell32']
     if args.probe == 'roverbench':
         command += ['-lshell32']
+    if args.probe == 'idle':
+        command += ['-ladvapi32']
     if args.probe == 'profile':
         command += ['-lnetapi32']
     if contract:

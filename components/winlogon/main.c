@@ -100,6 +100,16 @@ static BOOL console_authentication_options(void)
     wl_log("console_authentication_options",request.options);return TRUE;
 }
 
+/* USER's screen-saver notice (LOGON_INPUT_TIMEOUT, 1). This Winlogon starts no screen saver, so
+   USER repeats the notice on every idle-timer tick, about twice a second, for as long as the
+   session stays idle. Record the first one, then one count per ten minutes. */
+static void input_timeout_notice(void)
+{
+    static DWORD last,count;DWORD now=GetTickCount();
+    ++count;
+    if(!last||now-last>=600000){wl_log("screen_saver_not_started",count);last=now?now:1;count=0;}
+}
+
 static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
 {
     if(message==WM_TIMER&&wp==WL_SHELL_TIMER){wl_session_poll_shell();return 0;}
@@ -119,13 +129,15 @@ static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
         if(wl.in_gina&&wl.dialog){PostMessageW(wl.dialog,WLX_WM_SAS,wp,0);return 0;}
         wl_attention((DWORD)wp);return 0;
     }
-    /* Event-sound notices arrive with every menu/window action; logging each one
-       would keep taking the exclusive COM1 diagnostic port from guest software. */
-    if(message==WL_LOGON_NOTIFY){if(wp!=9)wl_log("user_logon_notify",(DWORD)wp);PostMessageW(h,WL_APP_NOTICE,wp,lp);return 0;}
+    /* Event-sound notices arrive with every menu/window action, and screen-saver notices with
+       every idle-timer tick; logging each one would keep taking the exclusive COM1 diagnostic
+       port from guest software and grow native-winlogon.log without bound. */
+    if(message==WL_LOGON_NOTIFY){if(wp!=9&&wp!=1)wl_log("user_logon_notify",(DWORD)wp);PostMessageW(h,WL_APP_NOTICE,wp,lp);return 0;}
     if(message==WL_APP_NOTICE){
         if(wp==100&&wl.machine.phase==WlSignedOut){wl_status_clear();wl.gina.sas_notice(wl.gina_context);return 0;}
         if(wp==2){wl_log("shell_restart_notice",0);wl_session_poll_shell();return 0;}
         if(wp==9){static BOOL logged;if(!logged){logged=TRUE;wl_log("event_sounds_not_implemented",9);}return 0;}
+        if(wp==1){input_timeout_notice();return 0;}
         if(wp==5&&wl.machine.phase==WlInteractive){
             if(wl_session_lock())wl.gina.locked_notice(wl.gina_context);else wl_log("lock_request_failed",GetLastError());
         }else if(wp==0){

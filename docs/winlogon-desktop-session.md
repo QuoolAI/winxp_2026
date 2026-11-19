@@ -176,6 +176,14 @@ paused through QMP (not shut down, disks unchanged) to free the host for TCG.
   is unsupported and was not exercised.
 * **Event sounds.** `LOGON_PLAYEVENTSOUND` is acknowledged once and not played
   (lab guests have no audio device).
+* **Screen savers and idle lock.** `LOGON_INPUT_TIMEOUT` is not acted on: no
+  screen saver starts, so "On resume, password protect" does not lock an idle
+  session (lock with Win+L or Ctrl+Alt+Del). USER repeats the notice about twice
+  a second while the session stays idle. Until Milestone 8.4 each repeat was
+  logged to COM1 and `native-winlogon.log` (23,520 bytes per idle minute; COM1
+  busy for a third of open attempts). Since build `289abb03…` the first notice of
+  an idle period is recorded as `screen_saver_not_started` and the rest are only
+  counted ([findings](static-analysis-findings.md), roadmap R-0).
 * **Group Policy.** Winlogon-driven foreground/background policy processing is
   not performed. Domain logon remains unsupported.
 * **Activation UX.** Reminders and the activation wizard after grace expiry are
