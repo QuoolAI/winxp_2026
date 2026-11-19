@@ -2,6 +2,23 @@
 
 ## Current checkpoint
 
+2026-11-19, the XP25-Winlogon-Fix VM moved to the Milestone 8.4 Winlogon
+(`xp25-modernization`; evidence `.work/winlogon-vm-20261119/`). The VM's own
+disk, shut down by the guest with its state kept, was frozen as a reference
+(`355d8091…`). `build/winlogon_package_image.py` replaced only `winlogon.exe`
+(`f24bba5b…` → `289abb03…`), giving `image-01/XP25-Winlogon-M84.qcow2`
+(`471e1b068070915fbb334b77ef0ec307e3ff114ec81d1cc22f6deb74daf8d95a`). The
+two-account oracle on that exact image **passed** on one-vCPU KVM: 9/9 switches
+painted, accounts alternating, wrong password refused. The VM now runs a reflink
+copy of the image. The previous disk is kept beside it, unchanged, as
+`XP25-Winlogon-Fix.f24bba5b.qcow2`. Only the domain `<description>` changed. No
+other domain, network, filter or running VM changed. By screenshot: boot to a
+painted logon dialog, then two logon/logoff cycles, each back at a painted
+dialog. The VM was left running at the logon dialog. The old Winlogon had grown
+the VM's `native-winlogon.log` to 17.2 MB, 169,280 of its 169,919 lines being the
+idle screen-saver notice. MP, TCG and lifecycle runs were not repeated on this
+disk. [VM record](virt-manager-xp25-winlogon-fix.md#update-to-the-milestone-84-winlogon-2026-11-19)
+
 2026-11-19, Milestone 8.4 — source audit, modernization and optimization
 (`xp25-modernization`, from `a77550aa6`; there was no Milestone 8.3). Evidence
 root `.work/modernization-20261118/` (`M`). **Repository inventoried, every

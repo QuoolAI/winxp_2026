@@ -2,12 +2,94 @@
 
 **XP25-Winlogon-Fix** is a persistent `qemu:///system` VM, defined on 2026-11-18
 for interactive use of the account-switching fix
-([root cause and verification](winlogon-account-switch-paint.md)). Its disk is a
-copy of the engineering image
+([root cause and verification](winlogon-account-switch-paint.md)). Its disk was
+first a copy of the engineering image
 `.work/winlogon-vm-20261118/image-01/XP25-Winlogon-Fix-8.2.qcow2`
 (SHA-256 `fe633d1570f042b3cc8f869ad0fe1f6fabfc0e048ab57437b8d5c6e89f1ec173`).
+**Since 2026-11-19 it runs the Milestone 8.4 Winlogon `289abb03…`**
+([update](#update-to-the-milestone-84-winlogon-2026-11-19)).
 
-## The image
+## Update to the Milestone 8.4 Winlogon, 2026-11-19
+
+The VM's own disk, with the state it had when it was last shut down, now
+carries the Milestone 8.4 Winlogon
+`289abb032a63a0921bbf3a4c78d2603d80a2d2e6136e861cd32813c09e108312` (commit
+`5c690eb4c`, native build `m84-wl-build-01`, collection
+`.work/modernization-20261118/wl-collect-01/files.json`). That build has the
+account-switch fix and also stops logging the screen-saver notice that USER
+repeats twice a second while the station is idle
+([Milestone 8.4](PROGRESS.md#current-checkpoint)). Under the previous Winlogon,
+`C:\xp25\native-winlogon.log` had grown to 17,161,689 bytes (169,919 lines). Of
+those, 169,280 were that notice: 84,640 notices at two lines each. The file was
+left in place (read from the frozen reference with `vm/read_guest.py`).
+
+Paths below are relative to the `xp25-modernization` worktree. `V` is the VM
+directory, `xp25-winlogon-ui/.work/virt-manager-XP25-Winlogon-Fix-20261118`.
+`.work/winlogon-vm-20261119/update.py` journals every step to `commands.jsonl`:
+
+1. `update.py snapshot before`: every domain, network and filter definition,
+   and the running QEMU processes. The domain was `shut off (shutdown)`, a guest
+   shutdown.
+2. `update.py reference`: a frozen reflink copy of the VM disk,
+   `reference/XP25-Winlogon-Fix-vm-20261119.qcow2` (mode 0444,
+   `355d8091153fa4156ab526b2ba774b5c5c8f389994f0e9098ceadc9adb590a75`). The VM
+   disk hashed the same before and after the copy, and `qemu-img check` found no errors.
+3. `build/winlogon_package_image.py` replaced `winlogon.exe` offline:
+
+   ```sh
+   W=.work/winlogon-vm-20261119 M=.work/modernization-20261118
+   python3 build/winlogon_package_image.py --parent $W/reference/XP25-Winlogon-Fix-vm-20261119.qcow2 \
+     --parent-sha256 355d8091153fa4156ab526b2ba774b5c5c8f389994f0e9098ceadc9adb590a75 \
+     --expect-installed f24bba5b2561b183a33d1cda106941138c28b1cc8dc50fde79f23f4511f733d3 \
+     --winlogon $M/winlogon-m84-01.exe --collect $M/wl-collect-01/files.json \
+     --name XP25-Winlogon-M84.qcow2 --output $W/image-01
+   ```
+
+   The installed file was the expected `f24bba5b…`. The result
+   `image-01/XP25-Winlogon-M84.qcow2` hashes
+   `471e1b068070915fbb334b77ef0ec307e3ff114ec81d1cc22f6deb74daf8d95a`, and
+   `qemu-img check` found no errors.
+4. **Image verification.** The two-account oracle ran on that exact image (one-vCPU KVM,
+   nothing staged, disposable overlay):
+
+   ```sh
+   python3 vm/winlogon_switch_probe.py --name image01-2acct-up-01 --image $W/image-01/XP25-Winlogon-M84.qcow2 \
+     --image-sha256 471e1b068070915fbb334b77ef0ec307e3ff114ec81d1cc22f6deb74daf8d95a \
+     --probe $M/security-probe-01/security_probe.exe --second-user XP25B --second-password sw1tch25 \
+     --wrong-password-cycle 3 --cycles 10 --out-root $W/runs
+   ```
+
+   **Passed**: 9/9 switches painted, the accounts alternated and the wrong
+   password was refused (`$W/runs/image01-2acct-up-01`).
+5. `update.py swap`: the VM disk still hashed `355d8091…`. It was renamed to
+   `V/XP25-Winlogon-Fix.f24bba5b.qcow2` and kept. A reflink copy of the image
+   took its place as `V/XP25-Winlogon-Fix.qcow2`, which hashed `471e1b06…`
+   before the first boot.
+6. `update.py describe` replaced the domain `<description>`. Then
+   `update.py snapshot after` and `update.py compare` ran: the domain XML
+   differs only in `<description>`, and no other domain, network, filter or
+   running QEMU process (XP25-AI) changed. The kept disk and the reference are
+   unchanged (`preservation.json`).
+
+**Observed in the VM** (`virsh start`, then `vm/libvirt_ui.py` send-key and
+screenshots `$W/ui/01`–`08`):
+
+* The painted logon dialog came up with `XP25` filled in.
+* Enter with the blank password reached the `XP25` desktop. The Found New
+  Hardware Wizard opened again and was cancelled.
+* Start → Log Off → Log Off brought back a painted dialog.
+* A second logon and logoff brought back a painted dialog again.
+
+The VM was left **running at the logon dialog**. MP, TCG and the lifecycle
+gates for this binary are the Milestone 8.4 overlay runs on the 8.2 image. They
+were not repeated on this disk.
+
+To return to the previous Winlogon, shut the VM down and rename the files
+back: `V/XP25-Winlogon-Fix.qcow2` (now `471e1b06…` plus whatever the VM has
+written since) out of the way, then `V/XP25-Winlogon-Fix.f24bba5b.qcow2` back to
+`V/XP25-Winlogon-Fix.qcow2`.
+
+## The image (2026-11-18)
 
 The image is the accepted Milestone 8.2 image `XP25-CVE-Hardened-8.2`
 (`5a84781f3adee8861f8b7e3cd5b57ee11778e87a3b7683111ebf9e31ba80eada`,
@@ -62,7 +144,7 @@ shutdown gates, are the overlay runs of the same binary on the 8.1 image
 difference from the 8.2 image is the 8.2 `lsasrv.dll`. They were not repeated
 on this image.
 
-## The VM
+## The VM (2026-11-18)
 
 Defined and started with `virsh start`, and left **running at the logon
 dialog**. It was driven only through libvirt's public API (`vm/libvirt_ui.py`:
@@ -96,8 +178,11 @@ Winlogon ([known gaps](winlogon-desktop-session.md#known-gaps-and-defects)). Shu
 restart through **Start → Turn Off Computer**: `shutdown.exe` does not work
 under the XP25 Winlogon.
 
-To reset the VM to the packaged image, shut it down, then replace the copy
-(paths relative to the `xp25-winlogon-ui` worktree):
+To reset the VM to a packaged image, shut it down, then replace the copy. The
+2026-11-19 image (the VM's disk as of that day, with the 8.4 Winlogon) is
+`xp25-modernization/.work/winlogon-vm-20261119/image-01/XP25-Winlogon-M84.qcow2`.
+The clean 2026-11-18 image (first boot, Winlogon `f24bba5b…`) is used below,
+with paths relative to the `xp25-winlogon-ui` worktree:
 
 ```bash
 D=.work/virt-manager-XP25-Winlogon-Fix-20261118
@@ -116,7 +201,7 @@ except:
 
 | Setting | Value |
 | --- | --- |
-| Disk | `XP25-Winlogon-Fix.qcow2` (IDE `hda`, writeback), a standalone reflink copy. It hashed equal to the image before the first boot |
+| Disk | `XP25-Winlogon-Fix.qcow2` (IDE `hda`, writeback), a standalone reflink copy. It hashed equal to its image before its first boot (`fe633d15…` on 2026-11-18, `471e1b06…` on 2026-11-19) |
 | NIC | RTL8139, MAC `52:54:00:25:00:07`, network `XP25-Isolated`, filter `xp25-gateway-only` (`GATEWAY_IP` 10.25.0.1, `GATEWAY_PORT` 8443). No route off the host |
 | Profile | KVM `i686`, `pc-i440fx-8.2`, `qemu32`, **1 vCPU** (the image boots the uniprocessor kernel and HAL), 512 MiB |
 | Console | VNC on the host's loopback interface only, autoport. COM1 to `serial.log` (root-only while libvirt runs it) |

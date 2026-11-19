@@ -12,7 +12,11 @@ Fresh overlays of `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…eada`, unchanged) w
 native AI build 17 (`xp25agent.dll` `e4638922…`, `XP25Broker.exe` `e328cc76…`,
 `ClippyAI.exe` `2d1555db…`, `RoverAI.exe` `c1352991…`, `RoverAIBand.dll`
 `480d6d5b…`) and the Milestone 8.4 Winlogon `289abb03…` installed in each run.
-No packaged image was produced. Evidence root `.work/modernization-20261118/`.
+None of these runs used a packaged image. Evidence root `.work/modernization-20261118/`.
+Afterwards the Winlogon alone was packaged into the XP25-Winlogon-Fix VM's disk
+(`471e1b06…`; two-account oracle 9/9 on one-vCPU KVM,
+[record](virt-manager-xp25-winlogon-fix.md#update-to-the-milestone-84-winlogon-2026-11-19)).
+AI build 17 is not in any packaged image.
 
 | Test | 1 vCPU KVM | 2 vCPU KVM | TCG |
 | --- | --- | --- | --- |
@@ -402,7 +406,10 @@ accept typing) on alternate account switches; fixed in source on 2026-11-17
 8.2 images still carry the unfixed Winlogon `e3a9cdca…`. The engineering image
 `XP25-Winlogon-Fix-8.2` (`fe633d15…`) carries the fix: two-account oracle 9/9 on
 one-vCPU KVM, and two logoffs observed painted in the
-[XP25-Winlogon-Fix VM](virt-manager-xp25-winlogon-fix.md).
+[XP25-Winlogon-Fix VM](virt-manager-xp25-winlogon-fix.md). Since 2026-11-19 that
+VM runs the Milestone 8.4 Winlogon `289abb03…`, on its own disk with only
+`winlogon.exe` replaced (`XP25-Winlogon-M84.qcow2`, `471e1b06…`). Two-account oracle 9/9
+on that image, one-vCPU KVM. Two logoffs observed painted in the VM.
 
 ## Winlogon policy/session continuation, 2026-10-24
 
