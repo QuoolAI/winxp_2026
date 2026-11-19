@@ -38,6 +38,9 @@ class WinlogonCoreTests(unittest.TestCase):
     def test_environment_bounds_duplicates_and_unicode_values(self):
         self.assertIn('cases=24', self.compile_and_run('winlogon_environment', 'environment.c'))
 
+    def test_screen_saver_decisions_keep_idle_sessions_protected(self):
+        self.assertIn('checks=6732', self.compile_and_run('winlogon_screensaver', 'screensaver.c'))
+
 
 class SessionEngineTests(unittest.TestCase):
     def compiler(self):

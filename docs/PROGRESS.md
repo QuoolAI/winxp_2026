@@ -2,6 +2,40 @@
 
 ## Current checkpoint
 
+2026-11-19, R-0: screen savers and the idle lock in the XP25 Winlogon
+(`xp25-modernization`; evidence `.work/screensaver-20261119/`). **Implemented and
+verified.** Winlogon now acts on USER's `LOGON_INPUT_TIMEOUT`. It starts the
+configured saver with `STARTF_SCREENSAVER` on `WinSta0\Screen-saver`, with the
+station switch-locked:
+- at the logon desktop, `.DEFAULT`'s saver, as SYSTEM;
+- in a session and on a locked station, the user's saver, as the user.
+
+An open MSGINA dialog gets the WLX screen-saver notice first. A secure session
+saver (`ScreenSaverIsSecure` and `WlxIsLockOk`) ends in a lock. Ctrl+Alt+Del
+during a secure saver locks before the unlock dialog. Portable rules are in
+`screensaver.c` (host test: 6,732 checks under ASan/UBSan). Native build
+`ss-wl-build-02`: CL `/W4 /WX`, no warnings, `winlogon.exe`
+`020eaf4047dfeae7ed7ebdab507d951766e715065917430c9d6bb41f600e0f2b`.
+
+`vm/winlogon_screensaver_probe.py` (10 gates from Winlogon's and the probe's
+serial records) passed on 1-vCPU KVM, 2-vCPU KVM and TCG. It covers:
+- a non-secure saver back to the desktop;
+- USER's notices stopping 0.25 s after the start;
+- a secure saver locking, ended by a key and by Ctrl+Alt+Del;
+- a saver on a station locked with Win+L;
+- `logon.scr` interrupting the logon dialog after logoff.
+
+Regression with this Winlogon on the 8.2 image:
+- switch oracle 9/9;
+- lifecycle harness pass on UP, MP and TCG;
+- `proof` 35/35 on UP, MP and TCG;
+- `standard-user` 12/12 on UP.
+
+Kept failure: `runs/ss-up-01`. The guest behaved correctly; two gates failed on
+the harness's reading of the records. XP25 guests now show the Windows XP logo
+saver after 10 idle minutes, as stock XP does. Request 2 (monitor off) is not
+tested. [Record](winlogon-screen-saver.md)
+
 2026-11-19, the XP25-Winlogon-Fix VM moved to the Milestone 8.4 Winlogon
 (`xp25-modernization`; evidence `.work/winlogon-vm-20261119/`). The VM's own
 disk, shut down by the guest with its state kept, was frozen as a reference

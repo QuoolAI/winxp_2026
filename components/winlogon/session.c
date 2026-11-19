@@ -386,7 +386,9 @@ BOOL wl_session_power(unsigned mode)
 void wl_session_poll_shell(void)
 {
     DWORD error;
-    if(wl.in_gina||!shell_process||(wl.machine.phase!=WlInteractive&&wl.machine.phase!=WlLocked))return;
+    /* Recovery switches back to the Default desktop: wait until a running saver has ended
+       (its end handler polls again), never bring the desktop back under a secure saver. */
+    if(wl.in_gina||wl_saver_active()||!shell_process||(wl.machine.phase!=WlInteractive&&wl.machine.phase!=WlLocked))return;
     error=wl_user_process_exited(shell_process);if(error==ERROR_BUSY)return;
     if(error)wl_fail("shell_monitor_failed",error);
     wl.in_gina=TRUE;wl_log("shell_exit_observed",shell_pid);

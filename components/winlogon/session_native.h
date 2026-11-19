@@ -8,4 +8,6 @@ BOOL wl_watch_user_process(HANDLE token,DWORD pid,LPCWSTR image,HANDLE *result);
 DWORD wl_user_process_exited(HANDLE process);
 BOOL wl_spawn_user_process(HANDLE token,LPCWSTR image,LPWSTR command,LPWSTR desktop,
                           PVOID environment,PROCESS_INFORMATION *result);
+BOOL wl_spawn_user_process_flags(HANDLE token,LPCWSTR image,LPWSTR command,LPWSTR desktop,
+                                PVOID environment,DWORD startup_flags,PROCESS_INFORMATION *result);
 #endif

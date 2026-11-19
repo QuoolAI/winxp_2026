@@ -100,29 +100,25 @@ static BOOL console_authentication_options(void)
     wl_log("console_authentication_options",request.options);return TRUE;
 }
 
-/* USER's screen-saver notice (LOGON_INPUT_TIMEOUT, 1). This Winlogon starts no screen saver, so
-   USER repeats the notice on every idle-timer tick, about twice a second, for as long as the
-   session stays idle. Record the first one, then one count per ten minutes. */
-static void input_timeout_notice(void)
-{
-    static DWORD last,count;DWORD now=GetTickCount();
-    ++count;
-    if(!last||now-last>=600000){wl_log("screen_saver_not_started",count);last=now?now:1;count=0;}
-}
-
 static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
 {
     if(message==WM_TIMER&&wp==WL_SHELL_TIMER){wl_session_poll_shell();return 0;}
     if(message==WM_HOTKEY&&wp==WL_HOTKEY){PostMessageW(h,WL_APP_SAS,WLX_SAS_TYPE_CTRL_ALT_DEL,0);return 0;}
     /* Logon-process hotkeys stay effective while the station is locked;
-       act only on an interactive, idle session. */
+       act only on an interactive, idle session. A screen saver ends with Win+L (a lock),
+       but Task Manager does not open on a desktop the saver hides. */
     if(message==WM_HOTKEY&&(wp==WL_HOTKEY_LOCK||wp==WL_HOTKEY_TASKMGR)){
-        if(wl.in_gina||wl.machine.phase!=WlInteractive){wl_log("session_hotkey_ignored",(DWORD)wp);return 0;}
+        if(wl.in_gina||wl.machine.phase!=WlInteractive||(wp==WL_HOTKEY_TASKMGR&&wl_saver_active())){
+            wl_log("session_hotkey_ignored",(DWORD)wp);return 0;
+        }
         if(wp==WL_HOTKEY_LOCK)PostMessageW(h,WL_APP_NOTICE,5,0);
         else if(!wl_session_tasklist())wl_log("task_manager_hotkey_failed",GetLastError());
         return 0;
     }
     if(message==WL_APP_SAS){
+        /* Ctrl+Alt+Del ends a running saver. After a secure one the session is locked first,
+           so the SAS goes to the unlock dialog, never back to the desktop. */
+        if(wl_saver_stop("screen_saver_stopped_by_sas")&&!wl_session_lock())wl_fail("screen_saver_sas_lock_failed",GetLastError());
         if(wl.dialog&&(wl.machine.phase==WlSignedOut||wl.machine.phase==WlLocked)){
             EndDialog(wl.dialog,WLX_DLG_SAS);PostMessageW(h,WL_APP_SAS,wp,0);return 0;
         }
@@ -130,20 +126,26 @@ static LRESULT CALLBACK notify_window(HWND h,UINT message,WPARAM wp,LPARAM lp)
         wl_attention((DWORD)wp);return 0;
     }
     /* Event-sound notices arrive with every menu/window action, and screen-saver notices with
-       every idle-timer tick; logging each one would keep taking the exclusive COM1 diagnostic
-       port from guest software and grow native-winlogon.log without bound. */
+       every idle-timer tick until a saver runs; logging each one would keep taking the
+       exclusive COM1 diagnostic port from guest software and grow native-winlogon.log. */
     if(message==WL_LOGON_NOTIFY){if(wp!=9&&wp!=1)wl_log("user_logon_notify",(DWORD)wp);PostMessageW(h,WL_APP_NOTICE,wp,lp);return 0;}
     if(message==WL_APP_NOTICE){
-        if(wp==100&&wl.machine.phase==WlSignedOut){wl_status_clear();wl.gina.sas_notice(wl.gina_context);return 0;}
+        if(wp==100&&wl.machine.phase==WlSignedOut){
+            if(wl_saver_resume())return 0;
+            wl_status_clear();wl.gina.sas_notice(wl.gina_context);return 0;
+        }
         if(wp==2){wl_log("shell_restart_notice",0);wl_session_poll_shell();return 0;}
         if(wp==9){static BOOL logged;if(!logged){logged=TRUE;wl_log("event_sounds_not_implemented",9);}return 0;}
-        if(wp==1){input_timeout_notice();return 0;}
+        if(wp==1){wl_saver_notice((DWORD)lp);return 0;}
+        if(wp==WL_NOTICE_SAVER_ENDED){wl_saver_ended((DWORD)lp);return 0;}
         if(wp==5&&wl.machine.phase==WlInteractive){
+            wl_saver_stop("screen_saver_stopped_by_lock");
             if(wl_session_lock())wl.gina.locked_notice(wl.gina_context);else wl_log("lock_request_failed",GetLastError());
         }else if(wp==0){
             /* USER adds EWX_WINLOGON_CALLER (0x200) to completion notices from
                our own registered-process ExitWindowsEx call; do not recurse. */
             if((DWORD)lp&0x200){wl_log("native_end_session_completion",(DWORD)lp);return 0;}
+            wl_saver_stop("screen_saver_stopped_by_end_session");
             wl.pending_power=(DWORD)lp;
             if(wl.token&&!wl_session_logoff())wl_fail("user_requested_logoff_failed",GetLastError());
             if((DWORD)lp&(EWX_SHUTDOWN|EWX_REBOOT|EWX_POWEROFF)){

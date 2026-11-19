@@ -19,8 +19,10 @@
 #include "state.h"
 #include "session_engine.h"
 #include "session_native.h"
+#include "screensaver.h"
 #define WL_APP_SAS (WM_APP+21)
 #define WL_APP_NOTICE (WM_APP+22)
+#define WL_NOTICE_SAVER_ENDED 111
 #define WL_LOGON_NOTIFY 0x004c
 #define WL_HOTKEY 1
 #define WL_SHELL_TIMER 2
@@ -49,13 +51,14 @@ typedef struct {
     VOID (WINAPI *shutdown)(PVOID,DWORD);
     BOOL (WINAPI *network)(PVOID,PWLX_MPR_NOTIFY_INFO);
     BOOL (WINAPI *start_application)(PVOID,PWSTR,PVOID,PWSTR);
+    BOOL (WINAPI *screen_saver)(PVOID,BOOL*);
 } WL_GINA;
 
 typedef struct {
     WL_MACHINE machine;
     HINSTANCE instance;
     HWINSTA station;
-    HDESK secure, application;
+    HDESK secure, application, saver;
     HWND window, dialog;
     HANDLE lsa, token, profile;
     HMODULE gina_module;
@@ -80,6 +83,7 @@ BOOL wl_privilege(LPCWSTR name);
 BOOL wl_security_init(void);
 BOOL wl_switch_secure(void);
 BOOL wl_switch_user(void);
+BOOL wl_switch_saver(void);
 BOOL wl_check_token(HANDLE token,const LUID *id,PSID sid);
 BOOL wl_apply_user_security(HANDLE token);
 void wl_session_policy(WL_POLICY_RESULT *result);
@@ -106,6 +110,11 @@ BOOL wl_session_logoff(void);
 BOOL wl_session_power(unsigned mode);
 void wl_session_poll_shell(void);
 BOOL wl_session_tasklist(void);
+BOOL wl_saver_active(void);
+void wl_saver_notice(DWORD request);
+BOOL wl_saver_resume(void);
+void wl_saver_ended(DWORD generation);
+BOOL wl_saver_stop(const char *reason);
 BOOL wl_notify(LPCWSTR event);
 void wl_status_clear(void);
 BOOL wl_notifications_wait(void);

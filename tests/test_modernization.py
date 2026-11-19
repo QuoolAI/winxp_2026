@@ -115,7 +115,8 @@ class GuestProbeTests(unittest.TestCase):
         expected = {'clippyexit': {'kernel32.dll', 'user32.dll'},
                     'gscookie': {'kernel32.dll', 'user32.dll', 'advapi32.dll', 'shell32.dll'},
                     'roverbench': {'kernel32.dll', 'user32.dll', 'shell32.dll'},
-                    'idle': {'kernel32.dll', 'user32.dll', 'advapi32.dll'}}
+                    'idle': {'kernel32.dll', 'user32.dll', 'advapi32.dll'},
+                    'screensaver': {'kernel32.dll', 'user32.dll', 'advapi32.dll'}}
         with tempfile.TemporaryDirectory() as d:
             for probe, dlls in expected.items():
                 out = Path(d) / probe

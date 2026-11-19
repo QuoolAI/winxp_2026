@@ -76,12 +76,14 @@ done:
     if(primary)CloseHandle(primary);if(process)CloseHandle(process);SetLastError(error);return ok;
 }
 BOOL wl_spawn_user_process(HANDLE token,LPCWSTR image,LPWSTR command,LPWSTR desktop,PVOID environment,PROCESS_INFORMATION *result)
+{return wl_spawn_user_process_flags(token,image,command,desktop,environment,0,result);}
+BOOL wl_spawn_user_process_flags(HANDLE token,LPCWSTR image,LPWSTR command,LPWSTR desktop,PVOID environment,DWORD startup_flags,PROCESS_INFORMATION *result)
 {
     STARTUPINFOW startup;HANDLE primary=NULL;DWORD error;BOOL ok=FALSE;
     if(!result){SetLastError(ERROR_INVALID_PARAMETER);return FALSE;}
     ZeroMemory(result,sizeof(*result));
     if(!image||lstrlenW(image)<4||image[1]!=L':'||image[2]!=L'\\'||!desktop||!environment){SetLastError(ERROR_INVALID_PARAMETER);return FALSE;}
-    ZeroMemory(&startup,sizeof(startup));startup.cb=sizeof(startup);startup.lpDesktop=desktop;
+    ZeroMemory(&startup,sizeof(startup));startup.cb=sizeof(startup);startup.lpDesktop=desktop;startup.dwFlags=startup_flags;
     if(!CreateProcessAsUserW(token,image,command,NULL,NULL,FALSE,CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED,
         environment,NULL,&startup,result))return FALSE;
     if(!OpenProcessToken(result->hProcess,TOKEN_QUERY,&primary)||!wl_same_logon(token,primary))goto done;

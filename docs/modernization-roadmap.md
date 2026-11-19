@@ -12,7 +12,7 @@ and what would prove it done. Item IDs are referenced from the
 
 | Component | Problem | Severity | Proposed improvement | Risk | Status |
 | --- | --- | --- | --- | --- | --- |
-| Winlogon | No screen saver ever starts, so a password-protected screen saver never locks an idle session; USER repeats the notice twice a second while idle (SA-0) | Medium (security: no idle lock) | Start the user's screen saver as the original Winlogon does: `WlxScreenSaverNotify`, the screen-saver desktop for secure ones, lock on return | Medium (session and desktop flow) | Logging flood **done** (8.4); screen saver: R-0 |
+| Winlogon | No screen saver ever starts, so a password-protected screen saver never locks an idle session; USER repeats the notice twice a second while idle (SA-0) | Medium (security: no idle lock) | Start the user's screen saver as the original Winlogon does: `WlxScreenSaverNotify`, the screen-saver desktop for secure ones, lock on return | Medium (session and desktop flow) | **Done**: logging flood in 8.4; screen savers and idle lock in R-0 (`020eaf40…`, [record](winlogon-screen-saver.md)) |
 | ClippyAI | Exit during an open question hung 15 s, then freed state under the worker (SA-1) | Medium | Answer questions "no" while shutting down; never wait for a worker that waits for the UI thread; never free under a running worker | Low | **Done** (8.4) |
 | RoverAI Explorer bar | Search thread could outlive `RoverAIBand.dll` in Explorer (SA-2) | Medium | Thread holds its module; `FreeLibraryAndExitThread` | Low | **Done** (8.4) |
 | RoverAI index | Logon rescan dominated by long-prefix binary searches (SA-10) | Performance | Cursor lookup in the directory's range, inline case folding | Low (differential test) | **Done** (8.4): host −76%, guest KVM −21% |
@@ -32,7 +32,10 @@ and what would prove it done. Item IDs are referenced from the
 
 ## Items
 
-**R-0 — Screen savers and idle lock in the XP25 Winlogon.** USER asks Winlogon
+**R-0 — Screen savers and idle lock in the XP25 Winlogon. Done**
+([record](winlogon-screen-saver.md)): the saver runs on `WinSta0\Screen-saver`,
+a secure session saver ends in a lock, and the guest gates pass on KVM-UP,
+KVM-MP and TCG. The original problem: USER asks Winlogon
 to start the screen saver (`LOGON_INPUT_TIMEOUT`). The original Winlogon asks
 MSGINA through `WlxScreenSaverNotify` whether to start it and whether it is
 secure. It then runs the user's `SCRNSAVE.EXE` with the screen-saver start flag,

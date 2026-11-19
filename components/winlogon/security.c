@@ -54,10 +54,13 @@ BOOL wl_security_init(void)
     if(!SetProcessWindowStation(wl.station)){LocalFree(descriptor);return FALSE;}
     wl.secure=CreateDesktopW(L"Winlogon",NULL,NULL,0,WL_DESKTOP_ACCESS,&attributes);
     wl.application=CreateDesktopW(L"Default",NULL,NULL,0,WL_DESKTOP_ACCESS,&attributes);
+    /* NT 5.1's screen-saver desktop (win32k and NetMeeting know it by this name). */
+    wl.saver=CreateDesktopW(L"Screen-saver",NULL,NULL,0,WL_DESKTOP_ACCESS,&attributes);
     LocalFree(descriptor);
-    if(!wl.secure||!wl.application)return FALSE;
+    if(!wl.secure||!wl.application||!wl.saver)return FALSE;
     if(!object_dacl(wl.secure,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)")||
        !object_dacl(wl.application,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)")||
+       !object_dacl(wl.saver,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)")||
        !object_dacl(wl.station,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)"))return FALSE;
     if(!SetThreadDesktop(wl.secure)||!SwitchDesktop(wl.secure))return FALSE;
     wl_log("secure_desktop_created",0);return TRUE;
@@ -81,6 +84,17 @@ BOOL wl_switch_user(void)
     return unlock(wl.station)&&SwitchDesktop(wl.application);
 }
 
+BOOL wl_switch_saver(void)
+{
+    UINT (WINAPI *lock)(HWINSTA);
+    /* Keep the station switch-locked while a saver shows: only the logon process may then
+       switch desktops, so no application can bring back the Default desktop under it. */
+    lock=(UINT (WINAPI*)(HWINSTA))GetProcAddress(GetModuleHandleW(L"user32.dll"),"LockWindowStation");
+    if(!lock){SetLastError(ERROR_PROC_NOT_FOUND);return FALSE;}
+    if(!SwitchDesktop(wl.saver))return FALSE;
+    return lock(wl.station)!=0;
+}
+
 BOOL wl_check_token(HANDLE token,const LUID *id,PSID sid)
 {
     TOKEN_STATISTICS stats;DWORD bytes,session,i;TOKEN_GROUPS *groups;TOKEN_USER *user;BOOL found=FALSE,system;
@@ -100,12 +114,15 @@ BOOL wl_check_token(HANDLE token,const LUID *id,PSID sid)
 
 BOOL wl_apply_user_security(HANDLE token)
 {
-    LPWSTR sid=NULL;WCHAR dacl[512];SET_STATION_USER assign;BOOL ok;DWORD bytes=0;TOKEN_USER *user;
+    LPWSTR sid=NULL;WCHAR dacl[512],saver[512];SET_STATION_USER assign;BOOL ok;DWORD bytes=0;TOKEN_USER *user;
     if(!wl_check_token(token,&wl.authentication_id,wl.logon_sid))return FALSE;
     if(!ConvertSidToStringSidW(wl.logon_sid,&sid))return FALSE;
     if(lstrlenW(sid)>184){LocalFree(sid);SetLastError(ERROR_BUFFER_OVERFLOW);return FALSE;}
-    wsprintfW(dacl,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)(A;;GA;;;%s)",sid);LocalFree(sid);
-    if(!object_dacl(wl.application,dacl)||!object_dacl(wl.station,dacl))return FALSE;
+    wsprintfW(dacl,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)(A;;GA;;;%s)",sid);
+    /* The user's saver may read, enumerate and create windows and menus on the screen-saver
+       desktop; it may not switch desktops, hook or journal there. */
+    wsprintfW(saver,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)(A;;0x200c7;;;%s)",sid);LocalFree(sid);
+    if(!object_dacl(wl.application,dacl)||!object_dacl(wl.saver,saver)||!object_dacl(wl.station,dacl))return FALSE;
     assign=(SET_STATION_USER)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetWindowStationUser");
     if(!assign){SetLastError(ERROR_PROC_NOT_FOUND);return FALSE;}
     GetTokenInformation(token,TokenUser,NULL,0,&bytes);user=LocalAlloc(LPTR,bytes);if(!user)return FALSE;
@@ -117,6 +134,7 @@ BOOL wl_clear_user_security(void)
 {
     SET_STATION_USER assign;LUID none;
     if(!object_dacl(wl.application,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)")||
+       !object_dacl(wl.saver,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)")||
        !object_dacl(wl.station,L"D:P(A;;GA;;;SY)(A;;RC;;;BA)"))return FALSE;
     assign=(SET_STATION_USER)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetWindowStationUser");
     if(!assign){SetLastError(ERROR_PROC_NOT_FOUND);return FALSE;}

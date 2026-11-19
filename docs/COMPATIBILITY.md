@@ -6,6 +6,25 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Screen savers and idle lock (R-0) checkpoint, 2026-11-19
+
+Fresh overlays of `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…`, unchanged) with
+the R-0 Winlogon `020eaf40…` installed in each run. Evidence
+`.work/screensaver-20261119/`.
+
+| Test | 1 vCPU KVM | 2 vCPU KVM | TCG |
+| --- | --- | --- | --- |
+| Screen-saver probe: 10 gates (non-secure, secure by key, secure by Ctrl+Alt+Del, locked station, logon desktop, notices stop, relogon) | Pass (`ss-up-02`) | Pass (`ss-mp-02`) | Pass (`ss-tcg-02`) |
+| Two-account switch oracle | Pass, 9/9 | Not run | Not run |
+| Winlogon lifecycle harness | Pass | Pass | Pass |
+| Security lab `proof` (AI build 17) | Pass, 35/35 | Pass, 35/35 | Pass, 35/35 |
+| Security lab `standard-user` | Pass, 12/12 | Not run | Not run |
+
+Observed in the guest: `ssstars.scr` (user, secure and not), `logon.scr`
+(`.DEFAULT`, as SYSTEM). Display Properties, other savers, a monitor
+power-down (request 2) and Group Policy screen-saver settings are **not tested**.
+[Record](winlogon-screen-saver.md)
+
 ## Modernization (Milestone 8.4) checkpoint, 2026-11-19
 
 Fresh overlays of `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…eada`, unchanged) with
@@ -40,8 +59,8 @@ failure on the checked kernel (assertions bugcheck and restart with no debugger)
 but it is **not explained** (roadmap R-13).
 
 The changes keep every interface: no export, import, structure, registry value
-or file format changed. Screen savers still do not start, and a
-password-protected screen saver does not lock an idle session (roadmap R-0).
+or file format changed. Screen savers did not start in this checkpoint (see R-0
+below).
 Not tested: real networks and hardware, the Explorer-bar unload race
 (code-level fix, not reproduced), AI load under TCG.
 [Audit](architecture-modernization-audit.md) ·

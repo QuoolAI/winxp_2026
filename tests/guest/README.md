@@ -187,3 +187,13 @@ run from a Startup fixture by `vm/security_lab.py`
   1 minute, how often COM1 can be opened and how much `native-winlogon.log`
   grows, restores the timeout and sends one Shift key press. Exit 0 when COM1
   stayed available (≥ 90%) and the log grew by at most 1 KB.
+* `screensaver` (kernel32, user32, advapi32): roadmap R-0, run at each XP25
+  logon by `vm/winlogon_screensaver_probe.py`, which supplies the console input.
+  First session: an idle timeout of N s (argument, default 20) and `ssstars.scr`,
+  then four savers: not secure; secure, ended by a key; secure, ended by
+  Ctrl+Alt+Del; on a station locked with Win+L. For each it records whether USER
+  reports a running saver (`SPI_GETSCREENSAVERRUNNING`) and which input desktop it
+  can open (`Screen-saver`, `Default`, or none while locked). It then sets
+  `.DEFAULT`'s timeout to N, restores its own and logs off. The second session
+  restores `.DEFAULT` (600 s). Exit 0 when every case passed.
+  ([record](../../docs/winlogon-screen-saver.md))

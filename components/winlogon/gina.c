@@ -37,6 +37,13 @@ static INT_PTR CALLBACK dialog_proc(HWND h,UINT message,WPARAM wp,LPARAM lp)
     if(!context)return FALSE;
     if(message==WM_TIMER&&wp==1){EndDialog(h,WLX_DLG_INPUT_TIMEOUT);return TRUE;}
     if(message==WM_TIMER&&wp==0x5832){KillTimer(h,0x5832);EnumChildWindows(h,log_edit,0);return TRUE;}
+    /* The screen-saver notice goes to the GINA's dialog first. A dialog that does not handle
+       it (MSGINA's logon dialog returns FALSE "and lets winlogon kill us") ends with
+       WLX_DLG_SCREEN_SAVER_TIMEOUT; one that handles it keeps its own result. */
+    if(message==WLX_WM_SAS&&wp==WLX_SAS_TYPE_SCRNSVR_TIMEOUT){
+        if(!context->procedure(h,message,wp,lp))EndDialog(h,WLX_DLG_SCREEN_SAVER_TIMEOUT);
+        return TRUE;
+    }
     if(message==WLX_WM_SAS){EndDialog(h,WLX_DLG_SAS);return TRUE;}
     result=context->procedure(h,message,wp,lp);
     if(message==WM_NCDESTROY){KillTimer(h,1);KillTimer(h,0x5832);RemovePropW(h,dialog_property);wl.dialog=context->previous;}
@@ -134,6 +141,7 @@ BOOL wl_gina_init(void)
     LOAD(lock_ok,"WlxIsLockOk");LOAD(logoff_ok,"WlxIsLogoffOk");LOAD(logoff,"WlxLogoff");LOAD(shutdown,"WlxShutdown");LOAD(network,"WlxNetworkProviderLoad");
 #undef LOAD
     *(FARPROC*)&wl.gina.start_application=GetProcAddress(wl.gina_module,"WlxStartApplication");
+    *(FARPROC*)&wl.gina.screen_saver=GetProcAddress(wl.gina_module,"WlxScreenSaverNotify"); /* WLX 1.1 */
     if(!wl.gina.negotiate(WLX_VERSION_1_4,&wl.gina_version)||wl.gina_version<WLX_VERSION_1_3||wl.gina_version>WLX_VERSION_1_4){SetLastError(ERROR_REVISION_MISMATCH);return FALSE;}
     wl_log("gina_negotiated",wl.gina_version);
     if(!wl.gina.initialize(L"WinSta0",&wl,NULL,&wl.dispatch,&wl.gina_context))return FALSE;
@@ -235,7 +243,10 @@ void wl_attention(DWORD type)
         action=wl.gina.locked_sas(wl.gina_context,type);wl.in_gina=FALSE;wl_log("gina_unlock_result",action);
         if(action==WLX_SAS_ACTION_UNLOCK_WKSTA){
             if(!wl_session_unlock())wl_fail("unlock_token_or_desktop_failed",GetLastError());
-        }else if(action==WLX_SAS_ACTION_NONE||action==0){wl_state_step(&wl.machine,WlDenied,0);wl.gina.locked_notice(wl.gina_context);}
+        }else if(action==WLX_SAS_ACTION_NONE||action==0){
+            /* The unlock dialog may have ended for the screen saver. */
+            wl_state_step(&wl.machine,WlDenied,0);if(!wl_saver_resume())wl.gina.locked_notice(wl.gina_context);
+        }
         else if(action==WLX_SAS_ACTION_LOGOFF||action==WLX_SAS_ACTION_FORCE_LOGOFF){
             if(!wl_session_logoff())wl_fail("locked_logoff_failed",GetLastError());
             PostMessageW(wl.window,WL_APP_NOTICE,100,0);
