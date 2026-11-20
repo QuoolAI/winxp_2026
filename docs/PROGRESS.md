@@ -2,6 +2,28 @@
 
 ## Current checkpoint
 
+2026-11-20, the XP25-Winlogon-Fix VM redeployed with R-0 and R-1
+(`xp25-modernization` `16062930d`; evidence `.work/vm-redeploy-20261119/`). The VM
+was turned off by the guest's own Turn Off. Its disk was frozen as a reference
+(`a0cd3262…`), and the new `build/package_image.py` replaced four files offline,
+each checked against its expected installed hash and its build collection:
+- `winlogon.exe` `289abb03…` → `020eaf40…`;
+- `win32k.sys` `b28afb2f…` → `f698e04d…`;
+- `user32.dll` `a51976dd…` → `4cccacd3…`;
+- `gdi32.dll` `09698075…` → `13e538d3…`.
+
+The result is `XP25-R0-R1.qcow2`
+(`c51832288b286bce510edccc2666581fa4a14e1d64c71b25cdecbbe94d49e6b7`). On that
+exact image the switch oracle passed 9/9 and the screen-saver probe 10/10
+(`image01-ss-up-04`). Three earlier screen-saver runs on it are kept as failed:
+the guest behaved correctly, but Winlogon lines were lost from COM1 (roadmap
+R-0b). The harness now turns the guest off normally and decides gates from serial
+records merged with the guest's file logs. The VM runs a reflink copy; the
+previous disk is kept as `XP25-Winlogon-Fix.289abb03.qcow2`. Only the domain
+description changed, and no other domain, network, filter or running VM changed.
+By screenshot: boot, logon and logoff with painted dialogs. The VM was left at
+the logon dialog. [VM record](virt-manager-xp25-winlogon-fix.md#redeploy-with-r-0-and-r-1-2026-11-20)
+
 2026-11-19, R-1: assessment of the source-built Microsoft components after 1106
 (`xp25-modernization`; evidence `.work/r1-20261119/`). `build/bulletin_index.py`
 indexed all 1,001 bulletins MS02-001…MS14-085. Windows XP candidates: 8 LSASS,

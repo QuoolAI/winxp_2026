@@ -6,6 +6,21 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## XP25-Winlogon-Fix VM with R-0 and R-1, 2026-11-20
+
+The interactive VM's own disk with `winlogon.exe` `020eaf40…`, `win32k.sys`
+`f698e04d…`, `user32.dll` `4cccacd3…` and `gdi32.dll` `13e538d3…` replaced
+(`XP25-R0-R1.qcow2`, `c5183228…`).
+- On overlays of that exact image (one-vCPU KVM): two-account switch oracle 9/9;
+  screen-saver probe 10/10 (`image01-ss-up-04`; runs `-01` to `-03` kept as
+  failed, from COM1 line loss).
+- In the VM itself: boot, logon, logoff, by screenshot.
+
+**Not run** on this disk: two-vCPU KVM, TCG, the lifecycle harness and the
+security-lab roles. Those ran on 8.2-image overlays with the same four files
+(R-0, R-1 sections above).
+[VM record](virt-manager-xp25-winlogon-fix.md#redeploy-with-r-0-and-r-1-2026-11-20)
+
 ## Source-built core fixes (R-1) checkpoint, 2026-11-19
 
 Fresh overlays of `XP25-CVE-Hardened-8.2.qcow2` (`5a84781f…`). Patched build 02
