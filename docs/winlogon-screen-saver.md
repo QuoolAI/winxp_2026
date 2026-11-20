@@ -172,6 +172,32 @@ the following `screen_saver_secure` line reached `serial.log`. `notices_stop` an
 `secure_saver_sas` therefore failed. The harness now reads records when the gate
 is decided, and the reruns are `-02`.
 
+## Harness: lost COM1 lines
+
+Winlogon opens COM1 exclusively for each line and drops the line when the port is
+busy (roadmap R-0b). On the XP25-Winlogon-Fix VM's disk this lost single lines,
+and once a burst of lock-notification lines, in three verification runs
+(`.work/vm-redeploy-20261119/runs/image01-ss-up-0{1,2,3}`, kept as failed). Each
+time Winlogon's own `native-winlogon.log` showed the guest behaving correctly.
+Since then the harness and the probe work as follows:
+
+- The driver types an unlock only while the unlock dialog is on screen. It
+  counts MSGINA's unlock result (`gina_unlock_result` 8) as well as
+  `SensUnlockEvent`.
+- The probe waits 2 s after each transition before writing, so Winlogon's
+  records go first.
+- At the end the driver turns the guest off through Start → Turn Off Computer,
+  which flushes the guest's file logs. It reads `C:\xp25\native-winlogon.log`
+  (records since this boot) and `C:\xp25\saver-probe.log` from a read-only copy
+  of the overlay.
+- The gates are decided once, from the serial and file records merged in order.
+  `result.json` also keeps the serial-only verdict. The locked-station case is
+  anchored on the first unlock after the Ctrl+Alt+Del case, because under TCG
+  the user's saver can also run on the station while it waits to be unlocked.
+
+Replaying the new evaluation on the recorded serial logs gives the same verdicts
+for `ss-up-02`, `ss-mp-02` and `ss-tcg-02` (10/10).
+
 ## Regression
 
 The same Winlogon (`020eaf40…`) went through Milestone 8.4's Winlogon regression

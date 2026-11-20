@@ -195,7 +195,8 @@ run from a Startup fixture by `vm/security_lab.py`
   reports a running saver (`SPI_GETSCREENSAVERRUNNING`) and which input desktop it
   can open (`Screen-saver`, `Default`, or none while locked). It then sets
   `.DEFAULT`'s timeout to N, restores its own and logs off. The second session
-  restores `.DEFAULT` (600 s). Exit 0 when every case passed.
+  restores `.DEFAULT` (600 s). Each case record is written 2 s after its last
+  transition, so Winlogon's own COM1 lines go first. Exit 0 when every case passed.
   ([record](../../docs/winlogon-screen-saver.md))
 * `r1core` (kernel32, user32, gdi32): roadmap R-1, for the rebuilt `win32k.sys`,
   `user32.dll` and `gdi32.dll`. It only observes and makes ordinary API calls:

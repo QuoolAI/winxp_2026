@@ -7,8 +7,11 @@ tests/guest/screensaver_probe.c is staged with a Startup script for XP25: it sho
 idle timeout and selects ssstars.scr. This driver does what a person at the console would:
 it logs on, waits for each saver, ends it with a key (or Ctrl+Alt+Del), unlocks the station
 with XP25's blank password, locks it with Win+L, and logs on again after the logon desktop's
-saver. Every gate is decided from the guest's own serial records (Winlogon's and the
-probe's); screenshots are evidence only. Nothing here writes the frozen image.
+saver, then turns the guest off normally. Every gate is decided from the guest's own
+records: Winlogon's and the probe's serial lines merged with their file logs
+(C:\\xp25\\native-winlogon.log, C:\\xp25\\saver-probe.log), read from the overlay afterwards,
+since COM1 drops a line when the port is busy (roadmap R-0b). result.json also keeps the
+serial-only verdict. Screenshots are evidence only. Nothing here writes the frozen image.
 
 Gates:
   logon                 the first logon reaches the desktop
@@ -61,6 +64,139 @@ def serial_records(serial):
         except ValueError:
             pass
     return rows
+
+
+def json_lines(text):
+    rows = []
+    for line in text.splitlines():
+        if '{' in line:
+            try:
+                rows.append(json.loads(line[line.index('{'):]))
+            except ValueError:
+                pass
+    return rows
+
+
+def guest_file_records(out):
+    """Winlogon's records since this run's boot (C:\\xp25\\native-winlogon.log) and the probe's
+    (C:\\xp25\\saver-probe.log), read offline from a read-only copy of the run's overlay. Both
+    logs reach the disk only when the guest shuts down normally."""
+    copy = out / 'records-disk.qcow2'
+    subprocess.run(['cp', '--reflink=always', str(out / 'disk.qcow2'), str(copy)], check=True)
+    copy.chmod(0o444)
+    target = out / 'guest-records'
+    result = subprocess.run([sys.executable, str(ROOT / 'vm/read_guest.py'), str(copy), str(target),
+                             '/xp25/native-winlogon.log', '/xp25/saver-probe.log'], capture_output=True, text=True)
+    (out / 'guest-records.log').write_text(result.stdout + result.stderr)
+    winlogon_log, probe_log = target / 'xp25/native-winlogon.log', target / 'xp25/saver-probe.log'
+    winlogon = [r for r in json_lines(winlogon_log.read_bytes().decode('latin-1')) if 'xp25_winlogon' in r] \
+        if winlogon_log.exists() else []
+    boots = [i for i, r in enumerate(winlogon) if r['xp25_winlogon'] == 'entry']
+    winlogon = winlogon[boots[-1]:] if boots else []
+    probe = json_lines(probe_log.read_bytes().decode('latin-1')) if probe_log.exists() else []
+    return winlogon, probe
+
+
+def merge_records(serial, file):
+    """One ordered list of Winlogon records from its two copies: serial loses a line when COM1 is
+    busy, the file loses what was not flushed. Aligned on the event names."""
+    import difflib
+    a = [r['xp25_winlogon'] for r in serial]
+    b = [r['xp25_winlogon'] for r in file]
+    merged = []
+    for op, a1, a2, b1, b2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op == 'equal':
+            merged += serial[a1:a2]
+        else:
+            merged += serial[a1:a2] + file[b1:b2]
+    return merged
+
+
+def evaluate(winlogon, probe, live):
+    """The gates, from Winlogon's records (in order), the probe's records and what the driver saw."""
+    names = [r['xp25_winlogon'] for r in winlogon]
+
+    def count(name, lo=0, hi=None):
+        return names[lo or 0:hi].count(name)
+
+    def at(name, index):
+        seen = [i for i, n in enumerate(names) if n == name]
+        return seen[index] if len(seen) > index else None
+
+    def status_after(position, name):
+        if position is None:
+            return None
+        for r in winlogon[position:]:
+            if r['xp25_winlogon'] == name:
+                return r['status']
+        return None
+
+    def case(label):
+        rows = [r for r in probe if r.get('saver_case') == label or r.get('saver_probe') == label]
+        return rows[0] if rows else None
+
+    def passed(label):
+        c = case(label)
+        return bool(c) and c.get('passed') == 1
+
+    def first_after(position, test):
+        for i in range(position, len(winlogon)) if position is not None else ():
+            if test(winlogon[i]):
+                return i
+        return None
+
+    def unlocked(r):
+        return r['xp25_winlogon'] == 'SensUnlockEvent' or (r['xp25_winlogon'] == 'gina_unlock_result' and r['status'] == 8)
+
+    s0, s1, s2 = (at('screen_saver_started_session', i) for i in range(3))
+    # A locked, idle station also runs the user's saver while the driver waits to unlock (slow
+    # TCG timing), so the Win+L case is the first locked-station saver after the unlock that ends
+    # the Ctrl+Alt+Del case.
+    u2 = first_after(s2, unlocked)
+    locked0 = first_after(u2, lambda r: r['xp25_winlogon'] == 'screen_saver_started_locked')
+    logon0 = at('screen_saver_started_logon_desktop', 0)
+    gates = []
+
+    def gate(label, ok, **detail):
+        gates.append({'gate': label, 'passed': bool(ok), **detail})
+
+    gate('boot_logon_dialog', live.get('boot_logon_dialog'))
+    gate('logon', count('session_interactive') >= 1)
+    gate('nonsecure_saver', s0 is not None and status_after(s0, 'screen_saver_secure') == 0 and
+         count('screen_saver_image_ssstars.scr') >= 1 and count('screen_saver_returned_to_desktop', s0, s1) >= 1 and
+         count('SensLockEvent', s0, s1) == 0 and passed('nonsecure'),
+         probe=case('nonsecure'), pid=status_after(s0, 'screen_saver_started_session'))
+    notices, last, run_ms = (status_after(s0, n) for n in
+                             ('screen_saver_notices_during_run', 'screen_saver_last_notice_ms', 'screen_saver_run_ms'))
+    gate('notices_stop', run_ms is not None and run_ms >= 8000 and notices is not None and
+         (notices == 0 or (last is not None and last < 5000)),
+         notices_during_run=notices, last_notice_ms=last, run_ms=run_ms)
+    gate('secure_saver_key', s1 is not None and status_after(s1, 'screen_saver_secure') == 1 and
+         count('screen_saver_secure_lock', s1, s2) == 1 and count('SensLockEvent', s1, s2) >= 1 and
+         live.get('unlock_secure_key') is not None and passed('secure_key'),
+         probe=case('secure_key'), unlock_retries=live.get('unlock_secure_key'))
+    gate('secure_saver_sas', s2 is not None and u2 is not None and status_after(s2, 'screen_saver_secure') == 1 and
+         count('screen_saver_stopped_by_sas', s2, u2) >= 1 and count('SensLockEvent', s2, u2) >= 1 and
+         count('screen_saver_secure_lock', s2, u2) == 0 and
+         live.get('unlock_secure_sas') is not None and passed('secure_sas'),
+         probe=case('secure_sas'), unlock_retries=live.get('unlock_secure_sas'))
+    gate('locked_station_saver', live.get('ready_locked') and locked0 is not None and
+         status_after(locked0, 'screen_saver_secure') == 0 and count('screen_saver_returned_to_locked', locked0, logon0) >= 1 and
+         count('screen_saver_dialog_interrupted', u2, locked0) >= 1 and
+         live.get('unlock_locked') is not None and passed('locked'),
+         probe=case('locked'), unlock_retries=live.get('unlock_locked'))
+    gate('logon_desktop_saver', passed('first_session_done') and count('profile_unloaded') >= 1 and logon0 is not None and
+         status_after(logon0, 'screen_saver_secure') == 0 and count('screen_saver_image_logon.scr') >= 1 and
+         count('screen_saver_returned_to_logon', logon0) >= 1 and
+         count('screen_saver_dialog_interrupted', at('profile_unloaded', 0), logon0) >= 1 and
+         live.get('logon_dialog_after_logoff') and live.get('logon_dialog_back'),
+         first_session=case('first_session_done'))
+    gate('relogon', count('session_interactive') >= 2 and passed('restored'), probe=case('restored'))
+    failures = [r for r in winlogon if r.get('phase') == 'failed' or
+                (r['xp25_winlogon'].startswith('screen_saver') and r['xp25_winlogon'].endswith('_failed'))]
+    failed_cases = [r for r in probe if r.get('passed') == 0]
+    gate('no_failure', not failures and not failed_cases, failures=failures[:5], failed_cases=failed_cases[:5])
+    return gates
 
 
 def main():
@@ -144,33 +280,17 @@ def main():
     def count(name):
         return sum(1 for r in events() if r['xp25_winlogon'] == name)
 
-    def after(name, index):
-        """Winlogon records from the index-th occurrence (0-based) of an event onwards."""
-        rows, seen = events(), -1
-        for i, r in enumerate(rows):
-            if r['xp25_winlogon'] == name:
-                seen += 1
-                if seen == index:
-                    return rows[i:]
-        return []
-
-    def status_of(rows, name):
-        for r in rows:
-            if r['xp25_winlogon'] == name:
-                return r['status']
-        return None
-
     def probe_case(label):
         for r in serial_records(serial):
             if r.get('saver_case') == label or r.get('saver_probe') == label:
                 return r
         return None
 
-    def gate(label, ok, **detail):
-        gates.append({'gate': label, 'passed': bool(ok), **detail})
-        lab.record({'gate': label, 'passed': bool(ok), **detail})
-        print(('PASS ' if ok else 'FAIL ') + label, json.dumps(detail), flush=True)
+    def stage(label, **detail):
+        lab.record({'stage': label, **detail})
+        print('STAGE ' + label, json.dumps(detail), flush=True)
 
+    live = {}
     try:
         for _ in range(600):
             if qemu.poll() is not None:
@@ -195,129 +315,128 @@ def main():
             def grows(name, before, seconds):
                 return wait_for(lambda: count(name) > before, timeout=seconds * slow, poll=1.0)
 
+            def unlocks():
+                """Unlocks Winlogon recorded: SensUnlockEvent, or MSGINA's unlock action (8) that precedes
+                it. COM1 is exclusive per line (roadmap R-0b), so one of the two can be lost."""
+                rows = events()
+                return max(sum(1 for r in rows if r['xp25_winlogon'] == 'SensUnlockEvent'),
+                           sum(1 for r in rows if r['xp25_winlogon'] == 'gina_unlock_result' and r['status'] == 8))
+
             def unlock():
-                """XP25's password is blank; MSGINA shows its unlock dialog without Ctrl+Alt+Del."""
-                before = count('SensUnlockEvent')
+                """XP25's password is blank; MSGINA shows its unlock dialog without Ctrl+Alt+Del. Keys
+                are typed only while that dialog is on screen, never into an unlocked desktop."""
+                before = unlocks()
                 for attempt in range(3):
                     time.sleep(4 * slow)
+                    if attempt and not shown():
+                        return attempt if unlocks() > before else None
                     key('ctrl-a')
                     key('backspace')
                     key('ret')
-                    if grows('SensUnlockEvent', before, 45):
+                    if wait_for(lambda: unlocks() > before, timeout=45 * slow, poll=1.0):
                         return attempt
                     shot('unlock-retry-%d' % (attempt + 1))
-                    key('ret')          # dismiss a refusal, if one is shown
+                    if shown():
+                        key('ret')      # dismiss a refusal shown over the unlock dialog
                 return None
 
+            # The live phase only sequences the console input; serial records can lose a line
+            # (COM1 is exclusive per line, roadmap R-0b), so the gates are decided afterwards from
+            # the merged serial and file records.
             saver_wait = (args.timeout * 6 + 120)
             q.call('cont')
-            gate('boot_logon_dialog', wait_for(shown, timeout=240 * slow, poll=1.0))
+            live['boot_logon_dialog'] = bool(wait_for(shown, timeout=240 * slow, poll=1.0))
             time.sleep(3 * slow)
             shot('00-logon-dialog')
             key('ret')
-            gate('logon', grows('session_interactive', 0, 180))
+            grows('session_interactive', 0, 180)
             time.sleep(10 * slow)
             shot('01-desktop')
+            stage('logged_on')
 
             # A: a non-secure session saver, ended by a key.
-            locks = count('SensLockEvent')
-            ok = grows('screen_saver_started_session', 0, saver_wait)
+            grows('screen_saver_started_session', 0, saver_wait)
             time.sleep(8 * slow)
             shot('a1-saver')
             key('shift', 2)
-            returned = grows('screen_saver_returned_to_desktop', 0, 60)
-            case = wait_for(lambda: probe_case('nonsecure'), timeout=120 * slow, poll=2.0)
+            grows('screen_saver_returned_to_desktop', 0, 60)
+            wait_for(lambda: probe_case('nonsecure'), timeout=120 * slow, poll=2.0)
             shot('a2-desktop')
-            # Records are read when the gate is decided: a line can reach serial.log after the one
-            # that ended a wait. Winlogon logs a run's statistics before screen_saver_ended.
-            rows = after('screen_saver_started_session', 0)
-            gate('nonsecure_saver', ok and returned and status_of(rows, 'screen_saver_secure') == 0 and
-                 count('screen_saver_image_ssstars.scr') >= 1 and count('SensLockEvent') == locks and
-                 bool(case) and case.get('passed') == 1, probe=case,
-                 pid=status_of(rows, 'screen_saver_started_session'))
-            notices, last, run_ms = (status_of(rows, n) for n in
-                                     ('screen_saver_notices_during_run', 'screen_saver_last_notice_ms', 'screen_saver_run_ms'))
-            gate('notices_stop', run_ms is not None and run_ms >= 8000 and notices is not None and
-                 (notices == 0 or (last is not None and last < 5000)),
-                 notices_during_run=notices, last_notice_ms=last, run_ms=run_ms)
+            stage('nonsecure')
 
             # B: a secure saver, ended by a key: the session locks; the password unlocks it.
             locks = count('SensLockEvent')
-            ok = grows('screen_saver_started_session', 1, saver_wait)
+            grows('screen_saver_started_session', 1, saver_wait)
             time.sleep(6 * slow)
             shot('b1-saver')
             key('shift', 2)
-            locked = grows('screen_saver_secure_lock', 0, 60) and grows('SensLockEvent', locks, 60)
+            grows('screen_saver_secure_lock', 0, 60) or grows('SensLockEvent', locks, 30)
             time.sleep(3 * slow)
             shot('b2-locked')
-            retries = unlock()
-            case = wait_for(lambda: probe_case('secure_key'), timeout=120 * slow, poll=2.0)
-            rows = after('screen_saver_started_session', 1)
-            gate('secure_saver_key', ok and status_of(rows, 'screen_saver_secure') == 1 and locked and
-                 retries is not None and bool(case) and case.get('passed') == 1, probe=case, unlock_retries=retries)
+            live['unlock_secure_key'] = unlock()
+            wait_for(lambda: probe_case('secure_key'), timeout=120 * slow, poll=2.0)
+            stage('secure_key', unlock_retries=live['unlock_secure_key'])
 
             # C: a secure saver, ended by Ctrl+Alt+Del.
-            locks = count('SensLockEvent')
-            ok = grows('screen_saver_started_session', 2, saver_wait)
+            grows('screen_saver_started_session', 2, saver_wait)
             time.sleep(6 * slow)
             shot('c1-saver')
             key('ctrl-alt-delete', 2)
-            stopped = grows('screen_saver_stopped_by_sas', 0, 60) and grows('SensLockEvent', locks, 60)
+            grows('screen_saver_stopped_by_sas', 0, 60)
             time.sleep(3 * slow)
             shot('c2-unlock-dialog')
-            retries = unlock()
-            case = wait_for(lambda: probe_case('secure_sas'), timeout=120 * slow, poll=2.0)
-            rows = after('screen_saver_started_session', 2)
-            gate('secure_saver_sas', ok and status_of(rows, 'screen_saver_secure') == 1 and stopped and
-                 count('screen_saver_secure_lock') == 1 and retries is not None and bool(case) and
-                 case.get('passed') == 1, probe=case, unlock_retries=retries)
+            live['unlock_secure_sas'] = unlock()
+            wait_for(lambda: probe_case('secure_sas'), timeout=120 * slow, poll=2.0)
+            stage('secure_sas', unlock_retries=live['unlock_secure_sas'])
 
             # D: the user's saver on a station locked with Win+L.
-            ready = wait_for(lambda: probe_case('ready_locked'), timeout=120 * slow, poll=2.0)
-            locks = count('SensLockEvent')
+            live['ready_locked'] = bool(wait_for(lambda: probe_case('ready_locked'), timeout=120 * slow, poll=2.0))
             key('meta_l-l', 2)
-            locked = grows('SensLockEvent', locks, 60)
+            time.sleep(4 * slow)
             shot('d1-locked')
-            ok = grows('screen_saver_started_locked', 0, saver_wait)
+            grows('screen_saver_started_locked', 0, saver_wait)
             time.sleep(6 * slow)
             shot('d2-saver')
             key('shift', 2)
-            back = grows('screen_saver_returned_to_locked', 0, 60)
+            grows('screen_saver_returned_to_locked', 0, 60)
             time.sleep(3 * slow)
             shot('d3-locked-again')
-            retries = unlock()
-            case = wait_for(lambda: probe_case('locked'), timeout=120 * slow, poll=2.0)
-            rows = after('screen_saver_started_locked', 0)
-            gate('locked_station_saver', bool(ready) and locked and ok and status_of(rows, 'screen_saver_secure') == 0
-                 and back and retries is not None and bool(case) and case.get('passed') == 1, probe=case,
-                 unlock_retries=retries)
+            live['unlock_locked'] = unlock()
+            wait_for(lambda: probe_case('locked'), timeout=120 * slow, poll=2.0)
+            stage('locked', unlock_retries=live['unlock_locked'])
 
             # E: after the probe logs off, the logon desktop's saver.
-            done = wait_for(lambda: probe_case('first_session_done'), timeout=240 * slow, poll=2.0)
-            unloaded = grows('profile_unloaded', 0, 240)
-            dialog = wait_for(shown, timeout=120 * slow, poll=1.0)
+            wait_for(lambda: probe_case('first_session_done'), timeout=240 * slow, poll=2.0)
+            grows('profile_unloaded', 0, 240)
+            live['logon_dialog_after_logoff'] = bool(wait_for(shown, timeout=120 * slow, poll=1.0))
             shot('e1-logon-dialog')
-            ok = grows('screen_saver_started_logon_desktop', 0, saver_wait)
+            grows('screen_saver_started_logon_desktop', 0, saver_wait)
             time.sleep(6 * slow)
             shot('e2-saver')
             key('shift', 2)
-            back = grows('screen_saver_returned_to_logon', 0, 60)
-            dialog_back = wait_for(shown, timeout=90 * slow, poll=1.0)
+            grows('screen_saver_returned_to_logon', 0, 60)
+            live['logon_dialog_back'] = bool(wait_for(shown, timeout=90 * slow, poll=1.0))
             shot('e3-logon-dialog-back')
-            rows = after('screen_saver_started_logon_desktop', 0)
-            gate('logon_desktop_saver', bool(done) and done.get('passed') == 1 and unloaded and dialog and ok and
-                 status_of(rows, 'screen_saver_secure') == 0 and count('screen_saver_image_logon.scr') >= 1 and
-                 count('screen_saver_dialog_interrupted') >= 1 and back and dialog_back,
-                 first_session=done, interrupted_dialogs=count('screen_saver_dialog_interrupted'))
+            stage('logon_desktop')
 
             # F: log on again; the probe restores the logon desktop's timeout.
             time.sleep(3 * slow)
             key('ret')
-            again = grows('session_interactive', 1, 180)
-            case = wait_for(lambda: probe_case('restored'), timeout=180 * slow, poll=2.0)
+            grows('session_interactive', 1, 180)
+            wait_for(lambda: probe_case('restored'), timeout=180 * slow, poll=2.0)
             time.sleep(5 * slow)
             shot('f1-desktop')
-            gate('relogon', again and bool(case) and case.get('passed') == 1, probe=case)
+            stage('relogon')
+
+            # Turn the guest off normally, so Winlogon's and the probe's file logs reach the disk.
+            key('esc', 1)
+            key('ctrl-esc', 3)
+            key('u', 4)
+            shot('g1-turn-off-dialog')
+            key('u', 2)
+            live['guest_shutdown'] = bool(wait_for(lambda: q.call('query-status')['status'] == 'shutdown',
+                                                   timeout=180 * slow, poll=2.0))
+            stage('turn_off', guest_shutdown=live['guest_shutdown'])
             try:
                 q.call('quit')
             except (EOFError, RuntimeError, OSError):
@@ -327,14 +446,22 @@ def main():
             qemu.wait(timeout=20)
         except subprocess.TimeoutExpired:
             qemu.terminate()
-    rows = serial_records(serial)
-    failures = [r for r in rows if r.get('phase') == 'failed' or
-                ('xp25_winlogon' in r and r['xp25_winlogon'].startswith('screen_saver') and
-                 r['xp25_winlogon'].endswith('_failed'))]
-    failed_cases = [r for r in rows if ('saver_case' in r or 'saver_probe' in r) and r.get('passed') == 0]
-    gate('no_failure', not failures and not failed_cases, failures=failures[:5], failed_cases=failed_cases[:5])
-    record['winlogon_saver_records'] = [r for r in rows if str(r.get('xp25_winlogon', '')).startswith('screen_saver')]
-    record['probe_records'] = [r for r in rows if 'saver_case' in r or 'saver_probe' in r]
+
+    serial_rows = serial_records(serial)
+    file_winlogon, file_probe = guest_file_records(out)
+    record['guest_file_records'] = {'winlogon_since_boot': len(file_winlogon), 'probe': len(file_probe)}
+    serial_winlogon = [r for r in serial_rows if 'xp25_winlogon' in r]
+    serial_probe = [r for r in serial_rows if 'saver_case' in r or 'saver_probe' in r]
+    merged_winlogon = merge_records(serial_winlogon, file_winlogon)
+    merged_probe = serial_probe + [r for r in file_probe if r not in serial_probe]
+    record['serial_only_gates'] = evaluate(serial_winlogon, serial_probe, live)
+    gates.extend(evaluate(merged_winlogon, merged_probe, live))
+    for g in gates:
+        lab.record({'gate': g['gate'], 'passed': g['passed']})
+        print(('PASS ' if g['passed'] else 'FAIL ') + g['gate'], json.dumps({k: v for k, v in g.items() if k not in ('gate', 'passed')}))
+    record['live'] = live
+    record['winlogon_saver_records'] = [r for r in merged_winlogon if str(r.get('xp25_winlogon', '')).startswith('screen_saver')]
+    record['probe_records'] = merged_probe
     record['passed'] = all(g['passed'] for g in gates)
     (out / 'result.json').write_text(json.dumps(record, indent=1) + '\n')
     print(json.dumps({'name': args.name, 'accel': args.accel, 'cpus': args.cpus,

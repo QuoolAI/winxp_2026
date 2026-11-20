@@ -95,6 +95,9 @@ static BOOL saver_case(const char *label,BOOL secure,BOOL start_locked,DWORD sec
     Sleep(1500);
     back=ended&&wait_desktop(L"Default",secure||start_locked?seconds*10:30);
     input_desktop(name);narrow(after,name);
+    /* Winlogon records the same transition on COM1 and drops a line when the port is busy
+       (roadmap R-0b): let its records go first. */
+    Sleep(2000);
     wsprintfA(row,"{\"saver_case\":\"%s\",\"locked_before\":%d,\"saw_running\":%d,\"wait_ms\":%lu,\"desktop_while_running\":\"%s\","
                   "\"ended\":%d,\"locked_after\":%d,\"desktop_after\":\"%s\",\"t\":%lu,\"passed\":%d}",
               label,locked_before,started,wait_ms,shown,ended,locked,after,GetTickCount()-t0,
