@@ -13,7 +13,7 @@ MSC_WARNING_LEVEL=/W4 /WX /wd4201
 C_DEFINES=-DWIN32 -DNT -DUNICODE -D_UNICODE -DWINVER=0x0501 -D_WIN32_WINNT=0x0501 -D_WIN32_IE=0x0600
 # A linker map beside the PDB: MerlinAI Builder maps crash offsets to functions with it.
 LINKER_FLAGS=-map:$(O)\$(TARGETNAME).map
-SOURCES=dllmain.c mc_util.c mc_config.c mc_queue.c mc_collect.c mc_http.c ..\core\merlin_text.c ..\core\merlin_record.c \
+SOURCES=dllmain.c mc_util.c mc_config.c mc_queue.c mc_collect.c mc_http.c mc_policy.c ..\core\merlin_text.c ..\core\merlin_record.c \
         ..\core\merlin_classify.c ..\core\merlin_redact.c ..\core\merlin_json.c ..\core\merlin_proto.c \
         ..\..\xp25-agent\llm\xp25_sha256.c MerlinClient.rc
 TARGETLIBS=$(SDK_LIB_PATH)\kernel32.lib $(SDK_LIB_PATH)\user32.lib $(SDK_LIB_PATH)\advapi32.lib $(SDK_LIB_PATH)\shell32.lib \

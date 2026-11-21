@@ -689,12 +689,14 @@ static void on_done(OPERATION *op)
     case OpDeployStatus:
         if (!op->error && op->reply.status == 200) {
             MERLIN_JSON_DOC *doc = (MERLIN_JSON_DOC *)HeapAlloc(GetProcessHeap(), 0, sizeof(MERLIN_JSON_DOC));
-            char current[96], previous[96], state[64];
-            current[0] = previous[0] = state[0] = 0;
+            char current[96], previous[96], state[64], refused[160];
+            current[0] = previous[0] = state[0] = refused[0] = 0;
             if (doc && merlin_json_parse(doc, op->reply.body, op->reply.body_len)) {
                 merlin_json_member_string(doc, 0, "current", current, sizeof(current));
                 merlin_json_member_string(doc, 0, "previous", previous, sizeof(previous));
                 merlin_json_member_string(doc, 0, "state", state, sizeof(state));
+                /* Why the last approved request was not carried out (the agent clears it after a success). */
+                merlin_json_member_string(doc, merlin_json_member(doc, 0, "last_refusal"), "reason", refused, sizeof(refused));
             }
             if (doc) HeapFree(GetProcessHeap(), 0, doc);
             merlin_copy(deploy_text, sizeof(deploy_text), state[0] ? state : "ready");
@@ -702,6 +704,10 @@ static void on_done(OPERATION *op)
             merlin_append(deploy_text, sizeof(deploy_text), current[0] ? current : "unknown");
             merlin_append(deploy_text, sizeof(deploy_text), previous[0] ? "; previous system kept: " : "; no previous system to roll back to");
             merlin_append(deploy_text, sizeof(deploy_text), previous);
+            if (refused[0]) {
+                merlin_append(deploy_text, sizeof(deploy_text), "; last request refused: ");
+                merlin_append(deploy_text, sizeof(deploy_text), refused);
+            }
             merlin_sanitize_line(deploy_text);
             {
                 WCHAR w[600];

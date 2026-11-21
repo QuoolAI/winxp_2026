@@ -7,8 +7,10 @@
      (was Dr. Watson behind faultrep.dll's Microsoft dialog);
    - PCHealth\ErrorReporting: DoReport = 0, ShowUI = 0 (nothing is reported to
      Microsoft's retired endpoints; kernel and hang notifications by dwwin stop);
-   - Control Panel: MerlinAI.cpl registered (Security Center category);
-     wscui.cpl and wuaucpl.cpl in the "don't load" list;
+   - Control Panel: MerlinAI.cpl registered in Performance and Maintenance;
+     wscui.cpl and wuaucpl.cpl in the "don't load" list and hidden in every
+     user hive by the "Hide specified Control Panel items" policy, which also
+     removes the Security Center link (MerlinUserPolicyAll, mc_policy.c);
    - Security Center: the antivirus, firewall and update notifications are
      turned off. The Security Center service, the Windows Firewall and its
      settings are not changed;
@@ -27,6 +29,11 @@
 #define CPLS L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Control Panel\\Cpls"
 #define DONTLOAD L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Control Panel\\don't load"
 #define CATEGORY L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Control Panel\\Extended Properties\\{305CA226-D286-468e-B848-2B2E8E697B74} 2"
+/* Value name in the form shell32's own entries use; the shell expands it before comparing. */
+#define CATEGORY_VALUE L"%SystemRoot%\\system32\\MerlinAI.cpl"
+/* Performance and Maintenance. The image's shell32 shows category 10 (Security Center) only as a direct
+   link to wscui.cpl, so an applet registered there is never listed. */
+#define CATEGORY_PERFORMANCE 5
 #define SECCENTER L"SOFTWARE\\Microsoft\\Security Center"
 #define AUPOLICY L"SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU"
 #define EXPLORERPOLICY L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"
@@ -82,6 +89,21 @@ static void note(char *log, int size, const char *step, DWORD error)
     merlin_serial(line);
     merlin_append(log, size, line + 25);
     merlin_append(log, size, "\r\n");
+}
+
+static void note_policy(char *log, int size, const char *step, DWORD error, const MERLIN_POLICY_STATS *p)
+{
+    char line[200];
+    note(log, size, step, error);
+    merlin_copy(line, sizeof(line), "XP25_MERLIN_INSTALL_POLICY loaded=");
+    merlin_append_ulong(line, sizeof(line), p->loaded);
+    merlin_append(line, sizeof(line), " offline=");
+    merlin_append_ulong(line, sizeof(line), p->offline);
+    merlin_append(line, sizeof(line), " default_user=");
+    merlin_append_ulong(line, sizeof(line), p->default_user);
+    merlin_append(line, sizeof(line), " failed=");
+    merlin_append_ulong(line, sizeof(line), p->failed);
+    merlin_serial(line);
 }
 
 static DWORD set_value(const WCHAR *key, const WCHAR *name, DWORD type, const void *data, DWORD size)
@@ -239,6 +261,7 @@ static DWORD service(const WCHAR *dir, BOOL remove)
 DWORD merlin_install(const WCHAR *dir, char *log, int log_size)
 {
     WCHAR value[MAX_PATH * 2], path[MAX_PATH];
+    MERLIN_POLICY_STATS policy;
     DWORD e, installed = 0, failures = 0;
     unsigned i;
     log[0] = 0;
@@ -281,10 +304,14 @@ DWORD merlin_install(const WCHAR *dir, char *log, int log_size)
         e = CopyFileW(value, path, FALSE) ? 0 : GetLastError();
     }
     if (!e) e = set_string(CPLS, L"MerlinAI", REG_SZ, path);
-    if (!e) e = set_dword(CATEGORY, path, 10);
+    if (!e) e = delete_value(CATEGORY, path);                 /* the first release's entry (category 10) */
+    if (!e) e = set_dword(CATEGORY, CATEGORY_VALUE, CATEGORY_PERFORMANCE);
     if (!e) e = set_string(DONTLOAD, L"wscui.cpl", REG_SZ, L"no");
     if (!e) e = set_string(DONTLOAD, L"wuaucpl.cpl", REG_SZ, L"no");
     note(log, log_size, "control_panel", e);
+    failures += e != 0;
+    e = MerlinUserPolicyAll(TRUE, &policy);
+    note_policy(log, log_size, "control_panel_user_policy", e, &policy);
     failures += e != 0;
     e = set_dword(SECCENTER, L"AntiVirusDisableNotify", 1);
     if (!e) e = set_dword(SECCENTER, L"FirewallDisableNotify", 1);
@@ -323,6 +350,7 @@ DWORD merlin_uninstall(char *log, int log_size)
     DWORD e, failures = 0, installed = 0;
     unsigned i;
     WCHAR dir[MAX_PATH], path[MAX_PATH];
+    MERLIN_POLICY_STATS policy;
     log[0] = 0;
     if (!MerlinIsAdmin()) return ERROR_ACCESS_DENIED;
     read_dword(MERLIN_REG_SAVED, L"Installed", &installed);
@@ -335,6 +363,10 @@ DWORD merlin_uninstall(char *log, int log_size)
         failures += e != 0;
     }
     note(log, log_size, "restored_settings", failures ? ERROR_GEN_FAILURE : 0);
+    e = MerlinUserPolicyAll(FALSE, &policy);
+    note_policy(log, log_size, "control_panel_user_policy_removed", e, &policy);
+    failures += e != 0;
+    delete_value(CATEGORY, CATEGORY_VALUE);
     if (!read_string(MERLIN_REG_ROOT, L"InstallDirectory", dir, MAX_PATH)) {
         lstrcpyW(path, dir);
         lstrcatW(path, L"\\MerlinAI.cpl");

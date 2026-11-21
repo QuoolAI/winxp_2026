@@ -66,6 +66,17 @@ call :check HIDE_WUAUCPL "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control
 call :check SC_NOTIFY "HKLM\SOFTWARE\Microsoft\Security Center" FirewallDisableNotify 0x1
 call :check AU_POLICY "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" NoAutoUpdate 0x1
 call :check SAVED "HKLM\SOFTWARE\XP25\MerlinAI\Saved" AeDebug.Debugger drwtsn32
+rem Security Center link removed by the per-user policy; MerlinAI in Performance and Maintenance.
+rem CALL expands percent signs a second time: %%%%SystemRoot%%%% reaches reg.exe as %SystemRoot%.
+set X=HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer
+set C=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\Extended Properties\{305CA226-D286-468e-B848-2B2E8E697B74} 2
+call :check CPL_CATEGORY "%C%" "%%%%SystemRoot%%%%\system32\MerlinAI.cpl" 0x5
+call :check USER_DISALLOWCPL "%X%" DisallowCPL 0x1
+call :check USER_HIDE_WSCUI "%X%\DisallowCpl" "XP25 MerlinAI: Security Center" wscui.cpl
+call :check USER_HIDE_WUAUCPL "%X%\DisallowCpl" "XP25 MerlinAI: Automatic Updates" wuaucpl.cpl
+reg load HKU\XP25MerlinCheck "%ALLUSERSPROFILE%\..\Default User\NTUSER.DAT" >nul
+call :check DEFAULT_USER_HIDE_WSCUI "HKU\XP25MerlinCheck\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\DisallowCpl" "XP25 MerlinAI: Security Center" wscui.cpl
+reg unload HKU\XP25MerlinCheck >nul
 sc query SharedAccess | findstr /i RUNNING >nul && call :mark XP25_MERLIN_FIREWALL_RUNNING=1 || call :mark XP25_MERLIN_FIREWALL_RUNNING=0
 "%P%\MerlinAI.exe" /configure http://10.25.0.1:8740 http://10.25.0.1:8746 {installation} {builder_key} {deploy_key}
 "%P%\MerlinTest.exe" /check
@@ -106,6 +117,9 @@ rem Uninstall restores the saved settings; then install again for the Control Pa
 "%P%\MerlinAI.exe" /uninstall
 call :check RESTORED_AEDEBUG "%K%" Debugger drwtsn32
 call :check RESTORED_DOREPORT "HKLM\SOFTWARE\Microsoft\PCHealth\ErrorReporting" DoReport 0x1
+call :absent RESTORED_USER_DISALLOWCPL "%X%" DisallowCPL
+call :absent RESTORED_USER_HIDE_WSCUI "%X%\DisallowCpl" "XP25 MerlinAI: Security Center"
+call :absent RESTORED_CPL_CATEGORY "%C%" "%%%%SystemRoot%%%%\system32\MerlinAI.cpl"
 "%P%\MerlinAI.exe" /install
 C:\xp25\merlin-merlin_probe.exe cpl
 {control_panel}
@@ -123,6 +137,10 @@ goto :eof
 
 :check
 reg query %2 /v %3 2>nul | findstr /i /c:"%4" >nul && call :mark XP25_MERLIN_REG_%1=ok || call :mark XP25_MERLIN_REG_%1=bad
+goto :eof
+
+:absent
+reg query %2 /v %3 >nul 2>&1 && call :mark XP25_MERLIN_REG_%1=bad || call :mark XP25_MERLIN_REG_%1=ok
 goto :eof
 '''
 
@@ -474,13 +492,22 @@ def results(args):
             dumps = [n for n in names if n.endswith('.dmp')]
     else:
         dumps = []
+    # One line per apply or removal of the user policy (install, uninstall, install again).
+    policy_runs = re.findall(r'XP25_MERLIN_INSTALL_POLICY loaded=(\d+) offline=(\d+) default_user=(\d+) failed=(\d+)', text)
     reg_ok = [k for k, v in marks.items() if k.startswith('XP25_MERLIN_REG_') and v[-1] == 'ok']
     reg_bad = [k for k, v in marks.items() if k.startswith('XP25_MERLIN_REG_') and v[-1] != 'ok']
     crash_problem = [p for p in queue if p['file'].startswith('P-') and p['kind'] == 'crash' and p['title'] and 'MerlinTest' in p['title']]
     crash_reports = [p for p in queue if p['file'].startswith('C-') and p['kind'] == 'crash']
     gates = {
         'installer_succeeded': marks.get('XP25_MERLIN_INSTALL', [''])[0] == '0' and marks.get('XP25_MERLIN_INSTALL', [''])[-1] == '0',
-        'registry_replacements_and_restore': len(reg_ok) == 12 and not reg_bad,
+        # 10 replacements and policies after install, Default User included; 5 restorations after uninstall.
+        'registry_replacements_and_restore': len(reg_ok) == 20 and not reg_bad,
+        'security_center_hidden_by_user_policy': all(last('XP25_MERLIN_REG_' + k) == 'ok' for k in
+                                                     ('USER_DISALLOWCPL', 'USER_HIDE_WSCUI', 'USER_HIDE_WUAUCPL',
+                                                      'DEFAULT_USER_HIDE_WSCUI', 'RESTORED_USER_DISALLOWCPL',
+                                                      'RESTORED_USER_HIDE_WSCUI')) and
+                                                 bool(policy_runs) and all(r[2] == '1' and r[3] == '0' for r in policy_runs),
+        'merlin_in_performance_and_maintenance': last('XP25_MERLIN_CPL_MERLIN_CATEGORY') == '5',
         'firewall_still_running': last('XP25_MERLIN_FIREWALL_RUNNING') == '1',
         'identity_configured': last('XP25_MERLIN_CONFIGURE') == '0',
         'defect_reproduced_before_fix': marks.get('XP25_MERLINTEST_CHECK', [''])[0].startswith('crash') and

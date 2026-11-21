@@ -26,7 +26,7 @@ M = REPO / 'components/merlin'
 SHA = REPO / 'components/xp25-agent/llm/xp25_sha256.c'
 CORE = [M / 'core' / n for n in ('merlin_text.c', 'merlin_record.c', 'merlin_classify.c', 'merlin_redact.c',
                                  'merlin_json.c', 'merlin_proto.c')] + [SHA]
-CLIENT = [M / 'client' / n for n in ('dllmain.c', 'mc_util.c', 'mc_config.c', 'mc_queue.c', 'mc_collect.c', 'mc_http.c')]
+CLIENT = [M / 'client' / n for n in ('dllmain.c', 'mc_util.c', 'mc_config.c', 'mc_queue.c', 'mc_collect.c', 'mc_http.c', 'mc_policy.c')]
 SYSTEM_LIBS = ['kernel32', 'user32', 'gdi32', 'advapi32', 'shell32', 'ole32', 'oleaut32', 'comctl32', 'ws2_32', 'psapi',
                'version', 'msvcrt']
 

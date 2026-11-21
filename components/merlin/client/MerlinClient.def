@@ -20,6 +20,8 @@ EXPORTS
     MerlinFreeReply
     MerlinTransfer
     MerlinManifestJson
+    MerlinUserPolicy
+    MerlinUserPolicyAll
     MerlinFree
     MerlinLogEvent
     MerlinUtf8ToWide

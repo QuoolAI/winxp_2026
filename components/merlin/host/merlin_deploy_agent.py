@@ -336,6 +336,7 @@ class Agent:
             state['history'] = (state.get('history') or []) + [entry]
             state['previous'] = {'disk': str(previous_disk), 'revision': prior_revision}
             state['current'] = {'disk': str(target), 'revision': revision, 'since': now()}
+            state.pop('last_refusal', None)              # shown in the guest until an operation succeeds
             state['operation'] = 'idle'
             inst.save(state)
             inst.journal(event=operation + '_healthy', disk=str(target), revision=revision, report=report)

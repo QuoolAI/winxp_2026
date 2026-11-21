@@ -95,6 +95,19 @@ DWORD MERLINAPI MerlinTransfer(const char *const *ids, int count, char *message,
 /* The installation manifest: image revision and hashes of XP25 components (JSON, UTF-8). */
 DWORD MERLINAPI MerlinManifestJson(char *utf8, DWORD size);
 
+/* ---- Control Panel policy (mc_policy.c) ---- */
+typedef struct {
+    DWORD loaded;          /* hives already loaded (users logged on) */
+    DWORD offline;         /* other profiles, loaded with RegLoadKey */
+    DWORD default_user;    /* 1 when Default User was done */
+    DWORD failed;
+    DWORD last_error;
+} MERLIN_POLICY_STATS;
+/* Hide (apply) or restore the Security Center and Automatic Updates applets in one user hive. */
+DWORD MERLINAPI MerlinUserPolicy(HKEY root, BOOL apply);
+/* The same for every user hive and Default User (administrators: needs the backup and restore privileges). */
+DWORD MERLINAPI MerlinUserPolicyAll(BOOL apply, MERLIN_POLICY_STATS *stats);
+
 /* ---- utilities ---- */
 void MERLINAPI MerlinFree(void *p);
 void MERLINAPI MerlinLogEvent(WORD type, const WCHAR *text);
