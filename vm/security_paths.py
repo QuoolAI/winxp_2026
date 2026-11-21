@@ -18,7 +18,9 @@ REFERENCE = M8 / 'reference'
 RUNS = WORK / 'runs'
 # Hardened images by name: the directory holds a manifest.json naming the image and its SHA-256.
 # m81 is the accepted Milestone 8.1 image (a frozen copy under M82/reference); m82 is the Milestone 8.2 image once packaged.
-IMAGES = {'m81': M82 / 'reference/image-81', 'm82': M82 / 'image-82'}
+IMAGES = {'m81': M82 / 'reference/image-81', 'm82': M82 / 'image-82',
+          # Milestone 9 baseline: 8.2 + R-0 Winlogon + R-1 win32k/user32/gdi32 + AI build 17 (build/package_image.py).
+          'm9': ROOT / '.work/merlin-20261121/baseline-01'}
 
 
 def image(name):

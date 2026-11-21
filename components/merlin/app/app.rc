@@ -1,0 +1,104 @@
+/* MerlinAI.exe resources. */
+#include <windows.h>
+#include "resource.h"
+
+IDI_MERLIN ICON "merlin.ico"
+1 24 "merlin.manifest"
+
+IDD_SETTINGS DIALOGEX 0, 0, 330, 250
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "MerlinAI Settings"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    GROUPBOX "Connections", -1, 8, 6, 314, 128
+    LTEXT "MerlinAI &Builder (http://host:port):", -1, 16, 20, 140, 9
+    EDITTEXT IDC_BUILDER, 160, 18, 154, 12, ES_AUTOHSCROLL
+    LTEXT "&Deployment agent (http://host:port):", -1, 16, 36, 140, 9
+    EDITTEXT IDC_DEPLOY, 160, 34, 154, 12, ES_AUTOHSCROLL
+    LTEXT "&Installation ID:", -1, 16, 52, 140, 9
+    EDITTEXT IDC_INSTALLATION, 160, 50, 154, 12, ES_AUTOHSCROLL
+    LTEXT "Builder &key (64 hex characters):", -1, 16, 68, 140, 9
+    EDITTEXT IDC_BUILDER_KEY, 160, 66, 154, 12, ES_AUTOHSCROLL | ES_PASSWORD
+    LTEXT "Deployment k&ey (64 hex characters):", -1, 16, 84, 140, 9
+    EDITTEXT IDC_DEPLOY_KEY, 160, 82, 154, 12, ES_AUTOHSCROLL | ES_PASSWORD
+    LTEXT "", IDC_IDENTITY_STATE, 16, 100, 298, 30
+    GROUPBOX "Diagnostics on this computer", -1, 8, 138, 314, 84
+    AUTOCHECKBOX "&Automatically look for problems (at logon and while MerlinAI is open)", IDC_AUTO_COLLECT, 16, 152, 300, 10
+    LTEXT "Look again every (minutes, 0 = only at logon):", -1, 28, 168, 180, 9
+    EDITTEXT IDC_INTERVAL, 210, 166, 40, 12, ES_NUMBER
+    LTEXT "Keep local reports for (days):", -1, 28, 184, 180, 9
+    EDITTEXT IDC_RETENTION, 210, 182, 40, 12, ES_NUMBER
+    AUTOCHECKBOX "Write memory &dumps for crashes (they stay here unless you allow sending them)", IDC_DUMPS, 16, 198, 300, 10
+    AUTOCHECKBOX "&Notify me when a build changes status", IDC_NOTIFY, 16, 210, 300, 10
+    DEFPUSHBUTTON "OK", IDOK, 216, 230, 50, 14
+    PUSHBUTTON "Cancel", IDCANCEL, 272, 230, 50, 14
+END
+
+IDD_TEXT DIALOGEX 0, 0, 340, 240
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "MerlinAI"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    EDITTEXT IDC_TEXT, 8, 8, 324, 204, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL
+    DEFPUSHBUTTON "OK", IDOK, 282, 218, 50, 14
+END
+
+IDD_BUILD DIALOGEX 0, 0, 340, 250
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Build an Update"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT "Problems to include:", -1, 8, 8, 200, 9
+    LISTBOX IDC_BUILD_LIST, 8, 20, 324, 62, LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_BORDER
+    LTEXT "", IDC_BUILD_EXPLAIN, 8, 88, 324, 96
+    LTEXT "&Anything the builder should know (optional, sent as part of the request):", -1, 8, 188, 324, 9
+    EDITTEXT IDC_BUILD_NOTE, 8, 200, 324, 24, ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL
+    DEFPUSHBUTTON "&Build an Update", IDOK, 196, 230, 80, 14
+    PUSHBUTTON "Cancel", IDCANCEL, 282, 230, 50, 14
+END
+
+IDD_REVIEW DIALOGEX 0, 0, 380, 270
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Review Build"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    EDITTEXT IDC_REVIEW_TEXT, 8, 8, 364, 234, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL
+    PUSHBUTTON "&Apply Update...", IDC_REVIEW_APPLY, 254, 248, 70, 14
+    DEFPUSHBUTTON "Close", IDOK, 330, 248, 42, 14
+END
+
+IDD_APPROVE DIALOGEX 0, 0, 320, 196
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Apply Update"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    EDITTEXT IDC_APPROVE_TEXT, 8, 8, 304, 132, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL
+    AUTOCHECKBOX "I &reviewed this build and approve replacing this computer's system image.", IDC_APPROVE_CHECK, 8, 148, 304, 10
+    DEFPUSHBUTTON "&Apply Update", IDOK, 196, 174, 64, 14
+    PUSHBUTTON "Cancel", IDCANCEL, 266, 174, 46, 14
+END
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "XP25 Project"
+            VALUE "FileDescription", "MerlinAI System Health & Updates"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "MerlinAI"
+            VALUE "OriginalFilename", "MerlinAI.exe"
+            VALUE "ProductName", "XP25 MerlinAI"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

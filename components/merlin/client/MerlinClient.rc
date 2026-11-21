@@ -1,0 +1,29 @@
+/* MerlinClient.dll resources: version and the event message table (event 1 = "%1"). */
+#include <windows.h>
+
+1 MESSAGETABLE "merlinmsg.bin"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "XP25 Project"
+            VALUE "FileDescription", "MerlinAI client library"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "MerlinClient"
+            VALUE "OriginalFilename", "MerlinClient.dll"
+            VALUE "ProductName", "XP25 MerlinAI"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

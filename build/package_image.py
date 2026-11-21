@@ -9,7 +9,7 @@ never written. Source/ is never touched. build/winlogon_package_image.py is the
 winlogon.exe-only form of this tool.
 
 usage: package_image.py --parent <frozen .work/ image> --parent-sha256 <hex> \
-         --replace /WINDOWS/system32/NAME=<file>,<expected installed sha256>,<collection json> [...] \
+         --replace /WINDOWS/system32/NAME (or /Program Files/XP25/NAME)=<file>,<expected installed sha256>,<collection json> [...] \
          --name <image>.qcow2 --output .work/<fresh>"""
 import argparse
 import hashlib
@@ -33,12 +33,18 @@ def sha(path):
 
 
 def collected(record, digest):
-    """Whether a build collection record lists this SHA-256 as one of its outputs."""
+    """Whether a build collection record lists this SHA-256 as one of its outputs.
+    Accepts read_guest files.json records, cve/merlin collections with status
+    "accepted" and no problems, and AI collections (build/ai_collect_native.py)
+    with status "native_binaries_collected" and no mismatched sources."""
     data = json.loads(Path(record).read_text())
-    if 'status' in data and (data['status'] != 'accepted' or data.get('problems')):
+    if 'status' in data and data['status'] not in ('accepted', 'native_binaries_collected'):
+        return False
+    if data.get('problems') or data.get('sources_mismatched'):
         return False
     hashes = [f.get('sha256') for f in data.get('files', [])]
     hashes += [o.get('sha256') for o in data.get('outputs', {}).values()] if isinstance(data.get('outputs'), dict) else []
+    hashes += [b.get('sha256') for b in data.get('binaries', {}).values()] if isinstance(data.get('binaries'), dict) else []
     return digest in hashes
 
 
@@ -59,8 +65,8 @@ def main():
     for item in args.replace:
         target, _, rest = item.partition('=')
         parts = rest.split(',')
-        if not target.startswith('/WINDOWS/') or '..' in Path(target).parts or len(parts) != 3:
-            parser.error('--replace takes /WINDOWS/...=FILE,EXPECTED_SHA256,COLLECTION_JSON: ' + item)
+        if not target.startswith(('/WINDOWS/', '/Program Files/XP25/')) or '..' in Path(target).parts or len(parts) != 3:
+            parser.error('--replace takes /WINDOWS/... or /Program Files/XP25/...=FILE,EXPECTED_SHA256,COLLECTION_JSON: ' + item)
         source, expected, record = Path(parts[0]).resolve(), parts[1].lower(), Path(parts[2]).resolve()
         if not source.is_relative_to(ROOT / '.work') or not source.is_file() or not record.is_file():
             parser.error('replacement and collection must be private .work/ files: ' + item)

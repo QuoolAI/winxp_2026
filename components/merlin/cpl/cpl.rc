@@ -1,0 +1,36 @@
+/* MerlinAI.cpl resources. */
+#include <windows.h>
+#include "resource.h"
+
+IDI_MERLIN ICON "merlin.ico"
+
+STRINGTABLE
+BEGIN
+    IDS_NAME "MerlinAI Health and Updates"
+    IDS_INFO "Problems on this computer, tested repairs and updates"
+END
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "XP25 Project"
+            VALUE "FileDescription", "MerlinAI Control Panel applet"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "MerlinAI.cpl"
+            VALUE "OriginalFilename", "MerlinAI.cpl"
+            VALUE "ProductName", "XP25 MerlinAI"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

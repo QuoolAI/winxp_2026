@@ -1,0 +1,15 @@
+TARGETNAME=MerlinCrash
+TARGETPATH=obj
+TARGETTYPE=PROGRAM
+UMTYPE=windows
+UMENTRY=wwinmain
+USE_MSVCRT=1
+# /GS stack cookies (tools/i386mk.inc: /GS and BufferOverflow.lib, initialized by the CRT start-up).
+BUFFER_OVERFLOW_CHECKS=1
+MSC_WARNING_LEVEL=/W4 /WX /wd4201
+C_DEFINES=-DWIN32 -DNT -DUNICODE -D_UNICODE -DWINVER=0x0501 -D_WIN32_WINNT=0x0501 -D_WIN32_IE=0x0600
+# A linker map beside the PDB: MerlinAI Builder maps crash offsets to functions with it.
+LINKER_FLAGS=-map:$(O)\$(TARGETNAME).map
+SOURCES=crash.c crash.rc
+TARGETLIBS=$(SDK_LIB_PATH)\kernel32.lib $(SDK_LIB_PATH)\user32.lib $(SDK_LIB_PATH)\advapi32.lib $(SDK_LIB_PATH)\shell32.lib \
+           $(SDK_LIB_PATH)\psapi.lib $(SDK_LIB_PATH)\version.lib ..\client\$(O)\MerlinClient.lib
