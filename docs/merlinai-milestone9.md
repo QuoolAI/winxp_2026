@@ -5,7 +5,17 @@ Evidence root `.work/merlin-20261121/` (`E`); native build-VM runs under
 `.work/boot-debug-20261022/merlin-native-*`; builder VM under
 `.work/merlin-builder-vm-20261121/`. `Source/` is not touched.
 
-<!-- STATUS -->
+## Status (2026-11-21)
+
+| Stage | Observed | Not yet |
+| --- | --- | --- |
+| 9A client and diagnostics | Lab suite 22/22 under KVM UP, two-vCPU KVM and TCG (native build 06); native build 08 (Security Center fix) 24/24 under UP, MP and TCG | Build 08 not packaged into an image |
+| 9B builder VM | `MerlinAI-Builder` (separate KVM guest) accepts authenticated jobs from several installations, builds natively in a nested build VM, keeps installations apart (Phase 11) | No model provider configured: the offline rule-based investigator decided every job |
+| 9C personalized image and tests | Candidates tested before/after; after-tests pass under nested KVM UP, two-vCPU KVM and TCG; `fixed_verified` | Only MerlinAI's own components are rebuilt automatically |
+| 9D user-approved replacement | Apply and Roll Back on `XP25-MerlinAI-Demo` with health check; three agent defects found in the demonstration, fixed and kept (Phase 12) | Health check is minimal; overlay chains are never merged |
+
+The milestone is **not complete as specified**: no AI model has investigated a
+problem, and the self-repair loop is shown for one controlled defect class.
 
 ## What MerlinAI is
 
@@ -147,19 +157,229 @@ queue's DACL); system-wide problems, builds and updates need an administrator.
 ## Phase 6: Security Center and Automatic Updates
 
 `wscui.cpl` (Security Center), `wuaucpl.cpl` (Automatic Updates), `wscsvc` and
-`wuauserv` are SP3 binaries. MerlinAI hides the two applets with the
-documented machine-wide "don't load" list, registers `MerlinAI.cpl` ("MerlinAI
-Health and Updates", Security Center category) and turns off Security
-Center's antivirus/firewall/update notifications. The Security Center
-service, the Windows Firewall (SharedAccess, verified running) and auditing
-are unchanged; Automatic Updates stays disabled as the 8.x baseline left it,
-plus the `NoAutoUpdate` and `NoWindowsUpdate` policies.
+`wuauserv` are SP3 binaries. MerlinAI registers `MerlinAI.cpl` ("MerlinAI
+Health and Updates") and turns off Security Center's antivirus, firewall and
+update notifications. The Security Center service, the Windows Firewall
+(SharedAccess, verified running) and auditing are unchanged. Automatic
+Updates stays disabled as the 8.x baseline left it, with the `NoAutoUpdate`
+and `NoWindowsUpdate` policies added.
+
+**Corrected during the demonstration.** The first release hid the two applets
+only with the machine-wide "don't load" list and registered MerlinAI in
+category 10. The 9A gates enumerate the Control Panel folder, and they passed.
+But in the category view the "Security Center" tile still opened Windows
+Security Center (screens `demo-01/05b-category.png`). A disposable overlay
+(`experiments/seccenter-01`, `result.json`) showed why:
+
+* the image's shell32 treats the Security Center tile as a direct link to
+  `wscui.cpl`. Registering a second applet in category 10 does not turn it into
+  a category page, so MerlinAI was never listed there;
+* the tile disappears only when `wscui.cpl` is restricted by the documented
+  "Hide specified Control Panel items" policy (`DisallowCPL` = 1 and
+  `...\Policies\Explorer\DisallowCpl`). shell32 reads that list from
+  `HKEY_CURRENT_USER` only (`cputil.cpp` `IsNameListedUnderKey` in the
+  reference tree);
+* category value names are matched after environment expansion, so the first
+  release's `C:\WINDOWS\system32\MerlinAI.cpl` name was valid. The fault was the
+  category, not the name.
+
+Native build 08 therefore registers MerlinAI in category 5 (Performance and
+Maintenance) under `%SystemRoot%\system32\MerlinAI.cpl`. It also writes the
+policy into every user hive (`mc_policy.c`): loaded hives, the other
+ProfileList profiles through `RegLoadKey`, and Default User for future
+accounts. Each hive keeps its previous `DisallowCPL` so `/uninstall` restores
+it, and only MerlinAI's own list entries are removed. The guest probe now reads
+MerlinAI's category the way the category view does
+(`IShellFolder2::GetDetailsEx`), and the 9A lab gates the policy in the
+logged-on user's and Default User's hives.
 
 Found on the way: the image's `shell32.dll` does not read the SP2 `Cpls` key
 at all (the string is absent), and `control.ini [MMCPL]` is per user, so the
 applet is installed in `system32`; the shell also drops `&` from applet names.
 A guest probe (`tests/guest/merlin_probe.c`) enumerates the Control Panel
 folder through `IShellFolder` and gates the replacement.
+
+## Phase 2 / 9B: the MerlinAI Builder VM
+
+`MerlinAI-Builder` is its own libvirt guest (`builder_vm.py provision`):
+Ubuntu 24.04 cloud image `noble-server-cloudimg-amd64.img` (checksum verified
+at download), 6 vCPUs with nested SVM (`host-passthrough`), 8 GiB, a system
+disk, a 157 GiB data disk at `/srv/merlin`, and two **read-only** virtio
+disks. The serial `merlin-baseline` carries the approved XP25 image
+(`XP25-M9-MerlinAI.qcow2` `0f04a438…4d32`) and `merlin-buildvm` the frozen
+NT 5.1 build VM chain. The builder sees the images only as these disks: it has
+no host path, libvirt socket, SSH key or production disk. Its NIC filter
+`merlin-builder` admits the API port and the hypervisor's SSH for
+administration.
+
+`builder_vm.py bootstrap` sends a Git bundle of one approved commit,
+without `Source/`. `install-builder.sh` makes it the immutable bare baseline
+repository, owned by root and read-only for the service account. It also
+creates the tools checkout, QCOW2 wrappers whose backing files are the
+read-only disks, the MinGW toolchain, reference files (guest system DLLs for
+import checks, the verified MP kernel and HAL, linker maps of the baseline's
+MerlinAI build), and the API and runner units as `merlinsvc`. The current
+baseline snapshot is `c88f545de`, the source snapshot of `39c4e3848`.
+Bring-up failures are kept on the builder: job `J-20261121-221611-99acd9`
+failed because `cc1` could not load `libisl.so.23`, and
+`J-20261121-221731-31e2de` because the native media were outside the tools'
+`.work`.
+
+Per job, the runner (one job at a time, with a 15 GiB disk reserve and recovery
+of interrupted jobs) does the following:
+1. clones the baseline at the approved commit into `jobs/<J>/workspace`;
+2. investigates;
+3. cross-compiles the change in a user namespace without network;
+4. builds natively in a NIC-less overlay of the build VM (nested KVM);
+5. writes the candidate as an overlay of the installation's baseline with only
+   the rebuilt files replaced offline, recording each file's installed hash as
+   `expected_before`;
+6. publishes the update content (`xp25-merlin-delta/1` manifest plus files,
+   SHA-256 bound to the job);
+7. tests in NIC-less overlays.
+
+Installations, reports and jobs live in per-installation directories with
+mode 0700, under quotas: 1 MiB requests, 8 MiB dumps, 500 reports, 256 MiB
+per installation, 2 open jobs.
+
+## Phase 7: investigation
+
+`investigate.py` gives the investigator only restricted tools. It can list,
+read and search the workspace, map a crash offset to a function through the
+build's linker map (`symbol_at`), read a component's provenance
+(`components.json`: XP25 source, Microsoft source-built, or binary-only),
+replace text in files under `components/`, run the MinGW check and conclude.
+There is no shell. Diagnostics are passed as delimited untrusted data, and a
+report's text never becomes a command. The OpenAI Responses and Anthropic
+Messages tool loops are implemented and tested against local mock servers
+only. **No model provider is configured on this builder (no key was
+provided), so every job here was decided by the labelled offline rule-based
+investigator.** It repairs one fault class, an unchecked NULL from a lookup
+located through the crash offset, and classifies common non-XP25 causes
+(third-party module, out of memory, hardware or virtual hardware) without a
+change. Its conclusions say so in the build review ("Investigated by: MerlinAI
+offline investigator (rule-based; no AI model was used)").
+
+Only MerlinAI's own components are rebuilt automatically (`build: merlin`).
+A justified change elsewhere is reported as not built, and binary-only
+components are reported as such. AI changes never reach the baseline: they
+exist only in the job's workspace and update content.
+
+## Phase 8 / 9C: the personalized candidate image
+
+A candidate is `jobs/<J>/image/candidate.qcow2`, an overlay whose backing
+file is the installation's baseline wrapper. The rebuilt files are copied in
+offline, and each one's previous hash is checked against the baseline first.
+The image revision becomes `<base revision>+<job>` (`C:\xp25\image-revision.txt`).
+The deployment agent applies the same files to a new overlay of the
+**installation's own current disk**, so documents, settings and programs on that
+disk stay. A file whose installed hash differs from `expected_before` stops
+the update, and the VM restarts unchanged. XP25 keeps user data on the system
+volume. No separate data volume was introduced: the single-disk overlay route
+is what was verified (Phase 12).
+
+## Phase 9: tests
+
+`vm/merlin_jobtest.py` boots NIC-less overlays and logs on through the XP25
+Winlogon. A staged Startup script runs the component's reproduction check from
+`components.json` (for MerlinTest.exe: `MerlinTest.exe /check`, which reports
+its own unhandled exception). It records `XP25_JOBTEST_*` markers on COM1 and
+turns the guest off from the Start menu. Per job:
+* **before** on the baseline, KVM UP: the reported problem must reproduce;
+* **after** on the candidate, KVM UP, two-vCPU KVM (verified MP kernel and HAL)
+  and TCG: the check passes, plus the regression gates (boot to the logon
+  prompt, logon completed, desktop started, checks ran, `MerlinAI.exe
+  /status` OK, normal turn-off).
+
+Problem results:
+* `fixed_verified`: reproduced before and passing after in every mode;
+* `not_reproducible`: did not reproduce before;
+* `unresolved`: otherwise;
+* `not_applicable` / `mitigated`: from the investigation.
+
+A job is ready only with at least one `fixed_verified` problem and every
+regression gate passing. Failed jobs keep all evidence and are never retried
+automatically.
+
+## Phase 10 / 9D: Apply Update and Roll Back
+
+The host deployment agent (`merlin_deploy_agent.py`, a systemd user service of
+the libvirt user) serves only the domains in its configuration. Apply, in
+order:
+1. authenticate the installation, with the deployment key the builder never
+   has;
+2. take the installation's exclusive lock;
+3. check that offline application works at all (added after the first demo
+   failure);
+4. fetch the job record with the agent's own builder credential (it must
+   belong to this installation, be ready, and name the approved
+   `delta_sha256`);
+5. download and verify the update content;
+6. answer 202. The guest shuts itself down; the agent waits for `shut off`.
+7. create a new overlay on the current disk and write the files offline after
+   the `expected_before` checks;
+8. make the replaced disk read-only;
+9. change only the disk source in the domain definition and start it;
+10. wait for MerlinSvc's authenticated health report with the new revision
+    (Winlogon, event log and RPC running, volume not dirty).
+
+If the VM does not start or report healthy, the agent restores the previous
+system on a fresh overlay. Roll Back is a separate, explicitly confirmed
+request. It starts a **fresh overlay on the previous disk**, so the newer
+image stays intact (changes made after the update stay there, not visible
+after rolling back), and is checked by the same health gate. Nothing is ever
+deleted: failed attempts' overlays and every domain definition the agent
+replaced are kept in its state directory.
+
+## Phase 11: several installations
+
+Every request names its installation and is HMAC-authenticated with that
+installation's key. Jobs, reports and update content are looked up only
+within the installation: the demonstration installation gets 404 for the
+self-test installation's job, and its job list shows only its own job
+(`demo-01/builder-job-*.json`). Each job has its own workspace, temporary
+directory, disks, logs and base image record. The runner never lets one job's
+output into another's workspace. The agent credential reads only the jobs of
+the installations it serves. The API (control plane) and the runner
+(execution plane) are separate processes and units. Cancellation and discard
+are per job and interrupted jobs are marked failed at runner start
+(implemented; not exercised in a recorded run).
+
+## Phase 12: end-to-end demonstration (2026-11-21)
+
+Demonstration VM `XP25-MerlinAI-Demo` (created by `enroll_vm.py create`): a
+reflink copy of `XP25-M9-MerlinAI.qcow2` `0f04a438…4d32`, 1 vCPU, 1 GiB,
+RTL8139 on `XP25-Isolated` (10.25.0.27, filter `xp25-merlin`: relay 8740 and
+agent 8746 on 10.25.0.1 only). It was enrolled offline with installation
+`xp25-merlin-demo`, its builder key and a new deployment key. Host:
+`merlin-relay` (10.25.0.1:8740 → `http://192.168.122.223:8740`) and
+`merlin-deploy-agent` (10.25.0.1:8746). Driven only by keyboard through
+libvirt (`vm/libvirt_ui.py`). Screens and journals are in
+`.work/merlin-20261121/demo-01/`.
+
+| Step | Observed |
+| --- | --- |
+| Run `MerlinTest.exe` | MerlinAI Error Report: MerlinTest.exe 1.0.0.1, access violation (0xc0000005) at `MerlinTest.exe+0x1495`, reading 0x0 (`03`) |
+| Tick "Transfer…" (no dump), Send to MerlinAI | "Transferred 1 report(s) … No build was started" (`04`); relay log: `POST /merlin/v1/reports` 202 for `xp25-merlin-demo`; stored under that installation only |
+| Control Panel | Category "Security Center" opened **Windows Security Center** (`05b`): the gap described in Phase 6. MerlinAI was reached through Classic View (`06a`, `07`) |
+| Problem Queue | The crash first among 21 collected problems; ticked (`08`, `08a`) |
+| Build an Update | Confirmation listing only that problem; job `J-20261121-223005-f06e40` started (`09a`, `10`); Merlin animates |
+| Builder | Offline investigator: NULL from `find_value()` used in `load_display()`; native build; candidate (MerlinTest.exe and the revision file); before-UP reproduced; after-UP/MP/TCG passed; problem `fixed_verified`; 22 test results; ready about 15 minutes after the request |
+| Guest notices | Merlin: "Build … is now ready" (`11`) |
+| Review Build | Status, investigator (offline, no AI model), conclusion, change, file, rebuilt component, tests, limitations, risks, user data, rollback, candidate hashes (image `a3b5d4d7…`, update content `a2c84ef2…`), READY TO APPLY: yes (`12c`–`12e`) |
+| User document | `My Documents\merlin-demo-note.txt` written (`13`) |
+| Apply Update #1 (approval `d9e6f3ad…`) | Accepted and staged; guest shut down normally; **offline application failed** (`fusermount3: mount failed: Operation not permitted`, the unit's NoNewPrivileges). The agent kept the disk and restarted the VM. Failure kept. |
+| Agent fixed | No NoNewPrivileges; offline check before shutdown; attempt-numbered overlays (commit `829956389`) |
+| Apply Update #2 (approval `a9c0555e…`) | Guest shut down; two files written into `XP25-MerlinAI-Demo.J-20261121-223005-f06e40.2.qcow2` after hash checks; base made read-only; domain switched and started; health report `XP25-M9-MerlinAI-1+J-…f06e40` 13 s after start; `apply_healthy`; builder records `applied` |
+| Updated system | Same `MerlinTest.exe` and `merlintest.ini`: message box, no crash (`20`); `merlin-demo-note.txt` intact; revision file updated (`21`) |
+| Roll Back #1 (approval `ee6af5c6…`) | **Failed**: the agent booted the previous disk directly; it was the read-only backing file of the newer image, QEMU could not open it, and the start error bypassed the restore, so the VM stayed off. Recovered with the journaled operator command `restore-current` (updated overlay); no data lost (the guest had shut down normally) |
+| Agent fixed | Rollback/restore on a fresh overlay, start failure → restore, previous revision recorded from health reports |
+| Roll Back #2 (approval `46131306…`) | Guest shut down; `XP25-MerlinAI-Demo.rollback.qcow2` on the previous disk; started; health report `XP25-M9-MerlinAI-1`; state recorded correctly, but the agent then logged `operation_error` (two threads shared `state.json.tmp`). Fixed with unique temporary files (same commit) |
+| Rolled-back system | Revision `XP25-M9-MerlinAI-1`; `merlin-demo-note.txt` present; `written-after-update.txt` not visible (kept in the updated image) (`30`); `MerlinTest.exe` crashes again at `+0x1495` (`31`) |
+
+The production VMs (XP25-AI, XP25-Winlogon-Fix, XP25-Security-8.1, …), the
+frozen images and the builder's baseline were not modified. The demonstration
+VM, its overlays and the agent's journal are its own.
 
 ## Protocols and trust
 
@@ -196,3 +416,64 @@ characters, 32 occurrence references) and every field is validated by the
 builder. The link from the guest to the relay is not encrypted; it stays on
 the host's isolated bridge, and the relay uses TLS with certificate checks
 for a builder elsewhere (plain HTTP only to a private address).
+
+## Limitations (as of 2026-11-21)
+
+* **No AI model was used.** The model investigators are implemented and tested
+  only against local mock servers. Every recorded job was decided by the
+  offline rule-based investigator, which handles one fault class. A real run
+  needs a provider key on the builder (`/etc/merlin-builder/provider.key` and
+  `provider.json`, then a re-bootstrap). It has not been done.
+* Only MerlinAI's own components are rebuilt by the pipeline. Fixes to other
+  XP25 components (Winlogon, source-built Microsoft components) are reported
+  but not built. Binary-only components cannot be fixed.
+* The packaged `XP25-M9-MerlinAI.qcow2`, the builder's baseline and the
+  demonstration VM still carry the first MerlinAI release, whose Control Panel
+  "Security Center" tile opens Windows Security Center. Native build 08 fixes
+  it (Phase 6); it is not yet packaged into an image or the builder baseline.
+* The post-deployment health check is minimal (core services running, volume
+  not dirty, reported before any logon). The reported problem is tested by
+  the builder on its copy of the baseline, not again on the user's disk.
+* Each rollback or restore adds an overlay. Nothing merges or prunes the
+  chain, and nothing deletes old overlays.
+* The deployment agent runs as a user service with `qemu:///system` access.
+  It restricts itself to its configured domains, but libvirt access is
+  effectively host-root equivalent. It is not a separately confined
+  privileged service.
+* Guest-to-relay traffic is plain HTTP on the isolated bridge, authenticated
+  by HMAC, not encrypted. The relay uses verified TLS to a remote builder.
+* Integrity is not authenticity (see Protocols and trust).
+* The demonstration was interactive (keyboard through libvirt, screenshots as
+  evidence) plus the agent's and builder's journals. It is not a gated
+  harness run.
+* One host test run (of about 26) ended with an error that was not reproduced
+  in 22 repetitions.
+
+## Reproduction
+
+```bash
+W=.work/merlin-20261121
+# 9A: native build, lab suite (UP, MP, TCG)
+python3 build/prepare_merlin.py --output $W/native-media-08
+python3 vm/merlin_native_build.py --media $W/native-media-08 --name merlin-native-08 \
+  --base $W/reference/build-vm-ai/disk.qcow2 --guest-modules $W/guest-modules-82/WINDOWS/system32 \
+  --toolchain .work/toolchains/mingw-binutils/usr/bin
+python3 vm/merlin_lab.py launch --name <fresh> --mode up|mp|tcg --image m9 --build $W/native-08-lab
+python3 vm/merlin_lab.py wait <fresh> && python3 vm/merlin_lab.py results <fresh>
+# 9B: builder VM, installation and agent registration
+B=.work/merlin-builder-vm-20261121/vm-01
+python3 components/merlin/builder/deploy/builder_vm.py provision --dir $B \
+  --cloud-image .work/merlin-builder-vm-20261121/download/noble-server-cloudimg-amd64.img \
+  --baseline-image $W/merlin-image-01/XP25-M9-MerlinAI.qcow2 --buildvm-image $W/reference/build-vm-ai/disk.qcow2
+python3 components/merlin/builder/deploy/builder_vm.py bootstrap --dir $B --repo . --commit <approved> \
+  --baseline-image-sha256 0f04a4381c6aedd6956a3b5d0a09e2e539947395ef94ef0f52598beca9314d32 \
+  --revision XP25-M9-MerlinAI-1 --toolchain .work/toolchains/mingw-binutils --reference .work/merlin-builder-vm-20261121/reference
+python3 components/merlin/builder/deploy/builder_vm.py register --dir $B --installation xp25-merlin-demo
+python3 components/merlin/builder/deploy/builder_vm.py register --dir $B --agent xp25-host --installations xp25-merlin-demo
+# 9D: demonstration VM, host services, enrollment
+python3 components/merlin/host/enroll_vm.py create --dir .work/merlin-demo-vm-20261121 --image $W/merlin-image-01/XP25-M9-MerlinAI.qcow2
+python3 components/merlin/host/enroll_vm.py enroll --dir .work/merlin-demo-vm-20261121 --installation xp25-merlin-demo \
+  --builder-key <key> --agent-config .work/merlin-demo-vm-20261121/host/agent.json
+systemctl --user enable --now merlin-relay merlin-deploy-agent      # units in components/merlin/host
+python3 components/merlin/host/merlin_deploy_agent.py --config <agent.json> restore-current xp25-merlin-demo   # operator recovery
+```

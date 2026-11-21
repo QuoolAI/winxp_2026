@@ -6,6 +6,29 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## MerlinAI (Milestone 9), 2026-11-21
+
+Lab runs use overlays of `XP25-M9-Baseline.qcow2` (`a3bde9b2…5e08`), with
+MerlinAI installed by its own installer. The demonstration uses
+`XP25-M9-MerlinAI.qcow2` (`0f04a438…4d32`).
+
+| Test | KVM UP | KVM two-vCPU | TCG |
+| --- | --- | --- | --- |
+| 9A lab suite, native build 06 (crash dialog, consent transfer, SYSTEM crash without a dialog, queue and deduplication, local discovery, Control Panel replacement, UI build request, authenticated health report, uninstall/restore, normal turn-off) | 22/22 (`up-08`) | 22/22 (`mp-02`) | 22/22 (`tcg-02`; the Control Panel window step is skipped under TCG) |
+| 9A lab suite, native build 08 (+ category 5, user and Default User policy, their removal) | 24/24 (`up-09`) | 24/24 (`mp-03`) | 24/24 (`tcg-03`) |
+| Security `proof` on the M9 baseline | 35/35 | 35/35 | 35/35 (`tcg-02`; `tcg-01` 32/35 kept) |
+| Builder job (inside `MerlinAI-Builder`, nested): defect reproduced before the fix, check and regression gates after | before: reproduced; after: pass | after: pass | after: pass |
+| Phase 12 demonstration on `XP25-MerlinAI-Demo` (1 vCPU): crash → Send → Build → Review → Apply → fixed, data kept → Roll Back → defect back | Pass, interactive, after three agent fixes (failures kept) | Not tested | Not tested |
+
+**Not tested:** a real AI model investigation, any defect other than the
+controlled MerlinTest.exe NULL dereference, components other than MerlinAI's
+own being rebuilt, a limited (non-administrator) user's Control Panel after
+install, a builder outside this host, the demonstration under two-vCPU KVM
+or TCG. **Known:** with the first MerlinAI release (the one in
+`XP25-M9-MerlinAI.qcow2`), the Control Panel "Security Center" tile still opens
+Windows Security Center. Build 08 fixes it, but it is not packaged yet.
+[Record](merlinai-milestone9.md)
+
 ## XP25-Winlogon-Fix VM: Supermium replaces Internet Explorer, 2026-11-21
 
 The VM's own disk with Supermium 150.0.7871.255 R2.01 as the only browser and

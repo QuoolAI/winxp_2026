@@ -2,6 +2,47 @@
 
 ## Current checkpoint
 
+2026-11-21, Milestone 9 MerlinAI (`xp25-merlin`, commits `abd27bd87` 9A,
+`7da02d0dc` 9B/9C, `39c4e3848`, `829956389`, `8069b7d4c`; evidence
+`.work/merlin-20261121/`). MerlinAI replaces Microsoft error reporting and the
+Security Center and Automatic Updates pages with a user-driven repair loop:
+crash dialog → local queue → Control Panel → Build an Update on a separate
+builder VM → reviewed candidate image → Apply Update with rollback.
+
+- **9A client.** The AeDebug crash handler MerlinCrash, MerlinClient.dll, the
+  MerlinAI window, MerlinAI.cpl and MerlinSvc. Lab suite 22/22 under KVM UP,
+  two-vCPU KVM and TCG (native build 06: `merlin-9a-up-08`, `-mp-02`,
+  `-tcg-02`). Native build 08 (Security Center fix below): `merlin-9a-up-09`
+  24/24, `-mp-03` 24/24, `-tcg-03` 24/24. The M9 baseline
+  (`XP25-M9-Baseline.qcow2` `a3bde9b2…5e08`) passes the security `proof` 35/35
+  under UP, MP and TCG (`tcg-01` kept: 32/35 under host load).
+- **9B builder.** `MerlinAI-Builder` is a separate KVM guest (Ubuntu 24.04,
+  nested KVM, read-only image disks, immutable baseline repository
+  `c88f545de`). Per-installation workspaces, investigation, MinGW check,
+  native NT build in a nested build VM, candidate overlay, update content.
+  Self-test job `J-20261121-222239-cf27e5`: `fixed_verified`, tested after
+  the fix under UP, MP and TCG. Two bring-up failures are kept on the builder.
+- **9C/9D and Phase 12.** On `XP25-MerlinAI-Demo`: crash → Send to MerlinAI →
+  Build an Update (`J-20261121-223005-f06e40`, ready in about 15 minutes,
+  `fixed_verified`, 22 tests) → Review → Apply Update → the defect is gone
+  and the user's document is intact → Roll Back → the defect is back. The
+  demonstration found three deployment-agent defects. Each failed safely or
+  was recovered by a journaled operator command; all were fixed and kept:
+  - NoNewPrivileges broke FUSE, so the first apply was refused after shutdown;
+  - the first rollback booted a read-only backing file, so the VM stayed off;
+  - a state-file write race.
+
+  It also found the Control Panel "Security Center" tile still opening Windows
+  Security Center. Fixed in build 08 with the per-user "Hide specified Control
+  Panel items" policy, and MerlinAI moved to Performance and Maintenance.
+- **Not done.** No AI model was used: no provider key, so the offline
+  rule-based investigator decided every job, and the model loops are tested
+  only against mocks. The pipeline rebuilds only MerlinAI's own components.
+  Build 08 passes 24/24 under UP, MP and TCG but is not packaged into an image or the builder baseline. Nothing was
+  pushed.
+
+[Record](merlinai-milestone9.md)
+
 2026-11-21, Supermium replaces Internet Explorer in the XP25-Winlogon-Fix VM
 (`xp25-modernization`; evidence `.work/supermium-vm-20261120/`). The VM's own disk
 (`6dbd3f88…00f6`) got Supermium 150.0.7871.255 R2.01 (pinned package
