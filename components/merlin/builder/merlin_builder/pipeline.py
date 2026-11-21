@@ -168,7 +168,9 @@ class Job:
 
     def native(self, ws):
         self.stage('building', 'building the changed components with the NT 5.1 toolchain')
-        media = ws / '.work' / 'native-media'
+        # The native build driver accepts media only under the tools' own .work (as for every lab tool).
+        media = self.tools / '.work' / 'merlin-jobs' / self.job / 'native-media'
+        media.parent.mkdir(parents=True, exist_ok=True)
         code = self.run([sys.executable, self.tools / 'build/prepare_merlin.py', '--output', media, '--source', ws], 'native-media', 300,
                         sandbox=False)
         if code:

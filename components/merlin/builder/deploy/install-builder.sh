@@ -28,6 +28,8 @@ done
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 2; }
 
 S=/srv/merlin
+# Runtime libraries of the MinGW cross-compiler copied from the host (cc1 links libisl, libmpc, libmpfr).
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q libisl23 libmpc3 libmpfr6 >/dev/null
 id merlinsvc >/dev/null 2>&1 || useradd --system --home-dir $S/data --shell /usr/sbin/nologin merlinsvc
 getent group merlinimg >/dev/null || groupadd --system merlinimg
 usermod -aG kvm,merlinimg merlinsvc
@@ -39,7 +41,9 @@ echo 'kernel.apparmor_restrict_unprivileged_userns=0' > /etc/sysctl.d/60-merlin-
 sysctl -q -p /etc/sysctl.d/60-merlin-builder.conf || true
 
 # The two read-only disks: readable by merlinimg only (the host attaches them read-only as well).
-cat > /etc/udev/rules.d/60-merlin-images.rules <<'RULES'
+# After 60-persistent-storage.rules, which sets ID_SERIAL from the virtio serial.
+rm -f /etc/udev/rules.d/60-merlin-images.rules
+cat > /etc/udev/rules.d/99-merlin-images.rules <<'RULES'
 KERNEL=="vd*", ENV{ID_SERIAL}=="merlin-baseline", GROUP="merlinimg", MODE="0440"
 KERNEL=="vd*", ENV{ID_SERIAL}=="merlin-buildvm", GROUP="merlinimg", MODE="0440"
 RULES
@@ -53,7 +57,12 @@ done
 if [ ! -d $S/baseline/xp25.git ]; then
   git clone --quiet --bare "$BUNDLE" $S/baseline/xp25.git
 fi
+chmod -R u+w $S/baseline/xp25.git
 git -C $S/baseline/xp25.git fetch --quiet "$BUNDLE" "+refs/heads/*:refs/heads/*" || true
+git -C $S/baseline/xp25.git symbolic-ref HEAD refs/heads/baseline
+# The baseline and the tools are root-owned and read by the merlinsvc runner: tell Git that is intended.
+git config --system --get-all safe.directory | grep -qx $S/baseline/xp25.git || git config --system --add safe.directory $S/baseline/xp25.git
+git config --system --get-all safe.directory | grep -qx $S/tools || git config --system --add safe.directory $S/tools
 git -C $S/baseline/xp25.git cat-file -e "$COMMIT^{commit}"
 chmod -R a-w $S/baseline/xp25.git
 

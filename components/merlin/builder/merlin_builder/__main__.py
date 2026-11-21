@@ -26,7 +26,7 @@ def main(argv=None):
     parser.add_argument('--config', required=True)
     parser.add_argument('--baseline', default=None)
     parser.add_argument('--once', action='store_true', help='run: process queued jobs, then exit')
-    args = parser.parse_args(argv)
+    args = parser.parse_intermixed_args(argv)
     config = load(args.config)
     from .server import DEFAULT_LIMITS
     limits = dict(DEFAULT_LIMITS, **config['limits'])

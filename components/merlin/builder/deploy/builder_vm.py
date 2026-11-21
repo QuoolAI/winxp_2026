@@ -46,7 +46,7 @@ ssh_pwauth: false
 disable_root: true
 package_update: true
 package_upgrade: false
-packages: [qemu-system-x86, qemu-utils, ntfs-3g, xorriso, python3, python3-pil, git, fuse3, genisoimage, curl]
+packages: [qemu-system-x86, qemu-utils, ntfs-3g, xorriso, python3, python3-pil, git, fuse3, genisoimage, curl, libisl23, libmpc3, libmpfr6]
 fs_setup:
   - label: merlin-data
     filesystem: ext4
@@ -235,7 +235,9 @@ def bootstrap(args):
     target = 'merlinadmin@' + ip
     scp = ['scp', '-q', '-i', str(d / 'ssh/id_ed25519'), '-o', 'UserKnownHostsFile=' + str(d / 'ssh/known_hosts'), '-r']
     run(scp + [bundle, target + ':/srv/merlin/incoming/baseline.bundle'])
-    run(base + ['mkdir -p /srv/merlin/incoming/toolchains /srv/merlin/incoming/reference'])
+    # Fresh incoming directories: copies of read-only reference files cannot be overwritten in place.
+    run(base + ['chmod -R u+w /srv/merlin/incoming 2>/dev/null; rm -rf /srv/merlin/incoming/toolchains /srv/merlin/incoming/reference; '
+                'mkdir -p /srv/merlin/incoming/toolchains /srv/merlin/incoming/reference'])
     run(scp + [args.toolchain.resolve(), target + ':/srv/merlin/incoming/toolchains/'])
     for child in sorted(args.reference.resolve().iterdir()):
         run(scp + [child, target + ':/srv/merlin/incoming/reference/'])
@@ -258,9 +260,9 @@ def register(args):
     ip = record['ip']
     cmd = 'cd /srv/merlin/tools/components/merlin/builder && sudo -u merlinsvc python3 -m merlin_builder '
     if args.installation:
-        cmd += 'register-installation --config /etc/merlin-builder/config.json ' + args.installation
+        cmd += 'register-installation ' + args.installation + ' --config /etc/merlin-builder/config.json'
     else:
-        cmd += 'register-agent --config /etc/merlin-builder/config.json ' + args.agent + ' ' + ' '.join(args.installations.split(','))
+        cmd += 'register-agent ' + args.agent + ' ' + ' '.join(args.installations.split(',')) + ' --config /etc/merlin-builder/config.json'
     r = run(ssh_base(d, ip) + [cmd])
     print(r.stdout.strip())
 
