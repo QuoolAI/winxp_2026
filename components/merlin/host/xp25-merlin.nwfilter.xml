@@ -1,0 +1,48 @@
+<!--
+  libvirt network filter for an XP25 guest that uses MerlinAI: DHCP, the
+  host's DNS and ICMP, and TCP to two host ports only: the MerlinAI relay
+  (RELAY_PORT, to the builder) and the deployment agent (DEPLOY_PORT).
+  Everything else on the NIC is dropped (ebtables rules; no br_netfilter).
+
+    virsh -c qemu:///system nwfilter-define xp25-merlin.nwfilter.xml
+    <filterref filter='xp25-merlin'>
+      <parameter name='GATEWAY_IP' value='10.25.0.1'/>
+      <parameter name='RELAY_PORT' value='8740'/>
+      <parameter name='DEPLOY_PORT' value='8746'/>
+    </filterref>
+-->
+<filter name='xp25-merlin' chain='root'>
+  <filterref filter='no-mac-spoofing'/>
+  <filterref filter='allow-arp'/>
+  <rule action='accept' direction='out' priority='100'>
+    <ip protocol='udp' srcportstart='68' dstportstart='67'/>
+  </rule>
+  <rule action='accept' direction='in' priority='100'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='67' dstportstart='68'/>
+  </rule>
+  <rule action='accept' direction='out' priority='200'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='udp' dstportstart='53'/>
+  </rule>
+  <rule action='accept' direction='in' priority='200'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='53'/>
+  </rule>
+  <rule action='accept' direction='out' priority='300'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='in' priority='300'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='out' priority='400'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$RELAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='400'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$RELAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='out' priority='410'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$DEPLOY_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='410'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$DEPLOY_PORT'/>
+  </rule>
+  <filterref filter='no-other-l2-traffic'/>
+</filter>

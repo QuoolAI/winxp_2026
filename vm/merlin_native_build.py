@@ -78,7 +78,13 @@ def main():
     deadline = time.time() + args.timeout
     started = False
     for attempt in range(3):
-        r = run([sys.executable, ROOT / 'vm/xp_lab.py', run_dir, 'run', 'cmd /c D:\\build.cmd C:\\xpout\\' + args.name])
+        # A modal dialog (e.g. XP's Found New Hardware wizard) can hold the focus when the Run dialog opens
+        # late under host load: dismiss it first and give the Run dialog time to settle.
+        for _ in range(2):
+            run([sys.executable, ROOT / 'vm/xp_lab.py', run_dir, 'key', 'esc'])
+            time.sleep(1)
+        r = run([sys.executable, ROOT / 'vm/xp_lab.py', run_dir, 'run', 'cmd /c D:\\build.cmd C:\\xpout\\' + args.name,
+                 '--settle-seconds', '3'])
         step('run_build', attempt=attempt, returncode=r.returncode, stderr=r.stderr[-1000:])
         for _ in range(90):
             if serial.exists() and b'XP25_MERLIN_BUILD_STARTED' in serial.read_bytes():

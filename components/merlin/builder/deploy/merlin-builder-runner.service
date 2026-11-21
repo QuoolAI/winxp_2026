@@ -1,0 +1,25 @@
+[Unit]
+Description=MerlinAI Builder job runner (execution plane)
+After=network-online.target merlin-builder-api.service
+
+[Service]
+User=merlinsvc
+Group=merlinsvc
+SupplementaryGroups=kvm merlinimg
+ExecStart=/usr/bin/python3 -m merlin_builder run --config /etc/merlin-builder/config.json
+WorkingDirectory=/srv/merlin/tools/components/merlin/builder
+Restart=always
+RestartSec=10
+# Jobs run QEMU guests (KVM), user namespaces and FUSE exports; they may write only the builder's data.
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/srv/merlin/data /srv/merlin/tools/.work
+LimitNOFILE=65536
+CPUQuota=500%
+MemoryMax=12G
+TasksMax=4096
+
+[Install]
+WantedBy=multi-user.target

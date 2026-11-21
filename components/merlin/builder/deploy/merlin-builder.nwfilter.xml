@@ -1,0 +1,70 @@
+<!--
+  libvirt network filter for the MerlinAI Builder VM's NIC (layer-2/ebtables
+  rules, no br_netfilter needed). The builder may:
+    - get DHCP and use DNS and ICMP at the network gateway (the host);
+    - open TCP connections to ports 80 and 443 anywhere (package mirrors while
+      it is set up, the model provider afterwards) and UDP 123 (time);
+    - accept TCP from the gateway only, on the API port and SSH (the host's
+      relay and the administrator).
+  Everything else is dropped, so jobs on the builder cannot reach the host's
+  other services or the LAN on other ports.
+
+    virsh -c qemu:///system nwfilter-define merlin-builder.nwfilter.xml
+    <filterref filter='merlin-builder'>
+      <parameter name='GATEWAY_IP' value='192.168.122.1'/>
+      <parameter name='API_PORT' value='8740'/>
+    </filterref>
+-->
+<filter name='merlin-builder' chain='root'>
+  <filterref filter='no-mac-spoofing'/>
+  <filterref filter='allow-arp'/>
+  <rule action='accept' direction='out' priority='100'>
+    <ip protocol='udp' srcportstart='68' dstportstart='67'/>
+  </rule>
+  <rule action='accept' direction='in' priority='100'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='67' dstportstart='68'/>
+  </rule>
+  <rule action='accept' direction='out' priority='200'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='udp' dstportstart='53'/>
+  </rule>
+  <rule action='accept' direction='in' priority='200'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='53'/>
+  </rule>
+  <rule action='accept' direction='out' priority='210'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='in' priority='210'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='out' priority='300'>
+    <ip protocol='tcp' dstportstart='443'/>
+  </rule>
+  <rule action='accept' direction='in' priority='300'>
+    <ip protocol='tcp' srcportstart='443'/>
+  </rule>
+  <rule action='accept' direction='out' priority='310'>
+    <ip protocol='tcp' dstportstart='80'/>
+  </rule>
+  <rule action='accept' direction='in' priority='310'>
+    <ip protocol='tcp' srcportstart='80'/>
+  </rule>
+  <rule action='accept' direction='out' priority='320'>
+    <ip protocol='udp' dstportstart='123'/>
+  </rule>
+  <rule action='accept' direction='in' priority='320'>
+    <ip protocol='udp' srcportstart='123'/>
+  </rule>
+  <rule action='accept' direction='in' priority='400'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$API_PORT'/>
+  </rule>
+  <rule action='accept' direction='out' priority='400'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$API_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='410'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='22'/>
+  </rule>
+  <rule action='accept' direction='out' priority='410'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='22'/>
+  </rule>
+  <filterref filter='no-other-l2-traffic'/>
+</filter>

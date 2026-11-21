@@ -1,0 +1,26 @@
+[Unit]
+Description=MerlinAI Builder API (control plane)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=merlinsvc
+Group=merlinsvc
+ExecStart=/usr/bin/python3 -m merlin_builder serve --config /etc/merlin-builder/config.json
+WorkingDirectory=/srv/merlin/tools/components/merlin/builder
+Restart=always
+RestartSec=5
+# The API never builds or runs anything; it needs only its data directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/srv/merlin/data
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+# systemd user unit: the MerlinAI relay on the XP25 bridge. Install with
+#   install -D merlin-relay.service ~/.config/systemd/user/merlin-relay.service
+# and set REPO and BUILDER in ~/.config/merlin/relay.env.
+[Unit]
+Description=MerlinAI relay (XP25 guests -> MerlinAI Builder)
+
+[Service]
+EnvironmentFile=%h/.config/merlin/relay.env
+ExecStart=/usr/bin/python3 ${REPO}/components/merlin/host/merlin_relay.py --listen ${LISTEN} --builder ${BUILDER} --freebind
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

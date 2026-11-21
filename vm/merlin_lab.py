@@ -108,9 +108,7 @@ call :check RESTORED_AEDEBUG "%K%" Debugger drwtsn32
 call :check RESTORED_DOREPORT "HKLM\SOFTWARE\Microsoft\PCHealth\ErrorReporting" DoReport 0x1
 "%P%\MerlinAI.exe" /install
 C:\xp25\merlin-merlin_probe.exe cpl
-call :mark XP25_MERLIN_STEP=control_panel
-start "" control.exe
-ping -n 25 127.0.0.1 >nul
+{control_panel}
 call :mark XP25_MERLIN_STEP=ui
 start "" "%P%\MerlinAI.exe"
 del "%USERPROFILE%\Start Menu\Programs\Startup\XP25Merlin.cmd"
@@ -196,6 +194,10 @@ def launch(args):
     Path('deploy-config.json').write_text(json.dumps({'installation': INSTALLATION, 'deploy_key': deploy_key,
                                                       'log': str(out / 'deploy-requests.jsonl')}, indent=1) + '\n')
     template = INSTALL_SUITE if args.scenario == 'install' else SUITE
+    # The Control Panel window is evidence only (the probe gates registration); under TCG it opens too late
+    # for keyboard steps, so TCG runs skip it.
+    template = template.replace('{control_panel}', 'call :mark XP25_MERLIN_STEP=cpl_window_skipped_tcg' if args.mode == 'tcg' else
+                                'call :mark XP25_MERLIN_STEP=control_panel\nstart "" control.exe\nping -n 25 127.0.0.1 >nul')
     Path('merlin-suite.cmd').write_bytes(template.replace('{installation}', INSTALLATION).replace('{builder_key}', builder_key)
                                          .replace('{deploy_key}', deploy_key).replace('\n', '\r\n').encode())
     Path('XP25Merlin.cmd').write_bytes(STARTUP_CMD.encode())
