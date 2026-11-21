@@ -488,6 +488,9 @@ plus `manifest.json` keep their hashes and proofs.
 
 - A call to the real OpenAI service (needs an API key on the gateway host and
   an uplink); compatibility with a given live model is not verified.
+  **2026-11-11:** *Test connection* from the interactive XP25-AI VM got a reply
+  from `gpt-4.1-mini` through the gateway ([gateway record](xp25-ai-gateway.md)).
+  Tool calls and chat against the live model are still unverified.
 - Root cause of user-scope DPAPI error 1783 on the engineering images.
 - Encryption for the XP25–gateway link (it is authenticated and
   integrity-protected only).

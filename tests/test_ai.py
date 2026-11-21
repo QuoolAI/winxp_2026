@@ -110,6 +110,21 @@ class GatewayTests(unittest.TestCase):
                 time.sleep(0.05)
         self.fail('server did not start')
 
+    def call(self, base, sign_secret, body, reuse=None):
+        challenge = reuse or json.load(urllib.request.urlopen(base + '/xp25/v1/challenge'))['challenge']
+        nonce = os.urandom(16).hex()
+        data = json.dumps(body).encode()
+        headers = {'X-XP25-Client': 'xp25', 'X-XP25-Challenge': challenge, 'X-XP25-Nonce': nonce,
+                   'X-XP25-Content-SHA256': hashlib.sha256(data).hexdigest(), 'Content-Type': 'application/json',
+                   'X-XP25-Signature': self.gw.sign_request(sign_secret, 'POST', '/xp25/v1/responses', challenge, nonce, data)}
+        req = urllib.request.Request(base + '/xp25/v1/responses', data=data, headers=headers, method='POST')
+        try:
+            reply = urllib.request.urlopen(req)
+            status, payload, sig = reply.status, reply.read(), reply.headers.get('X-XP25-Response-Signature')
+        except urllib.error.HTTPError as e:
+            status, payload, sig = e.code, e.read(), e.headers.get('X-XP25-Response-Signature')
+        return status, payload, sig, nonce, challenge
+
     def test_live_gateway_authenticates_and_forwards_with_store_false(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.work') as d:
             d = Path(d)
@@ -126,33 +141,17 @@ class GatewayTests(unittest.TestCase):
                 self.wait_port(mock_port)
                 self.wait_port(gw_port)
                 base = 'http://127.0.0.1:%d' % gw_port
-
-                def call(body, sign_secret=secret, reuse=None):
-                    challenge = reuse or json.load(urllib.request.urlopen(base + '/xp25/v1/challenge'))['challenge']
-                    nonce = os.urandom(16).hex()
-                    data = json.dumps(body).encode()
-                    headers = {'X-XP25-Client': 'xp25', 'X-XP25-Challenge': challenge, 'X-XP25-Nonce': nonce,
-                               'X-XP25-Content-SHA256': hashlib.sha256(data).hexdigest(), 'Content-Type': 'application/json',
-                               'X-XP25-Signature': self.gw.sign_request(sign_secret, 'POST', '/xp25/v1/responses', challenge, nonce, data)}
-                    req = urllib.request.Request(base + '/xp25/v1/responses', data=data, headers=headers, method='POST')
-                    try:
-                        reply = urllib.request.urlopen(req)
-                        status, payload, sig = reply.status, reply.read(), reply.headers.get('X-XP25-Response-Signature')
-                    except urllib.error.HTTPError as e:
-                        status, payload, sig = e.code, e.read(), e.headers.get('X-XP25-Response-Signature')
-                    return status, payload, sig, nonce, challenge
-
                 body = {'model': 'm', 'store': True, 'input': [{'role': 'user', 'content': 'Show Event Viewer errors'}]}
-                status, payload, sig, nonce, challenge = call(body)
+                status, payload, sig, nonce, challenge = self.call(base, secret, body)
                 self.assertEqual(status, 200)
                 self.assertEqual(sig, self.gw.sign_response(secret, nonce, 200, payload))
                 self.assertEqual(json.loads(payload)['output'][0]['name'], 'eventlog_read')
                 record = json.loads((d / 'mock.jsonl').read_text().splitlines()[-1])
                 self.assertTrue(record['authorized'])
                 self.assertIs(record['store'], False)          # gateway enforces store=false
-                status, *_ = call(body, reuse=challenge)        # challenge is single use
+                status, *_ = self.call(base, secret, body, reuse=challenge)   # challenge is single use
                 self.assertEqual(status, 401)
-                status, *_ = call(body, sign_secret=os.urandom(32))
+                status, *_ = self.call(base, os.urandom(32), body)
                 self.assertEqual(status, 401)
                 log = (d / 'gw.jsonl').read_text()
                 self.assertNotIn('Show Event Viewer errors', log)  # bodies are never logged
@@ -160,6 +159,56 @@ class GatewayTests(unittest.TestCase):
                 for p in (gateway, mock):
                     p.terminate()
                     p.wait(timeout=10)
+
+    def test_service_options_key_file_and_journal_log(self):
+        # xp25-gateway.service passes the key as a credential file and logs to the journal (stdout).
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work') as d:
+            d = Path(d)
+            secret = os.urandom(32)
+            (d / 'clients.json').write_text(json.dumps({'xp25': {'secret_hex': secret.hex()}}))
+            (d / 'openai-api-key').write_text('sk-test\n')
+            mock_port, gw_port = self.free_port(), self.free_port()
+            mock = subprocess.Popen([sys.executable, str(ROOT / 'vm/ai_mock_openai.py'), '--listen', '127.0.0.1:%d' % mock_port,
+                                     '--key', 'sk-test', '--log', str(d / 'mock.jsonl')])
+            env = {k: v for k, v in os.environ.items() if k != 'OPENAI_API_KEY'}
+            gateway = subprocess.Popen([sys.executable, str(A / 'gateway/xp25_gateway.py'), '--listen', '127.0.0.1:%d' % gw_port,
+                                        '--freebind', '--clients', str(d / 'clients.json'),
+                                        '--api-key-file', str(d / 'openai-api-key'), '--log', '-',
+                                        '--upstream', 'http://127.0.0.1:%d' % mock_port, '--allow-insecure-loopback-upstream'],
+                                       env=env, stdout=subprocess.PIPE, text=True)
+            try:
+                self.wait_port(mock_port)
+                self.wait_port(gw_port)
+                body = {'model': 'm', 'input': [{'role': 'user', 'content': 'Show Event Viewer errors'}]}
+                status, *_ = self.call('http://127.0.0.1:%d' % gw_port, secret, body)
+                self.assertEqual(status, 200)
+                record = json.loads((d / 'mock.jsonl').read_text().splitlines()[-1])
+                self.assertTrue(record['authorized'])           # the key came from the file
+            finally:
+                for p in (gateway, mock):
+                    p.terminate()
+                    p.wait(timeout=10)
+            with gateway.stdout:
+                lines = gateway.stdout.read().splitlines()
+            self.assertIn('listening on 127.0.0.1:%d' % gw_port, lines[0])
+            self.assertEqual([json.loads(line)['event'] for line in lines[1:]], ['challenge', 'forwarded'])
+            self.assertNotIn('Show Event Viewer errors', '\n'.join(lines))
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'IP_FREEBIND is Linux only')
+    def test_freebind_binds_an_address_the_host_does_not_have_yet(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.work') as d:
+            (Path(d) / 'clients.json').write_text(json.dumps({'xp25': {'secret_hex': os.urandom(16).hex()}}))
+            args = [sys.executable, str(A / 'gateway/xp25_gateway.py'), '--listen', '192.0.2.1:%d' % self.free_port(),
+                    '--clients', str(Path(d) / 'clients.json')]
+            env = dict(os.environ, OPENAI_API_KEY='sk-test')
+            plain = subprocess.run(args, env=env, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(plain.returncode, 0)            # TEST-NET-1 is not a local address
+            self.assertIn('Cannot assign requested address', plain.stderr)
+            with subprocess.Popen(args + ['--freebind'], env=env, stdout=subprocess.PIPE, text=True) as gateway:
+                try:
+                    self.assertIn('listening on 192.0.2.1:', gateway.stdout.readline())
+                finally:
+                    gateway.terminate()
 
     def test_gateway_refuses_plain_http_to_non_loopback(self):
         with self.assertRaises(SystemExit):

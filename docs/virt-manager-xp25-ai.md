@@ -18,6 +18,11 @@ through Mise En Abyme's Guacamole ([xp25-ai-remote-access.md](xp25-ai-remote-acc
 - a USB tablet provides absolute pointing;
 - autostart is enabled.
 
+**Update, 2026-11-11:** the RTL8139 (`…:05`, `XP25-Isolated`, slot 3) is back.
+It is filtered by the libvirt filter `xp25-gateway-only` to DHCP, plus DNS,
+ICMP and the XP25 gateway's TCP port on `10.25.0.1`, so ClippyAI can use the
+gateway ([gateway record](xp25-ai-gateway.md)).
+
 The table below describes the 2026-10-25 definition.
 
 It was started with `virsh start` and is left **running**. It logged on to the

@@ -29,6 +29,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import socket
 import ssl
 import sys
 import threading
@@ -75,8 +76,14 @@ class Gateway:
     def log(self, **record):
         record['time'] = time.time()
         if self.log_path:
-            with self.lock, open(self.log_path, 'a') as f:
-                f.write(json.dumps(record) + '\n')
+            line = json.dumps(record) + '\n'
+            with self.lock:
+                if str(self.log_path) == '-':             # standard output, e.g. the systemd journal
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                else:
+                    with open(self.log_path, 'a') as f:
+                        f.write(line)
 
     def new_challenge(self):
         value = secrets.token_hex(32)
@@ -113,6 +120,17 @@ class Gateway:
         except (urllib.error.URLError, OSError, ssl.SSLError) as error:
             return 502, json.dumps({'error': {'message': 'The gateway could not reach the AI provider: ' +
                                               type(error).__name__, 'code': 'gateway_upstream_unreachable'}}).encode()
+
+
+class Server(ThreadingHTTPServer):
+    freebind = False
+
+    def server_bind(self):
+        # IP_FREEBIND lets a boot-time service bind the libvirt bridge address
+        # before the bridge exists, and keeps listening while it is recreated.
+        if self.freebind:
+            self.socket.setsockopt(socket.IPPROTO_IP, getattr(socket, 'IP_FREEBIND', 15), 1)
+        super().server_bind()
 
 
 def handler_for(gateway):
@@ -180,11 +198,15 @@ def main():
                         help='JSON file {"client-id": {"secret_hex": "..."}} with secrets of at least 16 bytes')
     parser.add_argument('--upstream', default='https://api.openai.com')
     parser.add_argument('--api-key-env', default='OPENAI_API_KEY', help='environment variable holding the API key')
+    parser.add_argument('--api-key-file', type=Path,
+                        help='file holding the API key (for example a systemd credential); overrides --api-key-env')
+    parser.add_argument('--freebind', action='store_true',
+                        help='Linux: bind the listen address even if it is not configured yet (IP_FREEBIND)')
     parser.add_argument('--allow-insecure-loopback-upstream', action='store_true',
                         help='testing only: permit an http:// upstream on the loopback interface')
     parser.add_argument('--max-body', type=int, default=4 * 1024 * 1024)
     parser.add_argument('--timeout', type=int, default=120)
-    parser.add_argument('--log', type=Path, help='JSON lines audit log (no bodies)')
+    parser.add_argument('--log', type=Path, help='JSON lines audit log (no bodies); - for standard output')
     args = parser.parse_args()
     clients = {}
     for name, value in json.loads(args.clients.read_text()).items():
@@ -192,13 +214,17 @@ def main():
         if len(secret) < 16:
             parser.error('client secrets must be at least 16 bytes')
         clients[name] = secret
-    api_key = os.environ.get(args.api_key_env, '')
+    if args.api_key_file:
+        api_key = args.api_key_file.read_text().strip()
+    else:
+        api_key = os.environ.get(args.api_key_env, '')
     if not api_key:
-        parser.error('the API key environment variable is empty')
+        parser.error('the API key is empty')
     host, port = args.listen.rsplit(':', 1)
     gateway = Gateway(clients, args.upstream, api_key, args.allow_insecure_loopback_upstream, args.max_body,
                       args.log, args.timeout)
-    server = ThreadingHTTPServer((host, int(port)), handler_for(gateway))
+    Server.freebind = args.freebind
+    server = Server((host, int(port)), handler_for(gateway))
     print('XP25 gateway listening on', args.listen, 'for', len(clients), 'client(s); upstream', args.upstream, flush=True)
     try:
         server.serve_forever()

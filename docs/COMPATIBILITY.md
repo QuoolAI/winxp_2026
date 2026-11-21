@@ -382,6 +382,19 @@ No shared IE DLL is removed. No new engineering image is accepted. Full browser,
 HTTPS, application and AI regression acceptance remains incomplete.
 [Failure analysis, security method and exact limits](browser-stability-security.md)
 
+## XP25-AI with the XP25 gateway on the KVM host, 2026-11-11
+
+| Configuration | Result | Evidence |
+| --- | --- | --- |
+| XP25-AI (libvirt KVM, overlay on image-05), RTL8139 hot-plugged into the running guest, slot 3 | Enumerated without a wizard; DHCP lease `10.25.0.13` | `.work/xp25-ai-gateway-20261111` |
+| ClippyAI → XP25 gateway (`10.25.0.1:8443`, revision `c4f4b00e…`) → OpenAI Responses API, `gpt-4.1-mini` | Pass: *Test connection* "Connected. The model replied: READY" | `04-test-result.png` |
+| libvirt nwfilter `xp25-gateway-only` (ebtables, no `br_netfilter`) | DHCP passes; host ICMP passes; host → guest TCP 139/445 dropped; TCP 139 connects when the filter is removed | `filter-ab.txt` |
+| `xp25-gateway.service` as a user-mode unit (no `DynamicUser`, no `ProtectHome`) against the test double | Pass: credentials via `%d`, signed call forwarded, journal audit lines | `unit-test/journal.txt` |
+| `xp25-gateway.service` installed as a system service | Not tested (needs root) | — |
+| ClippyAI tool use and chat with the real OpenAI service | Not tested | — |
+
+[Record](xp25-ai-gateway.md)
+
 ## XP25-AI remote access through Guacamole, 2026-10-26
 
 | Configuration | Result | Evidence |

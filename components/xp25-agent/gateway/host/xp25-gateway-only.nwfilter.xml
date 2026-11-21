@@ -1,0 +1,44 @@
+<!--
+  libvirt network filter for an XP25 guest NIC: the guest may use DHCP, the
+  host's DNS (dnsmasq), ICMP to the host and TCP to the XP25 gateway port, and
+  nothing else. All rules are layer-2 (ebtables) rules on the guest's tap
+  device, so they apply without br_netfilter. No guest address appears, so a
+  new DHCP reservation needs no change here.
+
+    virsh -c qemu:///system nwfilter-define xp25-gateway-only.nwfilter.xml
+
+  Reference it from the interface:
+    <filterref filter='xp25-gateway-only'>
+      <parameter name='GATEWAY_IP' value='10.25.0.1'/>
+      <parameter name='GATEWAY_PORT' value='8443'/>
+    </filterref>
+-->
+<filter name='xp25-gateway-only' chain='root'>
+  <filterref filter='no-mac-spoofing'/>
+  <filterref filter='allow-arp'/>
+  <rule action='accept' direction='out' priority='100'>
+    <ip protocol='udp' srcportstart='68' dstportstart='67'/>
+  </rule>
+  <rule action='accept' direction='in' priority='100'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='67' dstportstart='68'/>
+  </rule>
+  <rule action='accept' direction='out' priority='200'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='udp' dstportstart='53'/>
+  </rule>
+  <rule action='accept' direction='in' priority='200'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='53'/>
+  </rule>
+  <rule action='accept' direction='out' priority='300'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='in' priority='300'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='out' priority='400'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$GATEWAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='400'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$GATEWAY_PORT'/>
+  </rule>
+  <filterref filter='no-other-l2-traffic'/>
+</filter>
