@@ -27,10 +27,14 @@ Apply, in order:
   6. switch the domain's system disk to the overlay (only the disk source in
      the domain definition changes) and start it;
   7. wait for MerlinSvc's health report with the new revision (Winlogon, event
-     log, RPC running, volume not dirty); without it the agent restores the
-     previous disk, starts the VM again and records the failure. A failed
-     candidate is never deleted.
-Rollback switches back to the previous disk the same way.
+     log, RPC running, volume not dirty); if the VM does not start or does not
+     report healthy, the agent restores the previous system and records the
+     failure. A failed candidate is never deleted.
+A replaced disk becomes read-only and is never booted directly again (the
+newer image depends on it): rollback and restore start a fresh overlay on the
+previous disk, so the newer image stays intact and can be returned to.
+Before a guest is told to shut down, the agent checks that it can open disks
+offline at all (the FUSE export needs the setuid fusermount3 helper).
 
 The agent can start, stop and redefine only the domains in its configuration,
 and creates files only in each installation's disk directory and its state
@@ -40,7 +44,9 @@ builder can still produce a malicious, correctly hashed update that the user
 approves. See docs/merlinai-milestone9.md.
 
 usage: merlin_deploy_agent.py --config agent.json
-       merlin_deploy_agent.py --config agent.json adopt INSTALLATION   record the domain's current disk"""
+       merlin_deploy_agent.py --config agent.json adopt INSTALLATION [REVISION]   record the domain's current disk
+       merlin_deploy_agent.py --config agent.json restore-current INSTALLATION    start a shut-off domain on the
+                                                                                  last disk recorded as healthy"""
 import argparse
 import fcntl
 import hashlib
@@ -51,6 +57,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -96,10 +103,21 @@ class Installation:
         path = self.dir / 'state.json'
         return json.loads(path.read_text()) if path.exists() else {'operation': 'idle', 'history': []}
 
+    def write_json(self, name, data):
+        # A unique temporary file per write: the health handler and an operation's thread may write at once.
+        fd, tmp = tempfile.mkstemp(dir=self.dir, prefix='.' + name + '.')
+        with os.fdopen(fd, 'w') as f:
+            f.write(json.dumps(data, indent=1) + '\n')
+        os.replace(tmp, self.dir / name)
+
     def save(self, state):
-        tmp = self.dir / 'state.json.tmp'
-        tmp.write_text(json.dumps(state, indent=1) + '\n')
-        os.replace(tmp, self.dir / 'state.json')
+        self.write_json('state.json', state)
+
+    def reported_revision(self):
+        """The revision the running system last reported (kept apart from state.json, which only the operation
+        holding the installation's lock rewrites)."""
+        path = self.dir / 'reported.json'
+        return json.loads(path.read_text()).get('revision') if path.exists() else None
 
     def journal(self, **record):
         record['time'] = now()
@@ -187,6 +205,42 @@ class Agent:
             (stage / ('%03d.bin' % i)).write_bytes(content)
         return record, manifest, stage
 
+    def offline_check(self, inst):
+        """Prove that this agent can open a disk offline (the FUSE export that apply_offline uses) before any
+        guest is asked to shut down. Returns None, or why it cannot (for example a unit with NoNewPrivileges,
+        which disables the setuid fusermount3 helper)."""
+        work = inst.dir / 'offline-check'
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir()
+        disk, mount = work / 'probe.qcow2', work / 'probe.raw'
+        try:
+            subprocess.run(['qemu-img', 'create', '-q', '-f', 'qcow2', str(disk), '1M'], check=True, capture_output=True)
+            mount.touch()
+            node = json.dumps({'driver': 'qcow2', 'node-name': 'probe', 'file': {'driver': 'file', 'filename': str(disk)}})
+            proc = subprocess.Popen(['qemu-storage-daemon', '--blockdev', node, '--export',
+                                     'type=fuse,id=probe,node-name=probe,mountpoint=%s,writable=on,allow-other=off' % mount],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            try:
+                for _ in range(100):
+                    if proc.poll() is not None:
+                        return proc.stdout.read().decode(errors='replace').strip()[-300:] or 'the FUSE export failed'
+                    if mount.stat().st_size:
+                        break
+                    time.sleep(.05)
+                else:
+                    return 'the FUSE export did not appear'
+                r = subprocess.run(['fusermount', '-u', str(mount)], capture_output=True, text=True)
+                if r.returncode:
+                    return r.stderr.strip()[-300:] or 'fusermount -u failed'
+                return None
+            finally:
+                proc.terminate()
+                proc.wait(timeout=10)
+        except (OSError, subprocess.CalledProcessError) as e:
+            return str(e)[-300:]
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
     def apply_offline(self, inst, base, overlay, manifest, stage):
         import xp_lab as lab
         subprocess.run(['qemu-img', 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(overlay)], check=True)
@@ -217,6 +271,17 @@ class Agent:
         subprocess.run(['qemu-img', 'check', '-q', str(overlay)], check=True)
         return applied
 
+    def overlay_on(self, inst, base, label):
+        """A new, empty top image on base. A disk that another image depends on is never booted or written
+        again: rollback and restore start a fresh overlay on it, so the newer image stays valid."""
+        target = inst.disk_dir / ('%s.%s.qcow2' % (inst.domain, label))
+        n = 1
+        while target.exists():
+            n += 1
+            target = inst.disk_dir / ('%s.%s.%d.qcow2' % (inst.domain, label, n))
+        subprocess.run(['qemu-img', 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(target)], check=True)
+        return target
+
     def wait_shutdown(self, inst, timeout):
         deadline, acpi_sent = time.time() + timeout, False
         started = time.time()
@@ -234,7 +299,7 @@ class Agent:
         with inst.health:
             while time.time() < deadline:
                 h = inst.last_health
-                if h and h['received'] > inst.health_since and h['report'].get('revision') == revision:
+                if h and h['received'] > inst.health_since and (revision == 'unrecorded' or h['report'].get('revision') == revision):
                     r = h['report']
                     ok = all(r.get(k) is True for k in ('winlogon_running', 'eventlog_running', 'rpc_running')) and \
                         r.get('volume_dirty') in (0, 2)
@@ -246,18 +311,30 @@ class Agent:
         """Switch the domain to target, start it, require a healthy report, else restore."""
         timeout = int(self.cfg.get('health_timeout_seconds', 900))
         state = inst.state()
+        # The system being replaced: as recorded by an earlier deployment, else as it last reported itself
+        # (an enrolled VM's first image was never deployed by the agent).
+        prior_revision = (state.get('current') or {}).get('revision') or inst.reported_revision() or 'unrecorded'
         previous_disk = inst.switch_disk(target)
+        try:
+            os.chmod(previous_disk, 0o444)               # replaced: kept for rollback, never written again
+        except OSError as e:
+            inst.journal(event='replaced_disk_not_read_only', disk=str(previous_disk), error=str(e))
         inst.health_since = time.time()
         state.update(operation='waiting_for_health', target=str(target), expected_revision=revision)
         inst.save(state)
-        inst.virsh('start', inst.domain)
-        healthy, report = self.wait_health(inst, revision, timeout)
+        try:
+            inst.virsh('start', inst.domain)
+        except RuntimeError as e:
+            inst.journal(event=operation + '_start_failed', disk=str(target), error=str(e)[-300:])
+            healthy, report = False, None
+        else:
+            healthy, report = self.wait_health(inst, revision, timeout)
         state = inst.state()
         if healthy:
             entry = {'time': now(), 'operation': operation, 'outcome': 'healthy', 'disk': str(target), 'revision': revision,
                      'replaced': str(previous_disk), 'job': job, 'approval': approval}
             state['history'] = (state.get('history') or []) + [entry]
-            state['previous'] = {'disk': str(previous_disk), 'revision': state.get('current', {}).get('revision', '')}
+            state['previous'] = {'disk': str(previous_disk), 'revision': prior_revision}
             state['current'] = {'disk': str(target), 'revision': revision, 'since': now()}
             state['operation'] = 'idle'
             inst.save(state)
@@ -269,13 +346,17 @@ class Agent:
             if inst.domstate() == 'shut off':
                 break
             time.sleep(2)
-        inst.switch_disk(previous_disk)
+        restore = self.overlay_on(inst, previous_disk, 'restored')
+        inst.switch_disk(restore)
         inst.virsh('start', inst.domain)
         entry = {'time': now(), 'operation': operation, 'outcome': 'restored_previous_after_failed_health_check',
-                 'failed_disk': str(target), 'restored_disk': str(previous_disk), 'job': job, 'report': report}
+                 'failed_disk': str(target), 'restored_from': str(previous_disk), 'restored_disk': str(restore), 'job': job,
+                 'report': report}
         state['history'] = (state.get('history') or []) + [entry]
+        state['current'] = {'disk': str(restore), 'revision': prior_revision, 'since': now()}
         state['operation'] = 'idle'
         inst.save(state)
+        inst.journal(event=operation + '_restored_previous', restored_disk=str(restore), backing=str(previous_disk))
         return False
 
     def run_apply(self, inst, request, approval_hash):
@@ -302,6 +383,10 @@ class Agent:
             return
         current, _ = inst.system_disk()
         overlay = inst.disk_dir / ('%s.%s.qcow2' % (inst.domain, job))
+        attempt = 1
+        while overlay.exists():                          # an earlier attempt's overlay is evidence: never overwritten
+            attempt += 1
+            overlay = inst.disk_dir / ('%s.%s.%d.qcow2' % (inst.domain, job, attempt))
         st = inst.state()
         st['operation'] = 'applying'
         inst.save(st)
@@ -338,8 +423,9 @@ class Agent:
             st['operation'] = 'idle'
             inst.save(st)
             return
-        inst.journal(event='rollback_started', to=previous['disk'], approval_sha256=approval_hash)
-        self.deploy(inst, Path(previous['disk']), previous['revision'], 'rollback',
+        target = self.overlay_on(inst, Path(previous['disk']), 'rollback')
+        inst.journal(event='rollback_started', to=previous['disk'], overlay=str(target), approval_sha256=approval_hash)
+        self.deploy(inst, target, previous['revision'] or 'unrecorded', 'rollback',
                     {'by': request.get('approved_by'), 'at': request.get('approved_at'), 'sha256': approval_hash})
 
     def report(self, job, outcome, detail):
@@ -387,8 +473,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {'error': 'wrong_client_address'}, key, nonce)
         if method == 'GET' and self.path == '/deploy/v1/status':
             st = inst.state()
+            previous = st.get('previous') or {}
             return self.send(200, {'state': st.get('operation', 'idle'), 'current': st.get('current', {}).get('revision', ''),
-                                   'previous': (st.get('previous') or {}).get('revision', ''),
+                                   'previous': previous.get('revision') or ('unrecorded revision' if previous.get('disk') else ''),
                                    'history': [{k: h.get(k) for k in ('time', 'operation', 'outcome', 'revision', 'job')}
                                                for h in st.get('history', [])][-10:],
                                    'last_refusal': st.get('last_refusal')}, key, nonce)
@@ -401,6 +488,8 @@ class Handler(BaseHTTPRequestHandler):
                 inst.last_health = {'received': time.time(), 'report': report}
                 inst.health.notify_all()
             inst.journal(event='health_report', report=report)
+            if isinstance(report, dict) and isinstance(report.get('revision'), str) and report['revision']:
+                inst.write_json('reported.json', {'revision': report['revision'][:120], 'time': now()})
             return self.send(200, {'recorded': True}, key, nonce)
         if method == 'POST' and self.path in ('/deploy/v1/apply', '/deploy/v1/rollback'):
             try:
@@ -431,8 +520,11 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     inst.lock.release()
             if self.path.endswith('/apply'):
-                # Validate against the builder before telling the guest to shut down.
+                # Prove offline application works and validate against the builder before telling the guest to shut down.
                 try:
+                    problem = agent.offline_check(inst)
+                    if problem:
+                        raise PermissionError('offline application is unavailable on this host: ' + problem)
                     agent.fetch_update(inst, request)
                 except (PermissionError, ValueError, ConnectionError, OSError) as e:
                     st = inst.state()
@@ -452,6 +544,34 @@ class Handler(BaseHTTPRequestHandler):
         self.handle_any('POST')
 
 
+def recover_previous_revision(inst):
+    """State written before the agent recorded reported revisions can name a previous disk without its revision.
+    Recover it from this agent's own journal: the last health report before that disk was replaced."""
+    st = inst.state()
+    previous = st.get('previous') or {}
+    path = inst.dir / 'journal.jsonl'
+    if not previous.get('disk') or previous.get('revision') or not path.exists():
+        return
+    revision = None
+    for line in path.read_text().splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get('event') == 'health_report' and isinstance(e.get('report'), dict):
+            revision = e['report'].get('revision') or revision
+        elif e.get('event') == 'apply_written' and e.get('base') == previous['disk']:
+            break
+    else:
+        return
+    if revision:
+        previous['revision'] = revision[:120]
+        st['previous'] = previous
+        inst.save(st)
+        inst.journal(event='previous_revision_recovered', disk=previous['disk'], revision=previous['revision'],
+                     source='last health report before the disk was replaced')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--config', type=Path, required=True)
@@ -459,6 +579,19 @@ def main():
     args = parser.parse_args()
     cfg = json.loads(args.config.read_text())
     agent = Agent(cfg)
+    if args.command[:1] == ['restore-current']:
+        # Operator recovery: start the domain again on the disk the agent last recorded as healthy.
+        inst = agent.installations[args.command[1]]
+        st = inst.state()
+        if st.get('operation', 'idle') != 'idle' or inst.domstate() != 'shut off' or not (st.get('current') or {}).get('disk'):
+            raise SystemExit('restore-current needs an idle installation, a shut-off domain and a recorded current disk')
+        disk, _ = inst.system_disk()
+        if str(disk) != st['current']['disk']:
+            inst.switch_disk(st['current']['disk'])
+        inst.virsh('start', inst.domain)
+        inst.journal(event='operator_restored_current', disk=st['current']['disk'], defined_disk_was=str(disk))
+        print(json.dumps({'started': st['current']}))
+        return 0
     if args.command[:1] == ['adopt']:
         inst = agent.installations[args.command[1]]
         disk, _ = inst.system_disk()
@@ -485,7 +618,11 @@ def main():
             inst.journal(event='agent_restarted_during_operation', operation=st['operation'])
             st['operation'] = 'idle'
             inst.save(st)
-    print(json.dumps({'event': 'listening', 'listen': cfg['listen'], 'installations': sorted(agent.installations)}), flush=True)
+        recover_previous_revision(inst)
+    first = next(iter(agent.installations.values()), None)
+    offline = agent.offline_check(first) if first else 'no installations'
+    print(json.dumps({'event': 'listening', 'listen': cfg['listen'], 'installations': sorted(agent.installations),
+                      'offline_application': offline or 'available'}), flush=True)
     server.serve_forever()
 
 

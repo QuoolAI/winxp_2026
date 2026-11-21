@@ -10,7 +10,10 @@ EnvironmentFile=%h/.config/merlin/deploy.env
 ExecStart=/usr/bin/python3 ${REPO}/components/merlin/host/merlin_deploy_agent.py --config ${CONFIG}
 Restart=always
 RestartSec=5
-NoNewPrivileges=yes
+# No NoNewPrivileges: offline application exports the disk through qemu-storage-daemon FUSE, whose
+# mount and unmount need the setuid fusermount3 helper (with it, the first approved update failed
+# after the guest had shut down: "fusermount3: mount failed: Operation not permitted"). The agent
+# now checks offline application before it lets a guest shut down.
 PrivateTmp=no
 
 [Install]

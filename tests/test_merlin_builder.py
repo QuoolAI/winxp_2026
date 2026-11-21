@@ -263,6 +263,73 @@ class DeployAgentTests(unittest.TestCase):
         self.assertEqual(state['state'], 'idle')
         self.assertTrue(state['last_refusal'])
 
+    def test_apply_refused_when_offline_application_is_unavailable(self):
+        # Checked before the guest is told to shut down, so the VM is never stopped for an update that cannot be written.
+        self.agent.agent.offline_check = lambda inst: 'fusermount3: mount failed: Operation not permitted'
+        c = self.client()
+        status, data = c.call('POST', '/apply', self.approval(self.job()))
+        self.assertEqual(status, 409)
+        self.assertIn('offline application is unavailable', json.loads(data)['detail'])
+        self.assertEqual(json.loads(c.call('GET', '/status')[1])['state'], 'idle')
+
+    def test_offline_check_on_this_host(self):
+        if not all(shutil.which(t) for t in ('qemu-img', 'qemu-storage-daemon', 'fusermount')):
+            self.skipTest('qemu-storage-daemon or fusermount missing')
+        inst = self.agent.agent.installations['inst-a']
+        self.assertIsNone(self.agent.agent.offline_check(inst))
+        self.assertFalse((inst.dir / 'offline-check').exists())
+
+    def test_previous_system_is_never_reported_as_absent(self):
+        # An enrolled VM's first disk was never deployed by the agent: its revision comes from its own health reports.
+        inst = self.agent.agent.installations['inst-a']
+        c = self.client()
+        c.call('POST', '/health', json.dumps({'revision': 'r-old'}).encode())
+        self.assertEqual(inst.reported_revision(), 'r-old')
+        self.assertNotIn('reported_revision', inst.state())     # the health handler never rewrites state.json
+        st = inst.state()
+        st['previous'] = {'disk': '/d/old.qcow2', 'revision': ''}
+        inst.save(st)
+        self.assertEqual(json.loads(c.call('GET', '/status')[1])['previous'], 'unrecorded revision')
+        inst.journal(event='apply_written', base='/d/old.qcow2', overlay='/d/new.qcow2')
+        inst.journal(event='health_report', report={'revision': 'r-new'})
+        self.mod.recover_previous_revision(inst)
+        self.assertEqual(inst.state()['previous']['revision'], 'r-old')
+        self.assertIn('previous_revision_recovered', (inst.dir / 'journal.jsonl').read_text())
+
+    def test_rollback_and_restore_use_a_fresh_overlay(self):
+        # The previous disk is a backing file of the newer image: it is never booted or written directly.
+        if not shutil.which('qemu-img'):
+            self.skipTest('qemu-img missing')
+        inst = self.agent.agent.installations['inst-a']
+        base = Path(self.dir.name) / 'base.qcow2'
+        subprocess.run(['qemu-img', 'create', '-q', '-f', 'qcow2', str(base), '1M'], check=True)
+        first = self.agent.agent.overlay_on(inst, base, 'rollback')
+        second = self.agent.agent.overlay_on(inst, base, 'rollback')
+        self.assertNotEqual(first, second)
+        for target in (first, second):
+            info = json.loads(subprocess.run(['qemu-img', 'info', '--output=json', str(target)], capture_output=True,
+                                             text=True, check=True).stdout)
+            self.assertEqual(Path(info['backing-filename']), base)
+
+    def test_concurrent_state_writes(self):
+        # The health handler and an operation's thread can write at the same moment.
+        inst = self.agent.agent.installations['inst-a']
+        errors = []
+
+        def writer(name):
+            try:
+                for i in range(200):
+                    inst.write_json(name, {'i': i})
+            except OSError as e:
+                errors.append(e)
+        threads = [threading.Thread(target=writer, args=(n,)) for n in ('state.json', 'state.json', 'reported.json')]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(json.loads((inst.dir / 'state.json').read_text())['i'], 199)
+
     def test_health_reports_are_recorded(self):
         status, _ = self.client().call('POST', '/health', json.dumps({'revision': 'r1', 'winlogon_running': True}).encode())
         self.assertEqual(status, 200)
