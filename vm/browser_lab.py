@@ -34,12 +34,19 @@ def main():
     p.add_argument('--suite',type=Path)
     p.add_argument('--gateway',type=Path)
     p.add_argument('--firewall',action='store_true',help='install namespace-local nftables default-deny with drop counters')
+    p.add_argument('--stage',action='append',default=[],metavar='/GUEST=FILE,SHA256',help='replace a guest file offline in the new overlay; SHA256 is the file it must replace')
     a=p.parse_args()
     if not a.name or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in a.name):p.error('simple unique name required')
     base=a.base.resolve();iso=a.media.resolve()
     suite_path=a.suite.resolve() if a.suite else None
     gateway=a.gateway.resolve() if a.gateway else None
     if '.work' not in base.parts or '.work' not in iso.parts or base.stat().st_mode&0o222:p.error('private frozen base and private media required')
+    stages=[]
+    for item in a.stage:
+        target,_,rest=item.partition('=');source,_,expected=rest.rpartition(',');source=Path(source).resolve()
+        if not target.startswith('/') or '..' in Path(target).parts or not source.is_file() or not source.is_relative_to(ROOT/'.work') or len(expected)!=64:
+            p.error('--stage takes /guest/path=<private .work file>,<sha256 of the replaced file>: '+item)
+        stages.append((target,source,expected.lower()))
     run_root=a.run_root.resolve()
     if not run_root.is_relative_to(ROOT/'.work') or not 256<=a.memory<=3072:p.error('private run root and 256..3072 MiB required')
     out=run_root/a.name;out.mkdir(parents=True,exist_ok=False)
@@ -71,7 +78,11 @@ del "%USERPROFILE%\Start Menu\Programs\Startup\XP25BrowserSuite.cmd"
         for target,source in {target:out/'browser-suite.cmd','/Documents and Settings/XP25/Start Menu/Programs/Startup/XP25BrowserSuite.cmd':out/'XP25BrowserSuite.cmd'}.items():
             lab.run(['ntfscp','-t',device,source,target])
             if lab.run(['ntfscat',device,target])!=source.read_bytes():raise ValueError('staging mismatch')
-    (out/'inputs.json').write_text(json.dumps({'base':str(base),'base_sha256':actual,'media':str(iso),'media_sha256':sha(iso),'mode':a.mode,'mac':mac,'memory_mib':a.memory,'vga':a.vga,'root_suite':a.root_suite,'suite_sha256':hashlib.sha256(suite_bytes).hexdigest()},indent=2)+'\n')
+        for target,source,expected in stages:
+            if hashlib.sha256(lab.run(['ntfscat',device,target])).hexdigest()!=expected:raise ValueError('not the expected file to replace: '+target)
+            lab.run(['ntfscp',device,source,target])
+            if lab.run(['ntfscat',device,target])!=source.read_bytes():raise ValueError('staging mismatch: '+target)
+    (out/'inputs.json').write_text(json.dumps({'base':str(base),'base_sha256':actual,'media':str(iso),'media_sha256':sha(iso),'mode':a.mode,'mac':mac,'memory_mib':a.memory,'vga':a.vga,'root_suite':a.root_suite,'staged':{t:{'source':str(s),'sha256':sha(s),'replaced_sha256':e} for t,s,e in stages},'suite_sha256':hashlib.sha256(suite_bytes).hexdigest()},indent=2)+'\n')
     command=['qemu-system-i386','-name',a.name,'-machine','pc-i440fx-8.2'+(',kernel-irqchip=on' if a.mode!='tcg' else ''),'-accel','tcg,thread=single' if a.mode=='tcg' else 'kvm','-cpu','qemu32','-m',str(a.memory),'-smp','2' if a.mode=='mp' else '1','-nodefaults','-nic','none','-vga','std','-display','none','-monitor','none','-qmp','unix:qmp.sock,server=on,wait=off','-serial','file:serial.log','-rtc','base=localtime','-drive','file=disk.qcow2,format=qcow2,if=ide,index=0','-drive','file='+str(iso)+',format=raw,readonly=on,if=ide,index=2,media=cdrom','-boot','order=c','-pidfile','qemu.pid','-no-reboot','-no-shutdown','-S']
     command[command.index('-vga')+1]=a.vga
     if a.gdb:command.extend(['-gdb','unix:gdb.sock,server=on,wait=off'])

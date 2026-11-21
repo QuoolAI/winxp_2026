@@ -1,0 +1,4 @@
+; XP25 User Accounts Control Panel applet (components/browser/xp25_users.c).
+LIBRARY xp25users
+EXPORTS
+    CPlApplet=CPlApplet @1

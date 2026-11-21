@@ -6,6 +6,36 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## XP25-Winlogon-Fix VM: Supermium replaces Internet Explorer, 2026-11-21
+
+The VM's own disk with Supermium 150.0.7871.255 R2.01 as the only browser and
+IE8, MSHTML, JScript, VBScript, `mshta` and Internet Options deleted
+(`XP25-Supermium-NoIE.qcow2`, `9e1e8f08…b84d`). Overlays of that exact image,
+one-vCPU KVM, 1 GiB:
+
+| Test | Result |
+| --- | --- |
+| Removal probe after the deleting boot, 27 cases: removed files gone and needed ones kept; `mshtml`/`jscript`/`vbscript` not loadable (126); five engine COM classes unregistered, shell classes working; web handlers on `XP25Browser.exe`, `.hta`/`.mht`/`ftp` without a command; `iexplore` does not start; App Path, Active Setup and type library gone; nothing pending; User Accounts applet opens the classic dialog | Pass (`vm-verify-04`) |
+| `.js` file under `cscript` | Does not run (exit 1): the engine is gone |
+| XP25 Help self-test (Start-menu Help) | Pass |
+| Supermium shell integration: associations, shortcuts, Start-menu client, policy (15 cases) | Pass |
+| ShellExecute http, https, `.html`, `.htm`, `.url`; `javascript:` shortcut refused | Pass |
+| DevTools: modern JavaScript, tabs, certificate matrix, download, appearance; any public HTTPS site through the gateway (`www.wikipedia.org`, TLS 1.3); link-local address not loaded | Pass, 11/11 |
+| Profile and settings persist across a browser restart | Pass |
+| Compatibility suite with the MSI built by `msi.dll` (no VBScript) | Pass, except Remote Registry: disabled by the image's baseline (error 1058), as designed |
+| AI suite 55/0, provider 7/0 | Pass |
+| Security lab `proof` | 34/35: the audit lists four USB drivers the disk already had; the unchanged reference disk fails the same gate |
+| Screen-saver probe (10 gates) | Pass |
+| Two-account switch oracle | Pass, 9/9 (`-02`; `-01` kept: 8/9, oracle captured the gap before the dialog) |
+| In the VM: Start-menu Internet = Supermium, Wikipedia loads through the host gateway, `iexplore` not found, logoff | Pass, by screenshot |
+
+**No longer works** (engine removed, by design): Help and Support pages, `.chm`
+help, `.hta`, `.js`/`.vbs`, Outlook Express HTML mail, the Network Setup Wizard,
+Active Desktop web content. **Not tested:** two-vCPU KVM, TCG, the `firewall`,
+`standard-user` and `ai-repeat` roles, the Winlogon lifecycle harness, other
+sites and web applications.
+[Record](supermium-replaces-ie.md)
+
 ## XP25-Winlogon-Fix VM with R-0 and R-1, 2026-11-20
 
 The interactive VM's own disk with `winlogon.exe` `020eaf40…`, `win32k.sys`

@@ -25,7 +25,9 @@ TARGETS={'browserctl':('components/browser/browserctl.c','BrowserMain',['kernel3
          'browser_launch':('tests/guest/browser_launch.c','LaunchMain',['kernel32','user32','advapi32','msvcrt']),
          'browser_inherit':('tests/guest/browser_inherit.c','InheritMain',['kernel32','user32','shell32','msvcrt'])}
 # Browser-scoped DLLs: (source, entry, stdcall argument bytes, definition, libraries).
-DLLS={'pwrp_k32':('components/browser/xp25_pwrp.c','Xp25PwrpEntry',12,'components/browser/pwrp_k32.def',['kernel32'])}
+DLLS={'pwrp_k32':('components/browser/xp25_pwrp.c','Xp25PwrpEntry',12,'components/browser/pwrp_k32.def',['kernel32']),
+      # Installed as %SystemRoot%\system32\xp25users.cpl by the IE removal.
+      'xp25users':('components/browser/xp25_users.c','Xp25UsersEntry',12,'components/browser/xp25_users.def',['kernel32','user32','shell32'])}
 # The NT 5.1 librarian accepts module.name forwarders only when an import
 # library on its command line supplies them (cf. sfc_fwd, wsock32).
 SYSTEM_IMPORT_LIBS={'user32'}

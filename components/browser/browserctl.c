@@ -1,5 +1,6 @@
 /* XP25 browser shell adapter. Native NT 5.1 APIs; no scripting engine.
  * The diagnostic command records process/module metadata only, never profile data.
+ * delete-at-boot and unregister-file are the steps of the IE removal.
  *
  * Supermium has no renderer sandbox before Windows 10, so every XP25 entry
  * point starts it with SAFER's Normal User level: the Administrators group is
@@ -190,10 +191,123 @@ static int registry_snapshot(int restore,LPCWSTR rootname,LPCWSTR path,LPCWSTR i
             if(!e){e=SHCopyKeyW(src,NULL,dst,0);RegCloseKey(dst);}RegCloseKey(src);}}
     RegCloseKey(bk);return e;
 }
+static void path_line(const char *label,LPCWSTR path) {
+    char b[MAX_PATH*3+64];int n=lstrlenA(label);
+    lstrcpyA(b,label);b[n++]='=';
+    if(!WideCharToMultiByte(CP_UTF8,0,path,-1,b+n,(int)sizeof(b)-n,NULL,NULL))lstrcpyA(b+n,"?");
+    line(b);
+}
+/* IE removal deletes protected system files. Windows File Protection restores a
+ * protected file deleted while Windows runs, so files are queued for the Session
+ * Manager, which deletes them at the next boot before WFP starts. A directory is
+ * queued after its contents. Drive roots and the Windows, system and Program
+ * Files directories themselves are refused. */
+static int schedule_delete(LPCWSTR path,DWORD *count) {
+    WCHAR pattern[MAX_PATH],child[MAX_PATH];WIN32_FIND_DATAW f;HANDLE h;DWORD attrs=GetFileAttributesW(path);int e=0;
+    if(attrs==INVALID_FILE_ATTRIBUTES)return GetLastError();
+    if(attrs&FILE_ATTRIBUTE_DIRECTORY) {
+        if(lstrlenW(path)+3>=MAX_PATH)return ERROR_BUFFER_OVERFLOW;
+        lstrcpyW(pattern,path);lstrcatW(pattern,L"\\*");
+        h=FindFirstFileW(pattern,&f);
+        if(h!=INVALID_HANDLE_VALUE) {
+            do {
+                if(equal(f.cFileName,L".")||equal(f.cFileName,L".."))continue;
+                if(lstrlenW(path)+lstrlenW(f.cFileName)+2>=MAX_PATH){e=ERROR_BUFFER_OVERFLOW;break;}
+                lstrcpyW(child,path);lstrcatW(child,L"\\");lstrcatW(child,f.cFileName);
+                if((e=schedule_delete(child,count))!=0)break;
+            } while(FindNextFileW(h,&f));
+            FindClose(h);
+        }
+        if(e)return e;
+    }
+    if(attrs&FILE_ATTRIBUTE_READONLY)SetFileAttributesW(path,attrs&~FILE_ATTRIBUTE_READONLY);
+    if(!MoveFileExW(path,NULL,MOVEFILE_DELAY_UNTIL_REBOOT))return GetLastError();
+    path_line("delete_at_boot",path);(*count)++;return 0;
+}
+static int delete_at_boot(LPCWSTR path) {
+    WCHAR protect[MAX_PATH];DWORD i,count=0;int e;
+    if(lstrlenW(path)<4 || lstrlenW(path)>=MAX_PATH || path[1]!=L':' || path[2]!=L'\\' || StrStrW(path,L"\\..")||path[lstrlenW(path)-1]==L'\\')return 87;
+    for(i=0;path[i];i++)if(path[i]<32 || path[i]==L'"' || path[i]==L'/' || path[i]==L'*' || path[i]==L'?')return 87;
+    if(GetWindowsDirectoryW(protect,MAX_PATH) && equal(path,protect))return 87;
+    if(GetSystemDirectoryW(protect,MAX_PATH) && equal(path,protect))return 87;
+    if(SUCCEEDED(SHGetFolderPathW(NULL,CSIDL_PROGRAM_FILES,NULL,0,protect)) && equal(path,protect))return 87;
+    e=schedule_delete(path,&count);number("delete_at_boot_count",count);return e;
+}
+/* Whether a COM server registration names this file: the value (environment
+ * expanded, optionally quoted, maybe followed by arguments) starts with the full
+ * path, or, for a value without a directory, with the file name. */
+static int names_file(LPCWSTR value,LPCWSTR path) {
+    WCHAR expanded[MAX_PATH*2];LPCWSTR p=expanded,name=PathFindFileNameW(path),target;int n;
+    n=(int)ExpandEnvironmentStringsW(value,expanded,MAX_PATH*2);
+    if(n<=0 || n>MAX_PATH*2)return 0;
+    if(*p==L'"')p++;
+    target=StrChrW(p,L'\\')?path:name;n=lstrlenW(target);
+    return StrCmpNIW(p,target,n)==0 && (p[n]==0 || p[n]==L' ' || p[n]==L'"');
+}
+static int server_names(HKEY parent,LPCWSTR subkey,LPCWSTR path) {
+    HKEY k;WCHAR value[MAX_PATH*2];DWORD size=sizeof(value)-sizeof(WCHAR),type;int found=0;
+    if(RegOpenKeyExW(parent,subkey,0,KEY_READ,&k))return 0;
+    if(!RegQueryValueExW(k,NULL,NULL,&type,(BYTE *)value,&size) && (type==REG_SZ || type==REG_EXPAND_SZ)) {
+        value[size/sizeof(WCHAR)]=0;found=names_file(value,path);
+    }
+    RegCloseKey(k);return found;
+}
+/* What the file's own unregistration removes, for a file that will be deleted:
+ * the HKLM COM classes it serves (in-process or local server) and the type
+ * libraries it holds. Keys are visited from the last index down, so deleting
+ * the current key never moves one not yet visited. */
+static int unregister_file(LPCWSTR path) {
+    static const LPCWSTR servers[]={L"InprocServer32",L"LocalServer32"};
+    HKEY root,lib,version;WCHAR name[256],ver[64],lcid[64],sub[400];DWORD n,i,j,k,s,classes=0,libraries=0;LONG e;
+    if(lstrlenW(path)<4 || lstrlenW(path)>=MAX_PATH || path[1]!=L':' || path[2]!=L'\\')return 87;
+    if((e=RegOpenKeyExW(HKEY_LOCAL_MACHINE,L"SOFTWARE\\Classes\\CLSID",0,KEY_READ|KEY_WRITE,&root))!=0)return e;
+    if(RegQueryInfoKeyW(root,NULL,NULL,NULL,&n,NULL,NULL,NULL,NULL,NULL,NULL,NULL)){RegCloseKey(root);return ERROR_INVALID_DATA;}
+    for(i=n;i-->0;) {
+        DWORD size=256;
+        if(RegEnumKeyExW(root,i,name,&size,NULL,NULL,NULL,NULL))continue;
+        for(s=0;s<2;s++) {
+            if(lstrlenW(name)+lstrlenW(servers[s])+2>=400)break;
+            lstrcpyW(sub,name);lstrcatW(sub,L"\\");lstrcatW(sub,servers[s]);
+            if(server_names(root,sub,path)) {
+                if((e=SHDeleteKeyW(root,name))!=0){RegCloseKey(root);return e;}
+                path_line("unregistered_clsid",name);classes++;break;
+            }
+        }
+    }
+    RegCloseKey(root);
+    if((e=RegOpenKeyExW(HKEY_LOCAL_MACHINE,L"SOFTWARE\\Classes\\TypeLib",0,KEY_READ|KEY_WRITE,&root))!=0)return e;
+    if(RegQueryInfoKeyW(root,NULL,NULL,NULL,&n,NULL,NULL,NULL,NULL,NULL,NULL,NULL)){RegCloseKey(root);return ERROR_INVALID_DATA;}
+    for(i=n;i-->0;) {
+        DWORD size=256,versions=0;
+        if(RegEnumKeyExW(root,i,name,&size,NULL,NULL,NULL,NULL) || RegOpenKeyExW(root,name,0,KEY_READ|KEY_WRITE,&lib))continue;
+        RegQueryInfoKeyW(lib,NULL,NULL,NULL,&versions,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+        for(j=versions;j-->0;) {
+            DWORD vs=64,lcids=0;int hit=0;
+            if(RegEnumKeyExW(lib,j,ver,&vs,NULL,NULL,NULL,NULL) || RegOpenKeyExW(lib,ver,0,KEY_READ,&version))continue;
+            RegQueryInfoKeyW(version,NULL,NULL,NULL,&lcids,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+            for(k=0;k<lcids && !hit;k++) {
+                DWORD ls=64;
+                if(RegEnumKeyExW(version,k,lcid,&ls,NULL,NULL,NULL,NULL) || lstrlenW(lcid)+8>=400)continue;
+                lstrcpyW(sub,lcid);lstrcatW(sub,L"\\win32");hit=server_names(version,sub,path);
+            }
+            RegCloseKey(version);
+            if(hit) {
+                if((e=SHDeleteKeyW(lib,ver))!=0){RegCloseKey(lib);RegCloseKey(root);return e;}
+                path_line("unregistered_typelib",name);libraries++;
+            }
+        }
+        versions=1;RegQueryInfoKeyW(lib,NULL,NULL,NULL,&versions,NULL,NULL,NULL,NULL,NULL,NULL,NULL);RegCloseKey(lib);
+        if(!versions)SHDeleteKeyW(root,name);
+    }
+    RegCloseKey(root);
+    number("unregistered_classes",classes);number("unregistered_typelibs",libraries);return 0;
+}
 void WINAPI BrowserMain(void) {
     int argc=0,rc=87;WCHAR **argv=CommandLineToArgvW(GetCommandLineW(),&argc);output=GetStdHandle(STD_OUTPUT_HANDLE);
     if(argc>=2) {
         if((equal(argv[1],L"key-save")||equal(argv[1],L"key-restore"))&&argc==5)rc=registry_snapshot(equal(argv[1],L"key-restore"),argv[2],argv[3],argv[4]);
+        else if(equal(argv[1],L"delete-at-boot")&&argc==3)rc=delete_at_boot(argv[2]);
+        else if(equal(argv[1],L"unregister-file")&&argc==3)rc=unregister_file(argv[2]);
         else if(equal(argv[1],L"shortcuts"))rc=shortcuts();
         else if(equal(argv[1],L"open-shortcut")&&argc==3)rc=open_shortcut(argv[2]);
         else if(equal(argv[1],L"open-url")&&argc==3)rc=launch_browser(argv[2],0);

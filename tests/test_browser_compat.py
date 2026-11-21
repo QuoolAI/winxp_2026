@@ -62,7 +62,8 @@ class LaunchRegistrationTests(unittest.TestCase):
             registry = (out / 'associations.reg').read_text(encoding='utf-16')
             install = (out / 'install.cmd').read_text()
             scope = json.loads((out / 'registration-scope.json').read_text())
-        self.assertIn('Supermium\\shell\\open\\command]\n@="\\"C:\\\\Program Files\\\\XP25Browser\\\\XP25Browser.exe\\""', registry)
+        # Explorer finds a Start-menu client by the key named after the handler's program file.
+        self.assertIn('StartMenuInternet\\XP25Browser.exe\\shell\\open\\command]\n@="\\"C:\\\\Program Files\\\\XP25Browser\\\\XP25Browser.exe\\""', registry)
         self.assertNotIn('Supermium\\\\chrome.exe\\" --', registry)
         self.assertIn('[-HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Supermium]', registry)
         self.assertIn('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Supermium\\URLBlocklist]\n"1"="*"', registry)

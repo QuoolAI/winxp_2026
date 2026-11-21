@@ -44,26 +44,42 @@ def _free_internet():
 class Gateway:
     """A fresh gateway process on a private UNIX socket with a chosen allowlist."""
 
-    def __init__(self, directory, allow, tag):
+    def __init__(self, directory, allow, tag, tcp_clients=None):
         self.dir = Path(directory)
         SOCKDIR.mkdir(parents=True, exist_ok=True)
         _COUNTER[0] += 1
         self.sock = SOCKDIR / ('s%d.sock' % _COUNTER[0])
         self.log = self.dir / (tag + '.log')
-        self.allow = list(allow)
+        self.allow = list(allow) if allow != 'any' else 'any'
+        # tcp_clients: listen on 127.0.0.1:<free port> and accept only these addresses.
+        self.tcp_clients = tcp_clients
+        self.port = None
         self.proc = None
 
     def __enter__(self):
         self.dir.mkdir(parents=True, exist_ok=True)
-        for leftover in (self.sock, Path(str(self.sock) + '.policy.json')):
+        # A log left by an earlier run would satisfy the readiness wait below too early.
+        for leftover in (self.sock, Path(str(self.sock) + '.policy.json'), self.log):
             if leftover.exists():
                 leftover.unlink()
-        cmd = [sys.executable, str(GATEWAY), '--socket', str(self.sock), '--log', str(self.log)]
-        for name in self.allow:
+        if self.tcp_clients is None:
+            cmd = [sys.executable, str(GATEWAY), '--socket', str(self.sock), '--log', str(self.log)]
+        else:
+            with socket.socket() as probe:
+                probe.bind(('127.0.0.1', 0))
+                self.port = probe.getsockname()[1]
+            cmd = [sys.executable, str(GATEWAY), '--listen', '127.0.0.1:%d' % self.port, '--log', str(self.log)]
+            for client in self.tcp_clients:
+                cmd += ['--client', client]
+        if self.allow == 'any':
+            cmd += ['--allow-any-public']
+        for name in (self.allow if self.allow != 'any' else []):
             cmd += ['--allow', name]
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for _ in range(100):
-            if self.sock.exists():
+            if self.port is None and self.sock.exists():
+                break
+            if self.port is not None and any(d.get('decision') == 'start' for d in self.decisions()):
                 break
             if self.proc.poll() is not None:
                 raise RuntimeError('gateway exited early: ' + self.proc.stdout.read().decode(errors='replace'))
@@ -76,9 +92,10 @@ class Gateway:
         """Send one raw request head over the UNIX socket. Returns (status_line,
         tls_cert_or_None). When do_tls_host is set and the gateway answers 200, run a
         real TLS handshake through the tunnel and return the validated peer cert."""
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        family = socket.AF_UNIX if self.port is None else socket.AF_INET
+        with socket.socket(family, socket.SOCK_STREAM) as client:
             client.settimeout(timeout)
-            client.connect(str(self.sock))
+            client.connect(str(self.sock) if self.port is None else ('127.0.0.1', self.port))
             client.sendall(raw_request)
             head = b''
             while b'\r\n\r\n' not in head and len(head) < 4096:
@@ -239,6 +256,53 @@ class GatewayBypassTests(unittest.TestCase):
 
     def test_non_global_allowlisted(self):
         self._one('non_global_allowlisted')
+
+    def test_any_public_still_refuses_literal_ip(self):
+        with Gateway(self.dir, 'any', 'ut-any-literal') as gw:
+            status, _ = gw.request(connect('169.254.169.254'))
+            last = (gw.decisions() or [{}])[-1]
+        self.assertEqual((last.get('decision'), last.get('reason')), ('deny', 'direct_ip_literal'))
+        self.assertIn('403', status)
+
+    def test_any_public_still_refuses_non_global_name(self):
+        with Gateway(self.dir, 'any', 'ut-any-local') as gw:
+            status, _ = gw.request(connect('localhost'))
+            last = (gw.decisions() or [{}])[-1]
+        self.assertEqual((last.get('decision'), last.get('reason')), ('deny', 'non_global_resolution'))
+        self.assertIn('403', status)
+
+    def test_any_public_still_refuses_plain_http(self):
+        with Gateway(self.dir, 'any', 'ut-any-http') as gw:
+            status, _ = gw.request(b'GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n')
+            last = (gw.decisions() or [{}])[-1]
+        self.assertEqual(last.get('reason'), 'malformed_or_wrong_method_or_port')
+        self.assertIn('403', status)
+
+    def test_tcp_listener_refuses_other_clients(self):
+        # The gateway serves only the named VM address; 127.0.0.1 is not it.
+        with Gateway(self.dir, 'any', 'ut-tcp-other', tcp_clients=['127.0.0.2']) as gw:
+            try:
+                status, _ = gw.request(connect('example.com'), timeout=5)
+            except OSError:
+                status = ''
+            rows = gw.decisions()
+        self.assertEqual(status, '')
+        self.assertTrue(any(r.get('reason') == 'client_not_allowed' and r.get('client') == '127.0.0.1' for r in rows), rows)
+
+    def test_tcp_listener_serves_its_client(self):
+        with Gateway(self.dir, 'any', 'ut-tcp-own', tcp_clients=['127.0.0.1']) as gw:
+            status, _ = gw.request(connect('127.0.0.1'))
+            last = (gw.decisions() or [{}])[-1]
+        self.assertEqual(last.get('reason'), 'direct_ip_literal')
+        self.assertIn('403', status)
+
+    @unittest.skipUnless(_free_internet(), 'no direct Internet to the documented example host')
+    def test_any_public_allows_an_unlisted_https_name(self):
+        with Gateway(self.dir, 'any', 'ut-any-positive') as gw:
+            status, cert = gw.request(connect('example.org'), do_tls_host='example.org')
+        self.assertIn('200 Connection Established', status)
+        names = [v for pair in (cert or {}).get('subjectAltName', ()) for v in pair[1:]]
+        self.assertIn('example.org', names)
 
     @unittest.skipUnless(_free_internet(), 'no direct Internet to the documented example host')
     def test_positive_allow_preserves_tls(self):

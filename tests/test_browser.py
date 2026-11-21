@@ -69,4 +69,40 @@ class BrowserPackageTests(unittest.TestCase):
         with self.assertRaises(ValueError):report(pin,release)
         release['prerelease']=True
         with self.assertRaises(ValueError):report(pin,release)
+
+    def test_gateway_policy_routes_everything_through_the_gateway(self):
+        pin=json.loads((ROOT/'components/browser/release.json').read_text())
+        with tempfile.TemporaryDirectory(dir=ROOT/'.work') as d:
+            blocked=Path(d)/'blocked';gateway=Path(d)/'gateway';blocked.mkdir();gateway.mkdir()
+            generate(blocked,pin,True);generate(gateway,pin,True,'gateway')
+            old=(blocked/'associations.reg').read_text(encoding='utf-16');new=(gateway/'associations.reg').read_text(encoding='utf-16')
+            self.assertIn('URLBlocklist',old);self.assertNotIn('ProxyServer',old)
+            self.assertNotIn('URLBlocklist',new)
+            for line in ['"ProxyMode"="fixed_servers"','"ProxyServer"="10.25.0.1:3128"','"HttpsOnlyMode"="force_enabled"']:self.assertIn(line,new)
+            # Named after its program, or Explorer registers XP25Browser.exe as a legacy client of its own.
+            self.assertIn('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\XP25Browser.exe\\shell\\open\\command]',new)
+            self.assertIn('@="XP25Browser.exe"',new)
+            with self.assertRaises(ValueError):generate(Path(d),pin,True,'open')
+
+    def test_ie_removal_deletes_the_engine_and_keeps_what_explorer_needs(self):
+        import ie_removal
+        with tempfile.TemporaryDirectory(dir=ROOT/'.work') as d:
+            record=ie_removal.generate(d);cmd=(Path(d)/'remove-ie.cmd').read_text()
+            for name in ['mshtml.dll','jscript.dll','vbscript.dll','mshta.exe','inetcpl.cpl']:
+                self.assertIn('delete-at-boot "%S%\\'+name+'"',cmd)
+                self.assertIn('delete-at-boot "%S%\\dllcache\\'+name+'"',cmd)
+            self.assertIn('delete-at-boot "%S%\\dllcache\\iexplore.exe"',cmd)
+            for kept in ['wininet.dll','urlmon.dll','shdocvw.dll','browseui.dll','ieframe.dll','iertutil.dll']:
+                self.assertNotIn(kept,cmd);self.assertIn(kept,record['kept'])
+            # ieproxy.dll marshals Explorer's own interfaces: the IE folder loop skips it.
+            self.assertIn('if /i not "%%~nxF"=="ieproxy.dll"',cmd)
+            # COM registrations go before the files are queued; each || stays with its own command.
+            self.assertLess(cmd.index('unregister-file "%S%\\mshtml.dll"'),cmd.index('XP25_IE_STEP=schedule'))
+            self.assertNotIn(' || exit /b 5\r\n',''.join(l+'\r\n' for l in cmd.splitlines() if l.startswith('if exist')))
+            machine=(Path(d)/'remove-ie.reg').read_text(encoding='utf-16');user=(Path(d)/'remove-ie-user.reg').read_text(encoding='utf-16')
+            self.assertIn('[-HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\IEXPLORE.EXE]',machine)
+            for component in ie_removal.ACTIVE_SETUP:self.assertIn('Installed Components\\'+component+']',machine)
+            self.assertIn('"nusrmgr.cpl"="no"',machine);self.assertIn('xp25users.cpl"=dword:00000009',machine)
+            self.assertIn('"Use Search Asst"="no"',user)
+            self.assertIn('HKEY_USERS\\XP25IE',(Path(d)/'remove-ie-hive.reg').read_text(encoding='utf-16'))
 if __name__=='__main__':unittest.main()

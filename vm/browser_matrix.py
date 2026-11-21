@@ -15,6 +15,7 @@ import sys
 import time
 import urllib.request
 import xp_lab as lab
+from browser_wait_shutdown import log_on,logon_until
 ROOT=Path(__file__).resolve().parents[1]
 
 def sha(path):
@@ -81,7 +82,12 @@ def execute(a,mode):
         if inputs['base_sha256']!=a.sha256 or inputs['mode']!=mode or inputs['media_sha256']!=sha(a.media/'browser-tests.iso'):
             raise ValueError('resume input contract mismatch')
     report={'mode':mode,'run':str(run),'launch_command':command,'passed':False}
+    scale=6 if mode=='tcg' else 1
     try:
+        if a.xp25_logon:
+            # The image runs the XP25 Winlogon without automatic logon (as vm/security_lab.py handles).
+            status(run,'xp25_logon');os.chdir(run)
+            with lab.QMP() as q:log_on(run,q,time.time()+900*scale,scale)
         status(run,'waiting_for_browser')
         wait_until(run,lambda:'XP25_BROWSER_CDP_STARTING' in serial(run),'browser startup',1200)
         namespace=json.loads((run/'checkpoint.json').read_text())['namespace_pid']
@@ -95,7 +101,7 @@ def execute(a,mode):
         if previous:
             _,f,report['browser']=max(previous,key=lambda row:row[0]);browser_evidence=str(f)
         else:
-            report['browser'],browser_evidence=client(run,namespace,'cdp-browser',['--https','--policy'],cdp_timeout=240 if mode=='tcg' else 45)
+            report['browser'],browser_evidence=client(run,namespace,'cdp-browser',['--https','--open-internet' if a.internet=='gateway' else '--policy'],cdp_timeout=240 if mode=='tcg' else 45)
         wait_until(run,lambda:'XP25_BROWSER_PERSISTENCE_STARTING' in serial(run),'browser relaunch',120)
         time.sleep(4)
         status(run,'profile_and_settings_persistence')
@@ -103,17 +109,21 @@ def execute(a,mode):
         status(run,'windows_and_ai_regressions')
         wait_until(run,lambda:'XP25_BROWSER_SUITE_DONE' in serial(run),'regression suite',1800 if mode=='tcg' else 900)
         os.chdir(run)
-        # The batch script gives this listener five seconds before shutdown.exe.
-        with lab.QMP() as q:
-            q.s.settimeout(90)
-            pending=list(q.events)
-            while True:
-                event=pending.pop(0) if pending else json.loads(q.f.readline())
-                lab.record({'event':event})
-                if event.get('event') in ('RESET','GUEST_PANICKED'):raise ValueError('unexpected guest reset/panic')
-                if event.get('event')=='SHUTDOWN':
-                    if event.get('data')!={'guest':True,'reason':'guest-shutdown'}:raise ValueError('unexpected shutdown cause')
-                    (run/'guest-shutdown-event.json').write_text(json.dumps(event,indent=2)+'\n');break
+        if a.xp25_logon:
+            # shutdown.exe has no InitShutdown server under the XP25 Winlogon: turn off from the Start menu.
+            with lab.QMP() as q:logon_until(run,q,'XP25_BROWSER_SUITE_DONE',time.time()+900*scale,scale,ui_shutdown=True)
+        else:
+            # The batch script gives this listener five seconds before shutdown.exe.
+            with lab.QMP() as q:
+                q.s.settimeout(90)
+                pending=list(q.events)
+                while True:
+                    event=pending.pop(0) if pending else json.loads(q.f.readline())
+                    lab.record({'event':event})
+                    if event.get('event') in ('RESET','GUEST_PANICKED'):raise ValueError('unexpected guest reset/panic')
+                    if event.get('event')=='SHUTDOWN':
+                        if event.get('data')!={'guest':True,'reason':'guest-shutdown'}:raise ValueError('unexpected shutdown cause')
+                        (run/'guest-shutdown-event.json').write_text(json.dumps(event,indent=2)+'\n');break
         # Avoid process-wide cwd changes in threaded jobs: use CLI finalization.
         subprocess.run([sys.executable,str(ROOT/'vm/xp_lab.py'),str(run),'finish'],capture_output=True,check=True)
         text=serial(run)
@@ -164,6 +174,8 @@ def main():
     p.add_argument('--resume',action='store_true')
     p.add_argument('--run-root',type=Path,default=ROOT/'.work/browser-20261025/runs')
     p.add_argument('--memory',type=int,default=1024)
+    p.add_argument('--xp25-logon',action='store_true',help='image with the XP25 Winlogon: log on at its dialog, turn off from the Start menu')
+    p.add_argument('--internet',choices=['blocked','gateway'],default='blocked',help='the image\'s Supermium policy (build/browser_config.py)')
     a=p.parse_args();a.base=a.base.resolve();a.run_root=a.run_root.resolve();a.media=a.media.resolve();a.gateway=a.gateway.resolve();a.output=a.output.resolve()
     if not a.output.is_relative_to(ROOT/'.work'):p.error('private .work output required')
     a.output.mkdir(parents=True,exist_ok=False)
@@ -174,6 +186,8 @@ def main():
         # Each child owns its cwd. This coordinator can safely launch all modes.
         command=[sys.executable,__file__,'--base',str(a.base),'--sha256',a.sha256,'--media',str(a.media),'--gateway',str(a.gateway),'--prefix',a.prefix,'--output',str(a.output/mode),'--run-root',str(a.run_root),'--memory',str(a.memory),'--worker',mode]
         if a.resume:command.append('--resume')
+        if a.xp25_logon:command.append('--xp25-logon')
+        command+=['--internet',a.internet]
         with (a.output/(mode+'.log')).open('w') as f:
             process=subprocess.Popen(command,stdout=f,stderr=subprocess.STDOUT)
         results.append((mode,process))
@@ -193,7 +207,8 @@ if __name__=='__main__':
         for arg in ['base','media','gateway','output','run_root']:parser.add_argument('--'+arg.replace('_','-'),type=Path,required=True)
         parser.add_argument('--memory',type=int,required=True)
         parser.add_argument('--sha256',required=True);parser.add_argument('--prefix',required=True)
-        parser.add_argument('--resume',action='store_true')
+        parser.add_argument('--resume',action='store_true');parser.add_argument('--xp25-logon',action='store_true')
+        parser.add_argument('--internet',choices=['blocked','gateway'],default='blocked')
         args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=False)
         result=execute(args,mode);(args.output/'result.json').write_text(json.dumps(result,indent=2)+'\n')
         raise SystemExit(0 if result['passed'] else 2)

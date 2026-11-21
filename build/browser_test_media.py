@@ -49,6 +49,13 @@ rem traverses the gateway.
 reg add "HKLM\SOFTWARE\Policies\Supermium" /v ProxyMode /d "fixed_servers" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Supermium" /v ProxyServer /d "10.25.0.1:3128" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Supermium" /v ProxyBypassList /d "xp25.test;localhost;127.0.0.1;10.25.0.1" /f >nul
+rem Test-only: the fixture server is plain HTTP, and an image prepared with --internet gateway forces
+rem HTTPS-only mode; relax it so the fixtures load. Real destinations still traverse the gateway.
+reg add "HKLM\SOFTWARE\Policies\Supermium" /v HttpsOnlyMode /d "allowed" /f >nul
+rem Test-only: the XP25 Winlogon starts the user's screen saver after 10 idle minutes and the
+rem DevTools cases give no input, so the test session's screen saver is switched off.
+reg add "HKCU\Control Panel\Desktop" /v ScreenSaveActive /d 0 /f >nul
+rundll32.exe user32.dll,UpdatePerUserSystemParameters
 D:\browserctl.exe shell "http://xp25.test:8080/local.html?case=shell-http" > COM1
 echo XP25_SHELLEXECUTE_HTTP=%ERRORLEVEL% > COM1
 ping -n 16 127.0.0.1 >nul
@@ -67,6 +74,14 @@ D:\browserctl.exe inventory > C:\xp25\browser\normal-profile.txt
 D:\browserctl.exe close
 ping -n 12 127.0.0.1 >nul
 start "" /b cmd.exe /c D:\sample.cmd
+rem Test-only, for hardened images: the DevTools profile and downloads are in C:\xp25\browser,
+rem which inherits an administrators-only ACL there, and the browser runs with the SAFER Normal
+rem User token (Administrators deny-only), so the logged-on user gets this folder; the test
+rem bridge's port is opened to the lab host only, since those images run Windows Firewall.
+cacls C:\xp25\browser /E /G "%USERNAME%":F >nul
+echo XP25_BROWSER_TEST_FOLDER_GRANT_EXIT=%ERRORLEVEL% > COM1
+netsh firewall add portopening protocol=TCP port=9223 name=XP25TestBridge mode=ENABLE scope=CUSTOM addresses=10.25.0.1 >nul
+echo XP25_BROWSER_TEST_BRIDGE_PORT_EXIT=%ERRORLEVEL% > COM1
 start "" /b D:\bridge.exe
 echo XP25_BROWSER_CDP_STARTING > COM1
 D:\browser_launch.exe --no-first-run --disable-gpu --user-data-dir=C:\xp25\browser\TestProfile --remote-debugging-port=9222 --proxy-server=http://10.25.0.1:3128 --proxy-bypass-list="xp25.test;localhost;127.0.0.1;10.25.0.1" --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme --enable-logging --log-file=C:\xp25\browser\test-chrome.log http://xp25.test:8080/local.html

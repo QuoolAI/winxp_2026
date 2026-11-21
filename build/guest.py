@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, help="directory containing MinGW GCC and objdump")
     parser.add_argument("--probe", choices=("xp", "pointer", "session", "network", "service", "branding", "regsvc", "gina", "userenv", "shell", "profile", "oem",
-                                            "clippyexit", "gscookie", "roverbench", "idle", "screensaver", "r1core"), default="xp",
+                                            "clippyexit", "gscookie", "roverbench", "idle", "screensaver", "r1core", "ieremoval", "msibuild"), default="xp",
                         help="standard, pointer, session, network, service, branding or component checks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, default=REPO / "Source/XPSP1/NT/public/sdk/lib/i386",
@@ -106,6 +106,10 @@ def main():
         expected_dlls |= {'netapi32.dll'}
     if args.probe in ("branding", "oem", "r1core"):
         expected_dlls |= {"gdi32.dll"}
+    if args.probe == 'ieremoval':
+        expected_dlls |= {'advapi32.dll', 'ole32.dll', 'shell32.dll', 'shlwapi.dll'}
+    if args.probe == 'msibuild':
+        expected_dlls |= {'msi.dll'}
     command = [tools["cc"], "-Os", "-Wall", "-Wextra", "-Werror", "-ffreestanding",
                "-fno-builtin", "-fno-stack-protector", "-nostdlib",
                "-Wl,--entry,_ProbeMain@0", "-Wl,--subsystem,console:5.1",
@@ -130,6 +134,10 @@ def main():
         command += ['-ladvapi32']
     if args.probe == 'profile':
         command += ['-lnetapi32']
+    if args.probe == 'ieremoval':
+        command += ['-ladvapi32', '-lole32', '-lshlwapi', '-lshell32']
+    if args.probe == 'msibuild':
+        command += ['-lmsi']
     if contract:
         command += ['-I', str(output)]
     result = {"schema": 1, "started_utc": datetime.now(timezone.utc).isoformat(),

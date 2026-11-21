@@ -54,6 +54,7 @@ def main():
     p.add_argument('--pin',type=Path,default=ROOT/'components/browser/release.json')
     p.add_argument('--download',action='store_true')
     p.add_argument('--software-rendering',action='store_true',help='verified engineering VGA profile only')
+    p.add_argument('--internet',choices=['blocked','gateway'],default='blocked',help='gateway: HTTPS through the host browser gateway (build/browser_config.py)')
     a=p.parse_args();out=a.output.resolve();package=a.package.resolve()
     if not out.is_relative_to(ROOT/'.work') or not package.is_relative_to(ROOT/'.work'):p.error('private .work paths required')
     pin=json.loads(a.pin.read_text())
@@ -72,12 +73,12 @@ def main():
     shutil.copy2(a.browserctl,media/'browserctl.exe');shutil.copy2(a.launcher,media/'XP25Browser.exe')
     compat=install_watch_proxy(media,a.pwrp_proxy) if a.pwrp_proxy else None
     from browser_config import generate,installation_suite
-    generate(media,pin,a.software_rendering)
+    generate(media,pin,a.software_rendering,a.internet)
     (out/'install-suite.cmd').write_bytes(installation_suite())
     for name in ('local.html',):
         src=ROOT/'components/browser'/name
         shutil.copy2(src,media/name)
-    manifest={'pin':pin,'package':str(package),'package_sha256':sha(package),'software_rendering':a.software_rendering,'excluded_portable_launchers':excluded,'watch_compatibility':compat,'install_suite_sha256':sha(out/'install-suite.cmd'),'files':{str(f.relative_to(media)):sha(f) for f in sorted(media.rglob('*')) if f.is_file()},'redistribution_approved':False}
+    manifest={'pin':pin,'package':str(package),'package_sha256':sha(package),'software_rendering':a.software_rendering,'internet':a.internet,'excluded_portable_launchers':excluded,'watch_compatibility':compat,'install_suite_sha256':sha(out/'install-suite.cmd'),'files':{str(f.relative_to(media)):sha(f) for f in sorted(media.rglob('*')) if f.is_file()},'redistribution_approved':False}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     cmd=['genisoimage','-quiet','-J','-joliet-long','-r','-V','XP25BROWSER','-o',str(out/'browser.iso'),str(media)]
     (out/'commands.json').write_text(json.dumps([cmd],indent=2)+'\n')

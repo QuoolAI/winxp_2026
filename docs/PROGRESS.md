@@ -2,6 +2,49 @@
 
 ## Current checkpoint
 
+2026-11-21, Supermium replaces Internet Explorer in the XP25-Winlogon-Fix VM
+(`xp25-modernization`; evidence `.work/supermium-vm-20261120/`). The VM's own disk
+(`6dbd3f88…00f6`) got Supermium 150.0.7871.255 R2.01 (pinned package
+`d9a06a6c…43b3`), XP25 Help for Start-menu Help, and a native User Accounts
+applet. IE8, MSHTML, JScript, VBScript, `mshta` and Internet Options were then
+unregistered and deleted, with their `dllcache` and language copies, at the next
+boot (`build/ie_removal.py`, `browserctl delete-at-boot`/`unregister-file`).
+WinINet, URLMon, Shdocvw, BrowseUI, IEFrame, IERtUtil and `ieproxy.dll` stay:
+Explorer needs them. Install and verify runs (removal probe 27/27), then
+`vm/package_vm_browser_image.py`: `image-02/XP25-Supermium-NoIE.qcow2`
+`9e1e8f081b3ffc113aa4bf9f20e9b82097c681952c271b05fbf7a9e8f3e5b84d`. It has 295
+installed files matching the media and all 36 removed files absent.
+
+Tests on one-vCPU KVM overlays of that image:
+- browser regression through a host gateway admitting any public HTTPS name:
+  23/26 checks. DevTools 11/11, including `https://www.wikipedia.org/` over
+  TLS 1.3, the certificate matrix, persistence, MSI, AI 55/0 + 7/0, and a
+  Start-menu turn-off. The false checks are Remote Registry, disabled by the
+  baseline, and the four `not_tested` cases;
+- `proof` 34/35. The audit lists four USB drivers (`HidUsb`, `mouhid`,
+  `usbhub`, `usbuhci`); the unchanged reference disk fails the same gate
+  (`ref-proof-up-01`);
+- screen-saver probe 10/10;
+- switch oracle 9/9.
+
+Kept failures:
+- `image-01`: packaging interrupted;
+- `img02-browser-up`: the DevTools fixture was not usable on a hardened image.
+  The test media now grants the profile folder and opens the bridge port, and
+  native build 04's shell probe checks either Internet policy;
+- `img02-2acct-up-01`: 8/9, the oracle captured the gap before the dialog.
+
+Host: a DHCP reservation `10.25.0.26`, the filter `xp25-browser-gateway`, and the
+user service `xp25-browser-gateway` (`vm/browser_gateway.py --listen
+10.25.0.1:3128 --allow-any-public`). The VM got the disk (old one kept as
+`XP25-Winlogon-Fix.ie8.qcow2`), 1 GiB and the filter; `update.py compare`
+reports nothing else changed. By screenshot in the VM: the Start-menu Internet
+entry is Supermium, Wikipedia loads in it, `iexplore` is not found, logoff
+returns to a painted dialog. Left at the logon dialog. Not done: two-vCPU and
+TCG, `firewall`/`standard-user`/`ai-repeat`, lifecycle harness; no renderer
+sandbox on NT 5.1; `0x842214` still open.
+[Record](supermium-replaces-ie.md) · [VM](virt-manager-xp25-winlogon-fix.md#supermium-replaces-internet-explorer-2026-11-21)
+
 2026-11-20, the XP25-Winlogon-Fix VM redeployed with R-0 and R-1
 (`xp25-modernization` `16062930d`; evidence `.work/vm-redeploy-20261119/`). The VM
 was turned off by the guest's own Turn Off. Its disk was frozen as a reference

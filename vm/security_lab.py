@@ -73,7 +73,13 @@ def launch(args):
         base, base_sha = reference('XP25-AI-Engineering.qcow2')
     if not base.is_relative_to(ROOT / '.work') or base.stat().st_mode & 0o222:
         raise SystemExit('backing image must be a frozen private .work/ file')
-    iso, iso_sha = reference('native-tests.iso')
+    if args.regression_iso:
+        # A variant of the regression media, e.g. without VBScript fixtures (build/prepare_regression_media.py).
+        iso, iso_sha = args.regression_iso.resolve(), args.regression_iso_sha256
+        if not iso_sha or not iso.is_relative_to(ROOT / '.work'):
+            raise SystemExit('--regression-iso needs a private .work/ ISO and --regression-iso-sha256')
+    else:
+        iso, iso_sha = reference('native-tests.iso')
     files = {}
     for item in args.stage or []:
         target, _, source = item.partition('=')
@@ -470,6 +476,8 @@ def main():
     p.add_argument('--stage', action='append')
     p.add_argument('--startup', type=Path, help='self-removing Startup fixture for the XP25 account')
     p.add_argument('--provider', action='store_true', help='run the XP25 gateway and the OpenAI test double in the namespace')
+    p.add_argument('--regression-iso', type=Path, help='regression media instead of the frozen native-tests.iso')
+    p.add_argument('--regression-iso-sha256')
     p.set_defaults(handler=launch)
     p = sub.add_parser('wait')
     p.add_argument('run')

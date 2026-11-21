@@ -4,11 +4,21 @@ from pathlib import Path
 
 CLASSIC='--no-first-run --classic-omnibox --classic-omnibox-border --compact-ui --enable-features=SupermiumCustomTabs,ForceXpTheme'
 LAUNCHER=r'"C:\Program Files\XP25Browser\XP25Browser.exe"'
+# The Start-menu Internet client. Explorer looks a client up by the file name of
+# the http handler's program and, finding no key of that name, registers the
+# program as a "legacy" client of its own and makes it the default.
+CLIENT='XP25Browser.exe'
 # Supermium cannot sandbox renderers on NT 5.1, so the experimental image keeps
 # unrestricted Internet browsing disabled. Only local files, internal pages and
 # the private lab host load; an administrator adds approved hosts explicitly.
 URL_BLOCKLIST=['*']
 URL_ALLOWLIST=['file://*','chrome://*','chrome-extension://*','devtools://*','about:blank','.xp25.test']
+# internet='gateway' (the XP25-Winlogon-Fix VM): every web request goes through the
+# host's browser gateway at 10.25.0.1:3128 (vm/browser_gateway.py), which tunnels
+# HTTPS to public addresses only; HTTPS-only mode upgrades typed http:// addresses,
+# since the gateway carries no plain HTTP.
+GATEWAY_PROXY='10.25.0.1:3128'
+GATEWAY_BYPASS='xp25.test;localhost;127.0.0.1'
 
 def installation_suite():
     """Install-only Startup fixture for a fresh browser_lab overlay."""
@@ -29,11 +39,15 @@ echo XP25_IMAGE_INSTALL_DONE > COM1
 shutdown.exe -s -t 10
 '''.replace('\n','\r\n').encode('ascii')
 
-def generate(out,pin,software_rendering=False):
+def generate(out,pin,software_rendering=False,internet='blocked'):
+    if internet not in ('blocked','gateway'):raise ValueError('internet policy must be blocked or gateway')
     lines=['Windows Registry Editor Version 5.00',''];snapshots=[]
-    # The native adapter validates one target and builds only fixed browser
+    # The native launcher validates one target and builds only fixed browser
     # arguments. It avoids XP's --single-argument quote bug and flag injection.
-    adapter='"C:\\Program Files\\XP25Browser\\browserctl.exe" '
+    # It is the program of the Supermium Start-menu client too: Explorer registers
+    # an http handler that is no client's program as a legacy client of its own
+    # (it did so for the console tool browserctl.exe) and makes it the default.
+    adapter=LAUNCHER+' '
     exe=adapter+'open-document "%1"'
     def val(v):return '"'+v.replace('\\','\\\\').replace('"','\\"')+'"'
     def key(k,values):
@@ -61,17 +75,21 @@ def generate(out,pin,software_rendering=False):
         key(classes+r'\.url',{None:'XP25.URL'})
         key(classes+r'\XP25.URL',{None:'Internet Shortcut'})
         key(classes+r'\XP25.URL\DefaultIcon',{None:r'C:\Program Files\Supermium\chrome.exe,0'})
-        key(classes+r'\XP25.URL\shell\open\command',{None:r'"C:\Program Files\XP25Browser\browserctl.exe" open-shortcut "%1"'})
+        key(classes+r'\XP25.URL\shell\open\command',{None:adapter+'open-shortcut "%1"'})
         snap(short,r'Software\Clients\StartMenuInternet')
-        key(long+r'\Software\Clients\StartMenuInternet',{None:'Supermium'})
+        key(long+r'\Software\Clients\StartMenuInternet',{None:CLIENT})
     lines.extend(['[-HKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\IEXPLORE.EXE]',''])
-    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet\Supermium',{None:'Supermium'})
-    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet\Supermium\DefaultIcon',{None:r'C:\Program Files\Supermium\chrome.exe,0'})
-    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet\Supermium\shell\open\command',{None:LAUNCHER})
+    client=r'HKEY_LOCAL_MACHINE\SOFTWARE\Clients\StartMenuInternet'+'\\'+CLIENT
+    key(client,{None:'Supermium','LocalizedString':'Supermium'})
+    key(client+r'\DefaultIcon',{None:r'C:\Program Files\Supermium\chrome.exe,0'})
+    key(client+r'\shell\open\command',{None:LAUNCHER})
     snap('HKLM',r'Software\Policies\Supermium')
     lines.extend([r'[-HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium]',''])
-    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium\URLBlocklist',{str(i+1):v for i,v in enumerate(URL_BLOCKLIST)})
-    key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium\URLAllowlist',{str(i+1):v for i,v in enumerate(URL_ALLOWLIST)})
+    if internet=='blocked':
+        key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium\URLBlocklist',{str(i+1):v for i,v in enumerate(URL_BLOCKLIST)})
+        key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium\URLAllowlist',{str(i+1):v for i,v in enumerate(URL_ALLOWLIST)})
+    else:
+        key(r'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Supermium',{'ProxyMode':'fixed_servers','ProxyServer':GATEWAY_PROXY,'ProxyBypassList':GATEWAY_BYPASS,'HttpsOnlyMode':'force_enabled'})
     policy=r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'
     snap('HKCU',policy);key('HKEY_CURRENT_USER\\'+policy,{'NoInternetIcon':1,'NoActiveDesktop':1})
     for view in ['NewStartPanel','ClassicStartMenu']:
@@ -80,7 +98,8 @@ def generate(out,pin,software_rendering=False):
     snap('HKLM',r'Software\XP25\Browser')
     key(r'HKEY_LOCAL_MACHINE\SOFTWARE\XP25\Browser',{'Name':'Supermium','Version':pin['version'],'Release':pin['tag'],'PackageSHA256':pin['sha256'],'Path':r'C:\Program Files\Supermium\chrome.exe','SoftwareRendering':int(software_rendering),'UpdateMode':'Read-only host check; verified package and explicit approval required',
         'RendererSandbox':'Not available: Supermium disables renderer sandboxing before Windows 10','Containment':'SAFER Normal User token for XP25 entry points',
-        'InternetPolicy':'Blocked except local files, internal pages and approved hosts','WatchCompatibility':'XP25 pwrp_k32 proxy (thread-agnostic directory watches)'})
+        'InternetPolicy':'Blocked except local files, internal pages and approved hosts' if internet=='blocked' else 'HTTPS to public addresses through the host browser gateway '+GATEWAY_PROXY,
+        'WatchCompatibility':'XP25 pwrp_k32 proxy (thread-agnostic directory watches)'})
     (out/'associations.reg').write_bytes(('\r\n'.join(lines)+'\r\n').encode('utf-16'))
     cmd=['@echo off','setlocal','set B=%ProgramFiles%\\XP25Browser','set P=%ProgramFiles%\\Supermium',
          'if exist "%B%\\installed.ok" exit /b 0','if exist "%P%\\chrome.exe" exit /b 80',

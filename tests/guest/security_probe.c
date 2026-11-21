@@ -447,8 +447,10 @@ static void persistence_cases(void)
         wsprintfW(path, L"%s\\xp25-probe-%lu.lnk", folder, GetCurrentProcessId());
         file_create_denied("create_file_on_all_users_desktop", path);
     }
-    wsprintfW(path, L"%c:\\Program Files\\Internet Explorer\\iexplore.exe", windows[0]);
-    file_write_denied("open_internet_explorer_for_write", path);
+    /* A system program under Program Files (it was iexplore.exe, which XP25 images
+       without IE no longer have). */
+    wsprintfW(path, L"%c:\\Program Files\\Windows NT\\Accessories\\wordpad.exe", windows[0]);
+    file_write_denied("open_program_files_program_for_write", path);
     wsprintfW(path, L"%c:\\Program Files\\Common Files\\xp25-probe-%lu.tmp", windows[0], GetCurrentProcessId());
     file_create_denied("create_file_in_common_files", path);
     /* The broker's audit trail and whatever else XP25 keeps for all users. */

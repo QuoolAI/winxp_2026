@@ -75,6 +75,7 @@ def main():
     p.add_argument('--eval');p.add_argument('--navigate');p.add_argument('--close-browser',action='store_true')
     p.add_argument('--persistence',action='store_true')
     p.add_argument('--policy',action='store_true',help='require the image URL policy to block non-approved hosts')
+    p.add_argument('--open-internet',action='store_true',help='image policy --internet gateway: an unlisted public HTTPS site loads, a private address does not')
     a=p.parse_args();out=a.output.resolve()
     if '.work' not in out.parts:p.error('private .work evidence required')
     os.environ['NO_PROXY']='*';os.environ['no_proxy']='*'
@@ -133,6 +134,16 @@ def main():
             for name,url in [('lab_subdomain','http://blocked.xp25.test:8080/local.html?case=policy-blocked'),('public_site','https://www.wikipedia.org/')]:
                 nav=pg.call('Page.navigate',{'url':url});result['policy'][name]=nav
                 result['checks']['policy_blocks_'+name]=nav.get('errorText')=='net::ERR_BLOCKED_BY_ADMINISTRATOR'
+        if a.open_internet:
+            result['open_internet']={}
+            # No allowlist: any public HTTPS name the gateway can verify loads; a private address is refused.
+            for name,url,valid in [('public_site','https://www.wikipedia.org/',True),('metadata_address','https://169.254.169.254/',False)]:
+                pg.events=[];nav=pg.call('Page.navigate',{'url':url});state=loaded(pg,expected=url if valid else None)
+                details=[e['params']['response'].get('securityDetails') for e in pg.events if e.get('method')=='Network.responseReceived' and e['params'].get('type')=='Document']
+                result['open_internet'][name]={'navigation':nav,'page':state,'security_details':details}
+                if valid:ok=not nav.get('errorText') and state.get('url')==url and any(d and d.get('protocol') in ['TLS 1.2','TLS 1.3'] for d in details)
+                else:ok=bool(nav.get('errorText'))
+                result['checks']['open_internet_'+name]=ok
         browser.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':r'C:\xp25\browser\downloads','eventsEnabled':True})
         result['download_navigation']=pg.call('Page.navigate',{'url':'http://xp25.test:8080/download.txt'})
         # File writes can outlive the navigation response, especially under TCG.

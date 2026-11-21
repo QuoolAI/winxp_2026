@@ -7,9 +7,53 @@ first a copy of the engineering image
 `.work/winlogon-vm-20261118/image-01/XP25-Winlogon-Fix-8.2.qcow2`
 (SHA-256 `fe633d1570f042b3cc8f869ad0fe1f6fabfc0e048ab57437b8d5c6e89f1ec173`).
 From 2026-11-19 it ran the Milestone 8.4 Winlogon `289abb03…`
-([update](#update-to-the-milestone-84-winlogon-2026-11-19)). **Since 2026-11-20
+([update](#update-to-the-milestone-84-winlogon-2026-11-19)). Since 2026-11-20
 it runs the R-0 Winlogon `020eaf40…` and the R-1 `win32k.sys`, `user32.dll` and
-`gdi32.dll`** ([redeploy](#redeploy-with-r-0-and-r-1-2026-11-20)).
+`gdi32.dll` ([redeploy](#redeploy-with-r-0-and-r-1-2026-11-20)). **Since
+2026-11-21 Supermium is its only web browser and Internet Explorer is removed**
+([Supermium replaces IE](#supermium-replaces-internet-explorer-2026-11-21)).
+
+## Supermium replaces Internet Explorer, 2026-11-21
+
+The VM's own disk of 2026-11-20 (`6dbd3f88…00f6`), changed only by the
+Supermium installation and the IE removal, is now
+`W/image-02/XP25-Supermium-NoIE.qcow2`
+(`9e1e8f081b3ffc113aa4bf9f20e9b82097c681952c271b05fbf7a9e8f3e5b84d`), where `W` is
+`xp25-modernization/.work/supermium-vm-20261120` and `V` the VM directory,
+`xp25-winlogon-ui/.work/virt-manager-XP25-Winlogon-Fix-20261118`. What was deleted, kept and
+replaced, how the image was built, its tests and every step in the VM are in
+[supermium-replaces-ie.md](supermium-replaces-ie.md).
+
+- Disk: a reflink copy of `image-02`, which hashed `9e1e8f08…` before its first
+  boot. The previous disk is kept, unchanged, as `V/XP25-Winlogon-Fix.ie8.qcow2`.
+- Memory 1 GiB (was 512 MiB). NIC filter `xp25-browser-gateway`: the rules of
+  `xp25-gateway-only` plus TCP 3128 to `10.25.0.1`. DHCP reserves `10.25.0.26`.
+- The host user service `xp25-browser-gateway` tunnels HTTPS from `10.25.0.26` to
+  any public host name, and nothing else. It runs while the host account has a
+  session; `systemctl --user status xp25-browser-gateway` shows it.
+- Tests of the image (one-vCPU KVM overlays): browser regression through a
+  gateway 23/26 (the three false checks: Remote Registry disabled by the
+  baseline, and the documented coverage gap), `proof` 34/35 (the failure is
+  four USB drivers this disk already had; the unchanged reference disk fails the
+  same gate), screen-saver probe 10/10, switch oracle 9/9.
+- In the VM: the Start menu's Internet entry is Supermium, Run →
+  `https://www.wikipedia.org/` opened in Supermium, Run → `iexplore` is not
+  found, and logoff returns to a painted dialog. The VM was left running at the
+  logon dialog.
+
+**What changes for you.** Web links, `.htm`, `.html` and `.url` files open in
+Supermium. HTTPS sites load through the host. The gateway carries no plain HTTP,
+so a site without HTTPS does not load; Supermium's HTTPS-only policy is set to
+upgrade typed `http://` addresses (set by policy, not separately tested). Help and Support,
+`.chm` help, `.hta`, `.js` and `.vbs` files, Outlook Express HTML mail and the
+Network Setup Wizard no longer work. Control Panel → User Accounts opens the
+classic dialog.
+
+To go back, shut the VM down, move `V/XP25-Winlogon-Fix.qcow2` away, rename
+`V/XP25-Winlogon-Fix.ie8.qcow2` to `V/XP25-Winlogon-Fix.qcow2`, and redefine the
+domain from `W/XP25-Winlogon-Fix.before.xml` (512 MiB, filter
+`xp25-gateway-only`). `systemctl --user disable --now xp25-browser-gateway`
+stops the gateway.
 
 ## Redeploy with R-0 and R-1, 2026-11-20
 
@@ -297,9 +341,9 @@ except:
 
 | Setting | Value |
 | --- | --- |
-| Disk | `XP25-Winlogon-Fix.qcow2` (IDE `hda`, writeback), a standalone reflink copy. It hashed equal to its image before its first boot (`fe633d15…` on 2026-11-18, `471e1b06…` on 2026-11-19) |
-| NIC | RTL8139, MAC `52:54:00:25:00:07`, network `XP25-Isolated`, filter `xp25-gateway-only` (`GATEWAY_IP` 10.25.0.1, `GATEWAY_PORT` 8443). No route off the host |
-| Profile | KVM `i686`, `pc-i440fx-8.2`, `qemu32`, **1 vCPU** (the image boots the uniprocessor kernel and HAL), 512 MiB |
+| Disk | `XP25-Winlogon-Fix.qcow2` (IDE `hda`, writeback), a standalone reflink copy. It hashed equal to its image before its first boot (`fe633d15…` on 2026-11-18, `471e1b06…` on 2026-11-19, `c5183228…` on 2026-11-20, `9e1e8f08…` on 2026-11-21) |
+| NIC | RTL8139, MAC `52:54:00:25:00:07`, network `XP25-Isolated` (reserved `10.25.0.26` since 2026-11-21), filter `xp25-browser-gateway` since 2026-11-21 (`GATEWAY_IP` 10.25.0.1, `GATEWAY_PORT` 8443, `BROWSER_PORT` 3128; before, `xp25-gateway-only` without the browser port). No route off the host |
+| Profile | KVM `i686`, `pc-i440fx-8.2`, `qemu32`, **1 vCPU** (the image boots the uniprocessor kernel and HAL), 1 GiB since 2026-11-21 (512 MiB before) |
 | Console | VNC on the host's loopback interface only, autoport. COM1 to `serial.log` (root-only while libvirt runs it) |
 
 `virt-xml-validate` accepted the XML.

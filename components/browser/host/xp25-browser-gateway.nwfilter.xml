@@ -1,0 +1,38 @@
+<!-- The XP25-Winlogon-Fix VM's NIC filter: the rules of xp25-gateway-only (DHCP, DNS and ICMP to
+     the host, and the AI gateway port), plus the browser gateway port. Nothing else leaves the NIC.
+     Parameters: GATEWAY_IP (10.25.0.1), GATEWAY_PORT (8443), BROWSER_PORT (3128). -->
+<filter name='xp25-browser-gateway' chain='root'>
+  <filterref filter='no-mac-spoofing'/>
+  <filterref filter='allow-arp'/>
+  <rule action='accept' direction='out' priority='100'>
+    <ip protocol='udp' srcportstart='68' dstportstart='67'/>
+  </rule>
+  <rule action='accept' direction='in' priority='100'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='67' dstportstart='68'/>
+  </rule>
+  <rule action='accept' direction='out' priority='200'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='udp' dstportstart='53'/>
+  </rule>
+  <rule action='accept' direction='in' priority='200'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='53'/>
+  </rule>
+  <rule action='accept' direction='out' priority='300'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='in' priority='300'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='out' priority='400'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$GATEWAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='400'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$GATEWAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='out' priority='450'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$BROWSER_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='450'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$BROWSER_PORT'/>
+  </rule>
+  <filterref filter='no-other-l2-traffic'/>
+</filter>
