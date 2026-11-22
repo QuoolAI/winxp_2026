@@ -13,6 +13,10 @@
       the toolchain and reference files, and runs install-builder.sh in the VM.
   builder_vm.py register --dir DIR --installation ID | --agent NAME --installations ID[,ID]
       creates credentials on the builder and prints them once.
+  builder_vm.py provider --dir DIR --kind openai|anthropic --model MODEL [--key-file FILE] [--endpoint URL]
+      installs the model provider's API key on the builder (read from FILE, from stdin, or
+      typed without echo; never printed or stored on the host), points the builder's
+      configuration at it, restarts the services and checks the key against the provider.
   builder_vm.py ssh --dir DIR -- COMMAND...
 
 Nothing here depends on the builder running on this host except the read-only
@@ -267,6 +271,54 @@ def register(args):
     print(r.stdout.strip())
 
 
+def provider(args):
+    import getpass
+    d = args.dir.resolve()
+    ip = json.loads((d / 'builder-vm.json').read_text())['ip']
+    if args.key_file:
+        key = Path(args.key_file).read_text().strip()
+    elif not sys.stdin.isatty():
+        key = sys.stdin.readline().strip()
+    else:
+        key = getpass.getpass('%s API key (not shown): ' % args.kind).strip()
+    if not key or any(c.isspace() for c in key) or len(key) > 512:
+        raise SystemExit('no usable key given')
+    settings = {'kind': args.kind, 'model': args.model, 'key_file': '/etc/merlin-builder/provider.key',
+                'max_steps': args.max_steps}
+    if args.endpoint:
+        settings['endpoint'] = args.endpoint
+    # The key travels only over the SSH channel's stdin into a root-owned file the runner's group can read.
+    run(ssh_base(d, ip) + ['sudo sh -c "umask 077; cat > /etc/merlin-builder/provider.key.new && '
+                           'chown root:merlinsvc /etc/merlin-builder/provider.key.new && '
+                           'chmod 0640 /etc/merlin-builder/provider.key.new && '
+                           'mv /etc/merlin-builder/provider.key.new /etc/merlin-builder/provider.key"'], input=key + '\n')
+    update = ('import json; p="/etc/merlin-builder/config.json"; c=json.load(open(p)); c["provider"]=%s; '
+              'open(p,"w").write(json.dumps(c,indent=1)+"\\n"); '
+              'open("/etc/merlin-builder/provider.json","w").write(json.dumps(c["provider"])+"\\n")') % json.dumps(settings)
+    run(ssh_base(d, ip) + ['sudo python3 -c ' + shlex_quote(update) +
+                           ' && sudo systemctl restart merlin-builder-api merlin-builder-runner'])
+    # The header reaches curl through its config on stdin (printf is a shell builtin), never on a command line.
+    if args.kind == 'openai':
+        header = 'Authorization: Bearer '
+        url = (args.endpoint or 'https://api.openai.com').rstrip('/') + '/v1/models/' + args.model
+        extra = ''
+    else:
+        header = 'x-api-key: '
+        url = (args.endpoint or 'https://api.anthropic.com').rstrip('/') + '/v1/models'
+        extra = ' -H "anthropic-version: 2023-06-01"'
+    probe = ('printf \'header = "%s%%s"\\n\' "$(cat /etc/merlin-builder/provider.key)" | '
+             'curl -K - -s -o /dev/null -w "%%{http_code}" --max-time 20%s %s') % (header, extra, url)
+    status = run(ssh_base(d, ip) + ['sudo sh -c ' + shlex_quote(probe)]).stdout.strip()
+    print(json.dumps({'provider': {k: v for k, v in settings.items()}, 'key_characters': len(key),
+                      'provider_check_http_status': status, 'accepted': status == '200'}))
+    return 0 if status == '200' else 1
+
+
+def shlex_quote(text):
+    import shlex
+    return shlex.quote(text)
+
+
 def ssh(args):
     d = args.dir.resolve()
     record = json.loads((d / 'builder-vm.json').read_text())
@@ -300,11 +352,19 @@ def main():
     p.add_argument('--installation')
     p.add_argument('--agent')
     p.add_argument('--installations', default='')
+    p = sub.add_parser('provider')
+    p.add_argument('--dir', type=Path, required=True)
+    p.add_argument('--kind', choices=('openai', 'anthropic'), required=True)
+    p.add_argument('--model', required=True)
+    p.add_argument('--key-file', type=Path)
+    p.add_argument('--endpoint')
+    p.add_argument('--max-steps', type=int, default=30)
     p = sub.add_parser('ssh')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    return {'provision': provision, 'bootstrap': bootstrap, 'register': register, 'ssh': ssh}[args.action](args) or 0
+    return {'provision': provision, 'bootstrap': bootstrap, 'register': register, 'provider': provider,
+            'ssh': ssh}[args.action](args) or 0
 
 
 if __name__ == '__main__':

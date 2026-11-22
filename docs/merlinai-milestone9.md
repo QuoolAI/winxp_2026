@@ -422,8 +422,12 @@ for a builder elsewhere (plain HTTP only to a private address).
 * **No AI model was used.** The model investigators are implemented and tested
   only against local mock servers. Every recorded job was decided by the
   offline rule-based investigator, which handles one fault class. A real run
-  needs a provider key on the builder (`/etc/merlin-builder/provider.key` and
-  `provider.json`, then a re-bootstrap). It has not been done.
+  needs a provider key on the builder. `builder_vm.py provider --dir DIR --kind
+  openai --model gpt-4.1` installs one: the key is typed without echo or read
+  from stdin, travels only over SSH into `/etc/merlin-builder/provider.key`
+  (root:merlinsvc 0640), and is checked against the provider. The command was
+  verified with a fake key (rejected with 401; the builder was then set back to
+  the offline investigator). No real key is installed yet.
 * Only MerlinAI's own components are rebuilt by the pipeline. Fixes to other
   XP25 components (Winlogon, source-built Microsoft components) are reported
   but not built. Binary-only components cannot be fixed.

@@ -2,6 +2,19 @@
 
 ## Current checkpoint
 
+2026-11-22, worktrees consolidated. Every branch is contained in `xp25-nt`
+(pushed together with `xp25-merlin`). The checkouts of `xp25-ai`,
+`xp25-security`, `xp25-cve`, `xp25-winlogon-ui` and `xp25-modernization`
+were removed after checking that each was clean and contained. Each held its
+own 6 GB copy of `Source/`; free space went from 19 GB to 49 GB. Their
+`.work/` evidence and VM disks stay in place, because VMs and backing chains use
+those absolute paths. Where each milestone's evidence now lives:
+[evidence-locations.md](evidence-locations.md). The browser gateway's user
+service was repointed to the main checkout; the XP25-Winlogon-Fix VM it
+serves was off. `xp25-merlin` stays a worktree for the running MerlinAI
+services and VMs. `builder_vm.py provider` installs a model-provider key on
+the MerlinAI builder without it passing through the host's files.
+
 2026-11-21, Milestone 9 MerlinAI (`xp25-merlin`, commits `abd27bd87` 9A,
 `7da02d0dc` 9B/9C, `39c4e3848`, `829956389`, `8069b7d4c`; evidence
 `.work/merlin-20261121/`). MerlinAI replaces Microsoft error reporting and the
