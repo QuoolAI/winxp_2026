@@ -351,6 +351,26 @@ class DeployAgentTests(unittest.TestCase):
             agent.fetch_update(inst, request)
         self.assertIn('does not show this job', str(seen.exception))
 
+    def test_update_that_creates_a_file_is_refused_before_shutdown(self):
+        # ntfscp gives a new file no security descriptor, so an update may only replace existing files.
+        import hashlib
+        self.agent.agent.offline_check = lambda inst: None
+        content = b'new file\r\n'
+        job = self.job(ready=False)
+        delta = self.store.job_dir(job) / 'delta'
+        (delta / 'files').mkdir(parents=True)
+        (delta / 'files' / '000.bin').write_bytes(content)
+        manifest = json.dumps({'schema': 'xp25-merlin-delta/1', 'job': job, 'installation': 'inst-a', 'revision': 'r2',
+                               'files': [{'guest_path': '/xp25/new.txt', 'sha256': hashlib.sha256(content).hexdigest(),
+                                          'expected_before': None}]}).encode()
+        (delta / 'manifest.json').write_bytes(manifest)
+        digest = hashlib.sha256(manifest).hexdigest()
+        self.store.update(job, public={'status': 'ready', 'ready_to_apply': True, 'candidate': {'delta_sha256': digest}})
+        status, data = self.client().call('POST', '/apply', self.approval(job, delta=digest))
+        self.assertEqual(status, 409)
+        self.assertIn('without access control', json.loads(data)['detail'])
+        self.assertEqual(json.loads(self.client().call('GET', '/status')[1])['state'], 'idle')
+
     def test_health_reports_are_recorded(self):
         status, _ = self.client().call('POST', '/health', json.dumps({'revision': 'r1', 'winlogon_running': True}).encode())
         self.assertEqual(status, 200)

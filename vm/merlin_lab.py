@@ -53,6 +53,10 @@ call :mark XP25_MERLIN_SUITE_STARTED
 mkdir "%P%" 2>nul
 for %%F in (MerlinClient.dll MerlinCrash.exe MerlinAI.exe MerlinAI.cpl MerlinSvc.exe MerlinTest.exe) do copy /y C:\xp25\merlin-%%F "%P%\%%F" >nul
 copy /y C:\xp25\merlin-merlintest.ini C:\xp25\merlintest.ini >nul
+rem Created here, not offline: a file written by ntfscp has no security descriptor (no access control).
+del /q C:\xp25\image-revision.txt 2>nul
+copy /y C:\xp25\merlin-image-revision.txt C:\xp25\image-revision.txt >nul
+del /q C:\xp25\merlin-image-revision.txt
 rem What the shell's Control Panel shows before MerlinAI is installed.
 C:\xp25\merlin-merlin_probe.exe cpl
 "%P%\MerlinAI.exe" /install
@@ -152,6 +156,10 @@ call :mark XP25_MERLIN_SUITE_STARTED
 mkdir "%P%" 2>nul
 for %%F in (MerlinClient.dll MerlinCrash.exe MerlinAI.exe MerlinAI.cpl MerlinSvc.exe MerlinTest.exe) do copy /y C:\xp25\merlin-%%F "%P%\%%F" >nul
 copy /y C:\xp25\merlin-merlintest.ini C:\xp25\merlintest.ini >nul
+rem Created here, not offline: a file written by ntfscp has no security descriptor (no access control).
+del /q C:\xp25\image-revision.txt 2>nul
+copy /y C:\xp25\merlin-image-revision.txt C:\xp25\image-revision.txt >nul
+del /q C:\xp25\merlin-image-revision.txt
 "%P%\MerlinAI.exe" /install
 reg add "HKLM\SOFTWARE\XP25\MerlinAI" /v Builder /t REG_SZ /d http://10.25.0.1:8740 /f >nul
 reg add "HKLM\SOFTWARE\XP25\MerlinAI" /v Deploy /t REG_SZ /d http://10.25.0.1:8746 /f >nul
@@ -224,7 +232,7 @@ def launch(args):
     files = {'/xp25/merlin-' + n: build / n for n in BINARIES}
     files['/xp25/merlin-merlintest.ini'] = ROOT / 'components/merlin/testapp/merlintest.ini'
     files['/xp25/merlin-suite.cmd'] = out / 'merlin-suite.cmd'
-    files['/xp25/image-revision.txt'] = out / 'image-revision.txt'
+    files['/xp25/merlin-image-revision.txt'] = out / 'image-revision.txt'
     files[STARTUP] = out / 'XP25Merlin.cmd'
     lab.run(['qemu-img', 'create', '-f', 'qcow2', '-F', 'qcow2', '-b', base, 'disk.qcow2'])
     staged = {}

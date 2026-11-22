@@ -216,14 +216,16 @@ class Job:
                         raise StepFailed('offline replacement of %s did not take effect' % info['guest_path'])
                     files.append({'guest_path': info['guest_path'], 'sha256': sha(new), 'bytes': new.stat().st_size,
                                   'expected_before': hashlib.sha256(before).hexdigest(), 'component': info['target']})
-                old_revision = b''
+                # Files are only replaced offline, never created: a file written by ntfscp gets no security
+                # descriptor, so it would be writable by every account. The baseline must carry the revision file.
                 try:
                     old_revision = lab.run(['ntfscat', device, '/xp25/image-revision.txt'])
                 except RuntimeError:
-                    pass
+                    raise StepFailed('the baseline image has no C:\\xp25\\image-revision.txt; a new file cannot be created '
+                                     'offline with access control')
                 lab.run(['ntfscp', device, str(revision_file), '/xp25/image-revision.txt'])
                 files.append({'guest_path': '/xp25/image-revision.txt', 'sha256': sha(revision_file), 'bytes': revision_file.stat().st_size,
-                              'expected_before': hashlib.sha256(old_revision).hexdigest() if old_revision else None,
+                              'expected_before': hashlib.sha256(old_revision).hexdigest(),
                               'component': 'image revision'})
         finally:
             os.chdir(cwd)

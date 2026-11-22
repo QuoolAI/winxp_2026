@@ -17,7 +17,13 @@
       installation its own builder credential in the agent. Keys cross into the
       guest only this way or by typing them
       into MerlinAI Settings; the staged file's clusters may persist in NTFS free
-      space after deletion (documented limitation of offline enrollment)."""
+      space after deletion (documented limitation of offline enrollment).
+
+      SECURITY: ntfscp gives the staged files no security descriptor, so until the
+      first XP25 logon runs and deletes them, every account on the VM can read the
+      keys. Use offline enrollment only for a VM no other account can log on to;
+      otherwise type MerlinAI.exe /configure ... in an administrator's console in
+      the guest (no file, no Run history)."""
 import argparse
 import json
 import os
@@ -148,6 +154,8 @@ def enroll(args):
     finally:
         os.chdir(cwd)
     script.unlink()                                   # the keys stay only in deploy.key (host) and the guest
+    print('warning: the staged enrollment script has no access control until the first XP25 logon deletes it; '
+          'use this only for a VM no other account can log on to', file=sys.stderr)
     print(json.dumps({'installation': args.installation, 'deploy_key_file': str(key_file), 'agent_config': str(cfg_path),
                       'staged': ['/xp25/merlin-enroll.cmd', 'Startup/XP25MerlinEnroll.cmd']}))
 

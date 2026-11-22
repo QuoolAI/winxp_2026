@@ -23,7 +23,9 @@ Apply, in order:
      ACPI power-button request); nothing happens to a running VM;
   5. keep the current disk unchanged: a new QCOW2 overlay on it receives the
      update offline, each file only if its installed SHA-256 is the expected
-     one (otherwise the update is refused and the VM restarts unchanged);
+     one (otherwise the update is refused and the VM restarts unchanged).
+     Files are only replaced, never created: ntfscp keeps a replaced file's
+     security descriptor but gives a new file none (writable by everyone);
   6. switch the domain's system disk to the overlay (only the disk source in
      the domain definition changes) and start it;
   7. wait for MerlinSvc's health report with the new revision (Winlogon, event
@@ -210,6 +212,8 @@ class Agent:
         for i, f in enumerate(manifest['files']):
             if not GUEST_PATH.match(f.get('guest_path', '')) or '..' in f['guest_path'] or not protocol.HEX64.match(f.get('sha256', '')):
                 raise PermissionError('the update names a guest path or hash the agent does not accept')
+            if not protocol.HEX64.match(f.get('expected_before') or ''):
+                raise PermissionError('the update would create %s offline, without access control' % f['guest_path'])
             status, content = builder.call('GET', '/agent/jobs/%s/delta/files/%d' % (job, i))
             if status != 200 or hashlib.sha256(content).hexdigest() != f['sha256']:
                 raise PermissionError('update file %d does not match the manifest' % i)
@@ -263,6 +267,9 @@ class Agent:
         try:
             with lab.partition(overlay, True) as device:
                 for i, f in enumerate(manifest['files']):
+                    if not f.get('expected_before'):
+                        # ntfscp would create it without a security descriptor: writable by every account.
+                        raise PermissionError('the update would create %s offline, without access control' % f['guest_path'])
                     try:
                         before = lab.run(['ntfscat', device, f['guest_path']])
                     except RuntimeError:
