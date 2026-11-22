@@ -46,6 +46,7 @@ rm -f /etc/udev/rules.d/60-merlin-images.rules
 cat > /etc/udev/rules.d/99-merlin-images.rules <<'RULES'
 KERNEL=="vd*", ENV{ID_SERIAL}=="merlin-baseline", GROUP="merlinimg", MODE="0440"
 KERNEL=="vd*", ENV{ID_SERIAL}=="merlin-buildvm", GROUP="merlinimg", MODE="0440"
+KERNEL=="vd*", ENV{ID_SERIAL}=="merlin-bl-*", GROUP="merlinimg", MODE="0440"
 RULES
 udevadm control --reload && udevadm trigger --subsystem-match=block
 for d in merlin-baseline merlin-buildvm; do
@@ -125,6 +126,17 @@ cat > /etc/merlin-builder/config.json <<CONFIG
             "installation_quota_bytes": 268435456, "max_open_jobs_per_installation": 2, "job_disk_reserve_gb": 15}
 }
 CONFIG
+# Baselines added later (add-baseline.sh) stay configured.
+if ls /etc/merlin-builder/baselines.d/*.json >/dev/null 2>&1; then
+  python3 - <<'PY'
+import glob, json, os
+path = '/etc/merlin-builder/config.json'
+config = json.load(open(path))
+for f in sorted(glob.glob('/etc/merlin-builder/baselines.d/*.json')):
+    config['baselines'][os.path.basename(f)[:-5]] = json.load(open(f))
+open(path, 'w').write(json.dumps(config, indent=1) + '\n')
+PY
+fi
 chmod 0644 /etc/merlin-builder/config.json
 if [ -f /etc/merlin-builder/provider.key ]; then chown root:merlinsvc /etc/merlin-builder/provider.key; chmod 0640 /etc/merlin-builder/provider.key; fi
 

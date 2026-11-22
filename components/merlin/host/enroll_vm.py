@@ -7,11 +7,15 @@
       libvirt domain with the XP25 hardware profile (1 vCPU, 1 GiB, IDE, RTL8139,
       VNC on 127.0.0.1, COM1 to DIR/serial.log). Nothing else changes.
   enroll_vm.py enroll --dir DIR --installation ID --builder-key HEX --agent-config FILE
+                      [--disk-dir DIR] [--builder-agent NAME --builder-agent-key-file FILE]
       with the VM shut off: a new deployment key (DIR/deploy.key, 0600), the
       installation added to the deployment agent's configuration, and a one-time
       logon script staged into the guest that runs
       MerlinAI.exe /configure <relay> <agent> ID <builder key> <deploy key> and
-      deletes itself. Keys cross into the guest only this way or by typing them
+      deletes itself. --disk-dir names where the VM's disks live when that is
+      not DIR (the agent creates overlays only there); --builder-agent gives the
+      installation its own builder credential in the agent. Keys cross into the
+      guest only this way or by typing them
       into MerlinAI Settings; the staged file's clusters may persist in NTFS free
       space after deletion (documented limitation of offline enrollment)."""
 import argparse
@@ -120,8 +124,11 @@ def enroll(args):
         f.write(deploy_key + '\n')
     cfg_path = args.agent_config.resolve()
     cfg = json.loads(cfg_path.read_text())
-    cfg.setdefault('installations', {})[args.installation] = {'deploy_key_file': str(key_file), 'domain': vm['name'],
-                                                              'disk_dir': str(d), 'client': vm['ip']}
+    entry = {'deploy_key_file': str(key_file), 'domain': vm['name'],
+             'disk_dir': str(args.disk_dir.resolve() if args.disk_dir else d), 'client': vm['ip']}
+    if args.builder_agent:
+        entry.update(builder_agent=args.builder_agent, builder_key_file=str(args.builder_agent_key_file.resolve()))
+    cfg.setdefault('installations', {})[args.installation] = entry
     cfg_path.write_text(json.dumps(cfg, indent=1) + '\n')
     work = d / 'enroll'
     work.mkdir(exist_ok=True)
@@ -159,6 +166,9 @@ def main():
     p.add_argument('--installation', required=True)
     p.add_argument('--builder-key', required=True)
     p.add_argument('--agent-config', type=Path, required=True)
+    p.add_argument('--disk-dir', type=Path)
+    p.add_argument('--builder-agent')
+    p.add_argument('--builder-agent-key-file', type=Path)
     args = parser.parse_args()
     return {'create': create, 'enroll': enroll}[args.action](args) or 0
 

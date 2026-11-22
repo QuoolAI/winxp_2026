@@ -330,6 +330,27 @@ class DeployAgentTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(json.loads((inst.dir / 'state.json').read_text())['i'], 199)
 
+    def test_installation_with_its_own_builder_credential(self):
+        d = Path(self.dir.name)
+        self.store.register_installation('inst-c', 'xp25-m9')
+        (d / 'agent2.key').write_text(self.store.register_agent('host-2', ['inst-c']))
+        (d / 'deploy-c.key').write_text(bytes(range(2, 34)).hex())
+        cfg = {'listen': '127.0.0.1:0', 'state': str(d / 'state2'),
+               'builder': {'url': 'http://127.0.0.1:%d' % self.builder.server_address[1], 'agent': 'host-1',
+                           'key_file': str(d / 'agent.key')},
+               'installations': {'inst-c': {'deploy_key_file': str(d / 'deploy-c.key'), 'domain': 'NoSuchDomain-c', 'disk_dir': str(d),
+                                            'builder_agent': 'host-2', 'builder_key_file': str(d / 'agent2.key')}}}
+        agent = self.mod.Agent(cfg)
+        inst = agent.installations['inst-c']
+        request = json.loads(self.approval(self.job(inst='inst-c')))
+        with self.assertRaises(PermissionError) as seen:    # host-2 sees the job; it has no update content yet
+            agent.fetch_update(inst, request)
+        self.assertIn('manifest', str(seen.exception))
+        agent.clients.clear()                               # host-1 alone does not serve inst-c
+        with self.assertRaises(PermissionError) as seen:
+            agent.fetch_update(inst, request)
+        self.assertIn('does not show this job', str(seen.exception))
+
     def test_health_reports_are_recorded(self):
         status, _ = self.client().call('POST', '/health', json.dumps({'revision': 'r1', 'winlogon_running': True}).encode())
         self.assertEqual(status, 200)

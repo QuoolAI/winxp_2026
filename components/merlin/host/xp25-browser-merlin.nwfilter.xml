@@ -1,0 +1,66 @@
+<!--
+  libvirt network filter for an XP25 VM with the Supermium browser gateway and
+  MerlinAI (the XP25-Winlogon-Fix VM): the rules of xp25-browser-gateway plus
+  the MerlinAI relay and deployment agent, all on the host's bridge address.
+  The guest may:
+    - get DHCP and use DNS and ICMP at the gateway (the host);
+    - open TCP connections to the host only, on the XP25 AI gateway port, the
+      browser gateway port, the MerlinAI relay port and the deployment agent port.
+  Everything else is dropped (ebtables level, no br_netfilter needed).
+
+    virsh -c qemu:///system nwfilter-define xp25-browser-merlin.nwfilter.xml
+    <filterref filter='xp25-browser-merlin'>
+      <parameter name='GATEWAY_IP' value='10.25.0.1'/>
+      <parameter name='GATEWAY_PORT' value='8443'/>
+      <parameter name='BROWSER_PORT' value='3128'/>
+      <parameter name='RELAY_PORT' value='8740'/>
+      <parameter name='DEPLOY_PORT' value='8746'/>
+    </filterref>
+-->
+<filter name='xp25-browser-merlin' chain='root'>
+  <filterref filter='no-mac-spoofing'/>
+  <filterref filter='allow-arp'/>
+  <rule action='accept' direction='out' priority='100'>
+    <ip protocol='udp' srcportstart='68' dstportstart='67'/>
+  </rule>
+  <rule action='accept' direction='in' priority='100'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='67' dstportstart='68'/>
+  </rule>
+  <rule action='accept' direction='out' priority='200'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='udp' dstportstart='53'/>
+  </rule>
+  <rule action='accept' direction='in' priority='200'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='udp' srcportstart='53'/>
+  </rule>
+  <rule action='accept' direction='out' priority='300'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='in' priority='300'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='icmp'/>
+  </rule>
+  <rule action='accept' direction='out' priority='400'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$GATEWAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='400'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$GATEWAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='out' priority='450'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$BROWSER_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='450'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$BROWSER_PORT'/>
+  </rule>
+  <rule action='accept' direction='out' priority='500'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$RELAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='500'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$RELAY_PORT'/>
+  </rule>
+  <rule action='accept' direction='out' priority='510'>
+    <ip dstipaddr='$GATEWAY_IP' protocol='tcp' dstportstart='$DEPLOY_PORT'/>
+  </rule>
+  <rule action='accept' direction='in' priority='510'>
+    <ip srcipaddr='$GATEWAY_IP' protocol='tcp' srcportstart='$DEPLOY_PORT'/>
+  </rule>
+  <filterref filter='no-other-l2-traffic'/>
+</filter>

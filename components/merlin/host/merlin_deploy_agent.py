@@ -164,7 +164,17 @@ class Agent:
         self.installations = {n: Installation(n, c, self.state_root) for n, c in cfg['installations'].items()}
         b = cfg['builder']
         self.builder = protocol.Client(b['url'], b['agent'], bytes.fromhex(Path(b['key_file']).read_text().strip()))
+        # An installation may have its own builder credential (builder_agent, builder_key_file): it can then read
+        # only that installation's jobs, whatever else the default credential serves.
+        self.clients = {}
+        for name, c in cfg['installations'].items():
+            if c.get('builder_agent'):
+                self.clients[name] = protocol.Client(b['url'], c['builder_agent'],
+                                                     bytes.fromhex(Path(c['builder_key_file']).read_text().strip()))
         self.challenges = protocol.Challenges()
+
+    def builder_for(self, inst):
+        return self.clients.get(inst.name, self.builder)
 
     def key(self, name):
         inst = self.installations.get(name)
@@ -175,7 +185,8 @@ class Agent:
         job, delta_sha = request.get('job', ''), request.get('delta_sha256', '')
         if not JOB.match(job) or not protocol.HEX64.match(delta_sha):
             raise ValueError('job and delta_sha256 are required')
-        status, data = self.builder.call('GET', '/agent/jobs/' + job)
+        builder = self.builder_for(inst)
+        status, data = builder.call('GET', '/agent/jobs/' + job)
         if status != 200:
             raise PermissionError('the builder does not show this job to this agent (%d)' % status)
         record = json.loads(data)
@@ -185,7 +196,7 @@ class Agent:
             raise PermissionError('the job is not ready to apply (%s)' % record.get('status'))
         if record.get('candidate', {}).get('delta_sha256') != delta_sha:
             raise PermissionError('the approved update is not the one the builder recorded for this job')
-        status, manifest_bytes = self.builder.call('GET', '/agent/jobs/%s/delta/manifest' % job)
+        status, manifest_bytes = builder.call('GET', '/agent/jobs/%s/delta/manifest' % job)
         if status != 200 or hashlib.sha256(manifest_bytes).hexdigest() != delta_sha:
             raise PermissionError('the update manifest does not match the approved hash')
         manifest = json.loads(manifest_bytes)
@@ -199,7 +210,7 @@ class Agent:
         for i, f in enumerate(manifest['files']):
             if not GUEST_PATH.match(f.get('guest_path', '')) or '..' in f['guest_path'] or not protocol.HEX64.match(f.get('sha256', '')):
                 raise PermissionError('the update names a guest path or hash the agent does not accept')
-            status, content = self.builder.call('GET', '/agent/jobs/%s/delta/files/%d' % (job, i))
+            status, content = builder.call('GET', '/agent/jobs/%s/delta/files/%d' % (job, i))
             if status != 200 or hashlib.sha256(content).hexdigest() != f['sha256']:
                 raise PermissionError('update file %d does not match the manifest' % i)
             (stage / ('%03d.bin' % i)).write_bytes(content)
@@ -399,13 +410,13 @@ class Agent:
             st = inst.state()
             st.update(operation='idle', last_refusal={'time': now(), 'job': job, 'reason': str(e)})
             inst.save(st)
-            self.report(job, 'refused', str(e))
+            self.report(inst, job, 'refused', str(e))
             return
         os.chmod(current, 0o444)                         # now a backing file: never written again
         inst.journal(event='apply_written', job=job, overlay=str(overlay), base=str(current), files=applied)
         ok = self.deploy(inst, overlay, manifest['revision'], 'apply', {'by': request.get('approved_by'), 'at': request.get('approved_at'),
                                                                        'sha256': approval_hash}, job)
-        self.report(job, 'applied' if ok else 'failed_health_check',
+        self.report(inst, job, 'applied' if ok else 'failed_health_check',
                     'healthy' if ok else 'no healthy report; the previous system image was restored')
 
     def run_rollback(self, inst, request, approval_hash):
@@ -429,9 +440,10 @@ class Agent:
         self.deploy(inst, target, previous['revision'] or 'unrecorded', 'rollback',
                     {'by': request.get('approved_by'), 'at': request.get('approved_at'), 'sha256': approval_hash})
 
-    def report(self, job, outcome, detail):
+    def report(self, inst, job, outcome, detail):
         try:
-            self.builder.call('POST', '/agent/jobs/%s/deployed' % job, json.dumps({'outcome': outcome, 'detail': detail[:500]}).encode())
+            self.builder_for(inst).call('POST', '/agent/jobs/%s/deployed' % job,
+                                        json.dumps({'outcome': outcome, 'detail': detail[:500]}).encode())
         except (ConnectionError, PermissionError, OSError) as e:
             print(json.dumps({'event': 'builder_report_failed', 'error': str(e)}), flush=True)
 

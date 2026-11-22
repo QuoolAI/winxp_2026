@@ -11,8 +11,14 @@
                           --toolchain DIR --reference DIR
       waits for SSH, copies a source-only snapshot of REPO at COMMIT (no Source/),
       the toolchain and reference files, and runs install-builder.sh in the VM.
-  builder_vm.py register --dir DIR --installation ID | --agent NAME --installations ID[,ID]
-      creates credentials on the builder and prints them once.
+  builder_vm.py add-baseline --dir DIR --name NAME --image QCOW2 --repo REPO --commit COMMIT --revision TEXT
+                             [--symbols DIR]
+      another approved image (its manifest.json beside it) as a read-only disk of the builder, the
+      source snapshot it was built from, and the linker maps of its MerlinAI build; installations
+      registered with --baseline NAME are then built and tested on it.
+  builder_vm.py register --dir DIR --installation ID [--baseline NAME] | --agent NAME --installations ID[,ID]
+      creates credentials on the builder (an installation on the default baseline unless
+      --baseline names another) and prints them once.
   builder_vm.py provider --dir DIR --kind openai|anthropic --model MODEL [--key-file FILE] [--endpoint URL]
       installs the model provider's API key on the builder (read from FILE, from stdin, or
       typed without echo; never printed or stored on the host), points the builder's
@@ -209,8 +215,8 @@ def wait_ssh(d, ip, timeout=1200):
     raise TimeoutError('SSH or cloud-init did not finish')
 
 
-def snapshot_bundle(repo, commit, out):
-    """A source-only snapshot of REPO at COMMIT (Source/ and .work/ excluded) as a one-commit git bundle."""
+def snapshot_bundle(repo, commit, out, branch='baseline'):
+    """A source-only snapshot of REPO at COMMIT (Source/ and .work/ excluded) as a one-commit git bundle on BRANCH."""
     with tempfile.TemporaryDirectory() as tmp:
         tree = Path(tmp) / 'tree'
         tree.mkdir()
@@ -220,11 +226,11 @@ def snapshot_bundle(repo, commit, out):
         env = dict(os.environ, GIT_AUTHOR_NAME='MerlinAI baseline', GIT_AUTHOR_EMAIL='merlin@xp25.invalid',
                    GIT_COMMITTER_NAME='MerlinAI baseline', GIT_COMMITTER_EMAIL='merlin@xp25.invalid',
                    GIT_AUTHOR_DATE='2026-11-21T00:00:00Z', GIT_COMMITTER_DATE='2026-11-21T00:00:00Z')
-        run(['git', 'init', '-q', '-b', 'baseline', tree])
+        run(['git', 'init', '-q', '-b', branch, tree])
         run(['git', '-C', tree, 'add', '-A'], env=env)
         run(['git', '-C', tree, 'commit', '-q', '-m', 'XP25 approved baseline for MerlinAI (source snapshot of %s without Source/)' % commit], env=env)
         snap = run(['git', '-C', tree, 'rev-parse', 'HEAD']).stdout.strip()
-        run(['git', '-C', tree, 'bundle', 'create', '-q', out, 'baseline'])
+        run(['git', '-C', tree, 'bundle', 'create', '-q', out, branch])
         return snap
 
 
@@ -258,6 +264,76 @@ def bootstrap(args):
     return 0 if record['ready'] else 1
 
 
+READONLY_DISK = """<disk type='file' device='disk'>
+  <driver name='qemu' type='qcow2'/>
+  <source file='{source}'/>
+  <target dev='{dev}' bus='virtio'/>
+  <readonly/>
+  <serial>{serial}</serial>
+</disk>
+"""
+
+
+def add_baseline(args):
+    import re
+    d = args.dir.resolve()
+    record = json.loads((d / 'builder-vm.json').read_text())
+    ip = record['ip']
+    name = args.name
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,9}', name):
+        raise SystemExit('a baseline name is 1-10 characters of a-z, 0-9 and -')
+    ro = d / ('ro-' + name)
+    if ro.exists() or name in record.get('baselines', {}):
+        raise SystemExit('baseline %s already exists' % name)
+    image = args.image.resolve()
+    manifest = json.loads((image.parent / 'manifest.json').read_text())
+    if Path(manifest['image']).resolve() != image or len(manifest.get('image_sha256', '')) != 64:
+        raise SystemExit('the image needs its manifest.json (image, image_sha256) beside it')
+    # The copy is checked against the manifest before the builder ever sees it.
+    top, chain = copy_chain(image, ro)
+    if sha256_file(top) != manifest['image_sha256']:
+        raise SystemExit('the reflink copy does not match the manifest hash')
+    used = {line.split()[0] for line in run(VIRSH + ['domblklist', record['name']]).stdout.splitlines()[2:] if line.strip()}
+    dev = next('vd' + c for c in 'efghijklmnop' if 'vd' + c not in used)
+    serial = 'merlin-bl-' + name
+    (ro / 'disk.xml').write_text(READONLY_DISK.format(source=top, dev=dev, serial=serial))
+    run(VIRSH + ['attach-device', record['name'], ro / 'disk.xml', '--persistent', '--live'])
+    bundle = d / ('baseline-%s.bundle' % name)
+    snap = snapshot_bundle(args.repo.resolve(), args.commit, bundle, branch='baseline-' + name)
+    target = 'merlinadmin@' + ip
+    scp = ['scp', '-q', '-i', str(d / 'ssh/id_ed25519'), '-o', 'UserKnownHostsFile=' + str(d / 'ssh/known_hosts'), '-r']
+    incoming = '/srv/merlin/incoming/baseline-' + name
+    run(ssh_base(d, ip) + ['rm -rf %s && mkdir -p %s' % (incoming, incoming)])
+    run(scp + [bundle, target + ':%s/source.bundle' % incoming])
+    run(scp + [HERE / 'add-baseline.sh', target + ':%s/add-baseline.sh' % incoming])
+    options = ''
+    if args.symbols:
+        run(scp + [args.symbols.resolve(), target + ':%s/symbols' % incoming])
+        options = ' --symbols %s/symbols' % incoming
+    r = subprocess.run(ssh_base(d, ip) + ['sudo bash %s/add-baseline.sh --name %s --serial %s --bundle %s/source.bundle '
+                                          '--branch baseline-%s --commit %s --image-sha256 %s --revision %s%s'
+                                          % (incoming, name, serial, incoming, name, snap, manifest['image_sha256'],
+                                             shlex_quote(args.revision), options)], capture_output=True, text=True)
+    (ro / 'add-baseline.log').write_text(r.stdout + r.stderr)
+    ok = 'MERLIN_BASELINE_ADDED' in r.stdout
+    record.setdefault('baselines', {})[name] = {'image': str(image), 'image_sha256': manifest['image_sha256'], 'chain': chain,
+                                               'device': dev, 'serial': serial, 'source_commit': args.commit,
+                                               'snapshot_commit': snap, 'revision': args.revision, 'ready': ok,
+                                               'added': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    (d / 'builder-vm.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps({'baseline': name, 'device': dev, 'snapshot_commit': snap, 'ready': ok}))
+    return 0 if ok else 1
+
+
+def sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1 << 22), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
 def register(args):
     d = args.dir.resolve()
     record = json.loads((d / 'builder-vm.json').read_text())
@@ -265,6 +341,8 @@ def register(args):
     cmd = 'cd /srv/merlin/tools/components/merlin/builder && sudo -u merlinsvc python3 -m merlin_builder '
     if args.installation:
         cmd += 'register-installation ' + args.installation + ' --config /etc/merlin-builder/config.json'
+        if args.baseline:
+            cmd += ' --baseline ' + shlex_quote(args.baseline)
     else:
         cmd += 'register-agent ' + args.agent + ' ' + ' '.join(args.installations.split(',')) + ' --config /etc/merlin-builder/config.json'
     r = run(ssh_base(d, ip) + [cmd])
@@ -352,6 +430,15 @@ def main():
     p.add_argument('--installation')
     p.add_argument('--agent')
     p.add_argument('--installations', default='')
+    p.add_argument('--baseline')
+    p = sub.add_parser('add-baseline')
+    p.add_argument('--dir', type=Path, required=True)
+    p.add_argument('--name', required=True)
+    p.add_argument('--image', type=Path, required=True, help='a frozen image with manifest.json beside it')
+    p.add_argument('--repo', type=Path, required=True)
+    p.add_argument('--commit', required=True, help='the source commit the image was built from')
+    p.add_argument('--revision', required=True)
+    p.add_argument('--symbols', type=Path, help='linker maps (<binary>.map) of the MerlinAI build in the image')
     p = sub.add_parser('provider')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('--kind', choices=('openai', 'anthropic'), required=True)
@@ -363,8 +450,8 @@ def main():
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    return {'provision': provision, 'bootstrap': bootstrap, 'register': register, 'provider': provider,
-            'ssh': ssh}[args.action](args) or 0
+    return {'provision': provision, 'bootstrap': bootstrap, 'add-baseline': add_baseline, 'register': register,
+            'provider': provider, 'ssh': ssh}[args.action](args) or 0
 
 
 if __name__ == '__main__':
