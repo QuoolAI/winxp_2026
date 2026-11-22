@@ -8,9 +8,11 @@
       reflink copies of the two XP25 image chains, cloud-init seed, SSH key for the
       administrator; defines the merlin-builder network filter and the domain, starts it.
   builder_vm.py bootstrap --dir DIR --repo REPO --commit COMMIT --baseline-image-sha256 H --revision NAME
-                          --toolchain DIR --reference DIR
+                          --toolchain DIR --reference DIR [--tools-commit COMMIT]
       waits for SSH, copies a source-only snapshot of REPO at COMMIT (no Source/),
       the toolchain and reference files, and runs install-builder.sh in the VM.
+      COMMIT is the default baseline's source; --tools-commit updates the builder's
+      own scripts from another commit without changing any baseline.
   builder_vm.py add-baseline --dir DIR --name NAME --image QCOW2 --repo REPO --commit COMMIT --revision TEXT
                              [--symbols DIR]
       another approved image (its manifest.json beside it) as a read-only disk of the builder, the
@@ -245,6 +247,12 @@ def bootstrap(args):
     target = 'merlinadmin@' + ip
     scp = ['scp', '-q', '-i', str(d / 'ssh/id_ed25519'), '-o', 'UserKnownHostsFile=' + str(d / 'ssh/known_hosts'), '-r']
     run(scp + [bundle, target + ':/srv/merlin/incoming/baseline.bundle'])
+    tools_options, tools_snap = '', None
+    if args.tools_commit:
+        tools_bundle = d / 'tools.bundle'
+        tools_snap = snapshot_bundle(args.repo.resolve(), args.tools_commit, tools_bundle, branch='tools')
+        run(scp + [tools_bundle, target + ':/srv/merlin/incoming/tools.bundle'])
+        tools_options = ' --tools-bundle /srv/merlin/incoming/tools.bundle --tools-commit ' + tools_snap
     # Fresh incoming directories: copies of read-only reference files cannot be overwritten in place.
     run(base + ['chmod -R u+w /srv/merlin/incoming 2>/dev/null; rm -rf /srv/merlin/incoming/toolchains /srv/merlin/incoming/reference; '
                 'mkdir -p /srv/merlin/incoming/toolchains /srv/merlin/incoming/reference'])
@@ -253,10 +261,12 @@ def bootstrap(args):
         run(scp + [child, target + ':/srv/merlin/incoming/reference/'])
     run(scp + [HERE / 'install-builder.sh', target + ':/srv/merlin/incoming/install-builder.sh'])
     r = subprocess.run(base + ['sudo bash /srv/merlin/incoming/install-builder.sh --bundle /srv/merlin/incoming/baseline.bundle '
-                               '--commit %s --baseline-image-sha256 %s --revision %s' % (snap, args.baseline_image_sha256, args.revision)],
+                               '--commit %s --baseline-image-sha256 %s --revision %s%s' % (snap, args.baseline_image_sha256, args.revision,
+                                                                                            tools_options)],
                        capture_output=True, text=True)
     (d / 'bootstrap.log').write_text(r.stdout + r.stderr)
     record.update({'ip': ip, 'baseline_snapshot_commit': snap, 'source_commit': args.commit,
+                   'tools_commit': args.tools_commit or args.commit, 'tools_snapshot_commit': tools_snap or snap,
                    'baseline_image_sha256': args.baseline_image_sha256, 'revision': args.revision,
                    'bootstrapped': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'ready': 'MERLIN_BUILDER_READY' in r.stdout})
     (d / 'builder-vm.json').write_text(json.dumps(record, indent=1) + '\n')
@@ -435,6 +445,7 @@ def main():
     p.add_argument('--revision', required=True)
     p.add_argument('--toolchain', type=Path, required=True)
     p.add_argument('--reference', type=Path, required=True)
+    p.add_argument('--tools-commit', help='the builder scripts from this commit (default: --commit)')
     p = sub.add_parser('register')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('--installation')

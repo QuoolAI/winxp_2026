@@ -2,7 +2,11 @@
 # Set up (or update) the MerlinAI Builder inside its own VM. Run as root on the builder.
 #
 #   install-builder.sh --bundle /srv/merlin/incoming/baseline.bundle --commit <sha> \
-#                      --baseline-image-sha256 <hex> --revision <name>
+#                      --baseline-image-sha256 <hex> --revision <name> \
+#                      [--tools-bundle /srv/merlin/incoming/tools.bundle --tools-commit <sha>]
+#
+# --commit is the default baseline's source (what its image was built from); the builder's own
+# scripts come from --tools-commit when given, so they can be updated without changing a baseline.
 #
 # Expects, prepared by the host's provision-builder-vm.sh:
 #   /dev/disk/by-id/virtio-merlin-baseline   the approved XP25 system image (read-only disk)
@@ -14,13 +18,15 @@
 # those are added by the administrator as /etc/merlin-builder/provider.key.
 set -euo pipefail
 
-BUNDLE= COMMIT= IMAGE_SHA= REVISION=
+BUNDLE= COMMIT= IMAGE_SHA= REVISION= TOOLS_BUNDLE= TOOLS_COMMIT=
 while [ $# -gt 0 ]; do
   case "$1" in
     --bundle) BUNDLE=$2; shift 2 ;;
     --commit) COMMIT=$2; shift 2 ;;
     --baseline-image-sha256) IMAGE_SHA=$2; shift 2 ;;
     --revision) REVISION=$2; shift 2 ;;
+    --tools-bundle) TOOLS_BUNDLE=$2; shift 2 ;;
+    --tools-commit) TOOLS_COMMIT=$2; shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -65,12 +71,17 @@ git -C $S/baseline/xp25.git symbolic-ref HEAD refs/heads/baseline
 git config --system --get-all safe.directory | grep -qx $S/baseline/xp25.git || git config --system --add safe.directory $S/baseline/xp25.git
 git config --system --get-all safe.directory | grep -qx $S/tools || git config --system --add safe.directory $S/tools
 git -C $S/baseline/xp25.git cat-file -e "$COMMIT^{commit}"
+if [ -n "$TOOLS_BUNDLE" ]; then
+  git -C $S/baseline/xp25.git fetch --quiet "$TOOLS_BUNDLE" "+refs/heads/tools:refs/heads/tools"
+  git -C $S/baseline/xp25.git cat-file -e "$TOOLS_COMMIT^{commit}"
+fi
+TOOLS_COMMIT=${TOOLS_COMMIT:-$COMMIT}
 chmod -R a-w $S/baseline/xp25.git
 
 # The tools checkout: the builder's own scripts at the approved commit. Its .work holds build-VM runs.
 rm -rf $S/tools.new
 git clone --quiet $S/baseline/xp25.git $S/tools.new
-git -C $S/tools.new checkout --quiet "$COMMIT"
+git -C $S/tools.new checkout --quiet "$TOOLS_COMMIT"
 if [ -d $S/tools/.work ]; then mv $S/tools/.work $S/tools.new/.work; fi
 rm -rf $S/tools && mv $S/tools.new $S/tools
 install -d -o merlinsvc -g merlinsvc -m 0750 $S/tools/.work $S/tools/.work/boot-debug-20261022
@@ -146,4 +157,4 @@ systemctl daemon-reload
 systemctl enable --now merlin-builder-api.service merlin-builder-runner.service
 systemctl restart merlin-builder-api.service merlin-builder-runner.service
 sleep 2
-curl -sf http://127.0.0.1:8740/merlin/v1/challenge >/dev/null && echo "MERLIN_BUILDER_READY commit=$COMMIT"
+curl -sf http://127.0.0.1:8740/merlin/v1/challenge >/dev/null && echo "MERLIN_BUILDER_READY commit=$COMMIT tools=$TOOLS_COMMIT"

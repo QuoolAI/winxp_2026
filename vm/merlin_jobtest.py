@@ -4,7 +4,10 @@ overlay, log on through the XP25 Winlogon, run fixed check commands (from the
 builder's component map, never from a report), check the desktop and
 MerlinAI, then turn the guest off from the Start menu and freeze the overlay.
 
-Gates come from COM1 records and QMP events:
+Gates come from COM1 records, the guest's own logs read from the frozen overlay
+(C:\\xp25\\jobtest.log and the lines the XP25 Winlogon appended to
+native-winlogon.log during the run: COM1 is exclusive and a writer that cannot
+open it loses its line) and QMP events:
   boot_to_logon_prompt    Winlogon core_ready
   logon_completed         Winlogon session_interactive
   desktop_started         explorer.exe running in the session (tasklist)
@@ -35,17 +38,30 @@ MERLIN = r'C:\Program Files\XP25\MerlinAI\MerlinAI.exe'
 
 
 def suite(checks):
-    lines = ['@echo off', 'echo XP25_JOBTEST_STARTED > COM1', 'ping -n 6 127.0.0.1 >nul']
+    # Every marker also goes to C:\xp25\jobtest.log (read offline afterwards): a COM1 line can be lost.
+    lines = ['@echo off', 'call :mark XP25_JOBTEST_STARTED', 'ping -n 6 127.0.0.1 >nul']
     for i, command in enumerate(checks):
         if any(c in command for c in '&|<>^%\r\n') or len(command) > 400:
             raise SystemExit('check commands must be plain command lines')
-        lines += [command, 'echo XP25_JOBTEST_CHECK_%d_EXIT=%%ERRORLEVEL%% > COM1' % i]
-    lines += ['tasklist /fi "imagename eq explorer.exe" | find /i "explorer.exe" >nul && echo XP25_JOBTEST_EXPLORER=1 > COM1 || echo XP25_JOBTEST_EXPLORER=0 > COM1',
+        lines += [command, 'call :mark XP25_JOBTEST_CHECK_%d_EXIT=%%ERRORLEVEL%%' % i]
+    lines += ['tasklist /fi "imagename eq explorer.exe" | find /i "explorer.exe" >nul && call :mark XP25_JOBTEST_EXPLORER=1 || call :mark XP25_JOBTEST_EXPLORER=0',
               'if exist "%s" "%s" /status' % (MERLIN, MERLIN),
-              'if not exist "%s" echo XP25_JOBTEST_MERLIN=absent > COM1' % MERLIN,
+              'if not exist "%s" call :mark XP25_JOBTEST_MERLIN=absent' % MERLIN,
               'del "%USERPROFILE%\\Start Menu\\Programs\\Startup\\XP25JobTest.cmd"',
-              'echo XP25_JOBTEST_DONE > COM1']
+              # The harness turns the guest off when it sees DONE on COM1: repeat it in case a line is lost.
+              'call :mark XP25_JOBTEST_DONE', 'ping -n 4 127.0.0.1 >nul', 'echo XP25_JOBTEST_DONE > COM1',
+              'ping -n 4 127.0.0.1 >nul', 'echo XP25_JOBTEST_DONE > COM1',
+              'goto :eof', '',
+              'rem A space before >> keeps "X=1" from becoming "X=" plus a handle-1 redirection.',
+              ':mark', 'echo %* > COM1', 'echo %* >> C:\\xp25\\jobtest.log', 'goto :eof']
     return '\r\n'.join(lines) + '\r\n'
+
+
+def read_guest(device, path):
+    try:
+        return lab.run(['ntfscat', device, path])
+    except RuntimeError:
+        return b''
 
 
 def winlogon_events(text):
@@ -98,8 +114,9 @@ def main():
         for target, source in sorted(files.items()):
             lab.run(['ntfscp', '-t', device, source, target])
             staged[target] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+        winlogon_log_before = len(read_guest(device, '/xp25/native-winlogon.log'))
     Path('inputs.json').write_text(json.dumps({'mode': args.mode, 'image': str(image), 'image_sha256': image_sha, 'checks': checks,
-                                               'staged': staged}, indent=1) + '\n')
+                                               'staged': staged, 'winlogon_log_bytes_before': winlogon_log_before}, indent=1) + '\n')
     machine, accel, cpus = (('pc-i440fx-8.2', 'tcg,thread=single', '1') if args.mode == 'tcg' else
                             ('pc-i440fx-8.2,kernel-irqchip=on', 'kvm', '2' if args.mode == 'mp' else '1'))
     command = ['qemu-system-i386', '-name', 'merlinjob-' + args.name, '-machine', machine, '-accel', accel, '-cpu', 'qemu32',
@@ -133,6 +150,8 @@ def main():
             text = Path('serial.log').read_bytes().decode('latin-1') if Path('serial.log').exists() else ''
             events = winlogon_events(text)
             ready, interactive = events.count('core_ready'), events.count('session_interactive')
+            if not ready and any(e.startswith('gina_dialog_edit_') and e.endswith('_visible_1') for e in events):
+                ready = 1                       # core_ready lost on COM1, but the logon dialog is up
             results = events.count('gina_logged_out_result')
             if interactive >= ready and ready > logons:
                 logons = ready
@@ -166,8 +185,14 @@ def main():
             q.call('quit')
     qemu.wait(timeout=60)
     Path('disk.qcow2').chmod(0o444)
-    text = Path('serial.log').read_bytes().decode('latin-1') if Path('serial.log').exists() else ''
-    events = winlogon_events(text)
+    serial = Path('serial.log').read_bytes().decode('latin-1') if Path('serial.log').exists() else ''
+    with lab.partition(out / 'disk.qcow2', False) as device:
+        guest_log = read_guest(device, '/xp25/jobtest.log').decode('latin-1')
+        winlogon_log = read_guest(device, '/xp25/native-winlogon.log')[winlogon_log_before:].decode('latin-1')
+    Path('guest-jobtest.log').write_text(guest_log)
+    Path('guest-native-winlogon-run.log').write_text(winlogon_log)
+    text = serial + '\n' + guest_log
+    events = winlogon_events(serial + '\n' + winlogon_log)
     markers = [m.strip() for m in re.findall(r'XP25_[A-Z0-9_]+(?:=| )[^\r\n]*', text)]
     gates = {
         'boot_to_logon_prompt': 'core_ready' in events,
