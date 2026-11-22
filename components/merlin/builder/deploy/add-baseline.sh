@@ -37,9 +37,10 @@ S=/srv/merlin
 # Every baseline disk (serial merlin-bl-*) readable by merlinimg only, like the first one.
 grep -qF 'merlin-bl-*' /etc/udev/rules.d/99-merlin-images.rules ||
   echo 'KERNEL=="vd*", ENV{ID_SERIAL}=="merlin-bl-*", GROUP="merlinimg", MODE="0440"' >> /etc/udev/rules.d/99-merlin-images.rules
-udevadm control --reload && udevadm trigger --subsystem-match=block
+udevadm control --reload && udevadm trigger --subsystem-match=block && udevadm settle --timeout=30
 DEV=/dev/disk/by-id/virtio-$SERIAL
-for i in $(seq 1 30); do [ -e "$DEV" ] && break; sleep 1; done
+# The trigger is asynchronous: wait for the device and for the rule to have applied.
+for i in $(seq 1 30); do [ -e "$DEV" ] && [ "$(stat -L -c %G "$DEV")" = merlinimg ] && break; sleep 1; done
 [ -e "$DEV" ] || { echo "missing read-only disk $SERIAL" >&2; exit 1; }
 [ "$(stat -L -c %G "$DEV")" = merlinimg ] || { echo "$DEV is not restricted to merlinimg" >&2; exit 1; }
 

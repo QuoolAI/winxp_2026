@@ -283,21 +283,31 @@ def add_baseline(args):
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,9}', name):
         raise SystemExit('a baseline name is 1-10 characters of a-z, 0-9 and -')
     ro = d / ('ro-' + name)
-    if ro.exists() or name in record.get('baselines', {}):
+    if record.get('baselines', {}).get(name, {}).get('ready'):
         raise SystemExit('baseline %s already exists' % name)
     image = args.image.resolve()
     manifest = json.loads((image.parent / 'manifest.json').read_text())
     if Path(manifest['image']).resolve() != image or len(manifest.get('image_sha256', '')) != 64:
         raise SystemExit('the image needs its manifest.json (image, image_sha256) beside it')
-    # The copy is checked against the manifest before the builder ever sees it.
-    top, chain = copy_chain(image, ro)
-    if sha256_file(top) != manifest['image_sha256']:
-        raise SystemExit('the reflink copy does not match the manifest hash')
-    used = {line.split()[0] for line in run(VIRSH + ['domblklist', record['name']]).stdout.splitlines()[2:] if line.strip()}
-    dev = next('vd' + c for c in 'efghijklmnop' if 'vd' + c not in used)
     serial = 'merlin-bl-' + name
-    (ro / 'disk.xml').write_text(READONLY_DISK.format(source=top, dev=dev, serial=serial))
-    run(VIRSH + ['attach-device', record['name'], ro / 'disk.xml', '--persistent', '--live'])
+    disks = {line.split()[0]: line.split()[1] for line in run(VIRSH + ['domblklist', record['name']]).stdout.splitlines()[2:]
+             if len(line.split()) == 2}
+    if ro.exists():
+        # Resuming an interrupted add: the copy must be attached already and still match the manifest.
+        attached = [dev for dev, src in disks.items() if Path(src).parent == ro]
+        if not attached:
+            raise SystemExit('%s exists but is not attached; remove it or choose another name' % ro)
+        dev, top = attached[0], Path(disks[attached[0]])
+        chain = record.get('baselines', {}).get(name, {}).get('chain', [str(top)])
+    else:
+        # The copy is checked against the manifest before the builder ever sees it.
+        top, chain = copy_chain(image, ro)
+        dev = next('vd' + c for c in 'efghijklmnop' if 'vd' + c not in disks)
+        (ro / 'disk.xml').write_text(READONLY_DISK.format(source=top, dev=dev, serial=serial))
+    if sha256_file(top) != manifest['image_sha256']:
+        raise SystemExit('the read-only copy does not match the manifest hash')
+    if dev not in disks:
+        run(VIRSH + ['attach-device', record['name'], ro / 'disk.xml', '--persistent', '--live'])
     bundle = d / ('baseline-%s.bundle' % name)
     snap = snapshot_bundle(args.repo.resolve(), args.commit, bundle, branch='baseline-' + name)
     target = 'merlinadmin@' + ip
