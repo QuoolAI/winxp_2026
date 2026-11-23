@@ -87,6 +87,10 @@ def main():
     parser.add_argument('--mp-hal', type=Path)
     parser.add_argument('--timeout', type=int, default=2400)
     args = parser.parse_args()
+    # Resolve every path before the run directory becomes the working directory.
+    for name in ('image', 'runs', 'mp_kernel', 'mp_hal'):
+        if getattr(args, name):
+            setattr(args, name, getattr(args, name).resolve())
     if '/' in args.name or args.name in ('.', '..'):
         parser.error('a fresh simple run name is required')
     image = args.image.resolve()
