@@ -7,7 +7,9 @@
       event log, RPC and the Windows Firewall are running, and whether the
       system volume is marked dirty. After an update the agent keeps the new
       system image only if this report arrives and is healthy; otherwise it
-      restores the previous image. It retries for 15 minutes.
+      restores the previous image. It retries every 30 s for 15 minutes; COM1 gets
+      the first result, changes, success and giving up, not every retry (the
+      port is exclusive and the XP25 Winlogon's records must not be crowded out).
    2. When automatic collection is enabled it looks for local problems at
       start and then every CollectMinutes (MerlinCollect). Collected problems
       stay on this computer: the service never transmits diagnostics.
@@ -168,8 +170,8 @@ static void WINAPI service_main(DWORD argc, LPWSTR *argv)
 {
     MERLIN_CONFIG config;
     char detail[400], line[480];
-    DWORD started = GetTickCount(), next_collect = 0, wait_ms;
-    BOOL reported = FALSE;
+    DWORD started = GetTickCount(), next_collect = 0, wait_ms, last_error = 0;
+    BOOL reported = FALSE, gave_up = FALSE;
     int attempts = 0;
     (void)argc;
     (void)argv;
@@ -185,14 +187,26 @@ static void WINAPI service_main(DWORD argc, LPWSTR *argv)
         if (!reported && config.deploy[0] && GetTickCount() - started < 15 * 60 * 1000) {
             DWORD e = health_report(detail, sizeof(detail));
             ++attempts;
-            merlin_copy(line, sizeof(line), "XP25_MERLIN_HEALTH_REPORT=");
-            merlin_append_ulong(line, sizeof(line), e);
-            merlin_append(line, sizeof(line), " attempt=");
-            merlin_append_ulong(line, sizeof(line), (unsigned long)attempts);
-            merlin_append(line, sizeof(line), " ");
-            merlin_append(line, sizeof(line), detail);
-            serial(line);
+            /* COM1 is exclusive and the XP25 Winlogon writes its records there once, without retrying: a
+               line per retry would cost it records. Only the first result, a change and success are written. */
+            if (attempts == 1 || e != last_error || e == 0) {
+                merlin_copy(line, sizeof(line), "XP25_MERLIN_HEALTH_REPORT=");
+                merlin_append_ulong(line, sizeof(line), e);
+                merlin_append(line, sizeof(line), " attempt=");
+                merlin_append_ulong(line, sizeof(line), (unsigned long)attempts);
+                merlin_append(line, sizeof(line), " ");
+                merlin_append(line, sizeof(line), detail);
+                serial(line);
+            }
+            last_error = e;
             reported = e == 0;
+        } else if (!reported && !gave_up && config.deploy[0]) {
+            gave_up = TRUE;
+            merlin_copy(line, sizeof(line), "XP25_MERLIN_HEALTH_REPORT_GAVE_UP attempts=");
+            merlin_append_ulong(line, sizeof(line), (unsigned long)attempts);
+            merlin_append(line, sizeof(line), " last_error=");
+            merlin_append_ulong(line, sizeof(line), last_error);
+            serial(line);
         }
         if (config.auto_collect && GetTickCount() >= next_collect) {
             MerlinCollect(&stats);
