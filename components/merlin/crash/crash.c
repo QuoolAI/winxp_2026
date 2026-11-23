@@ -11,9 +11,11 @@
    second-chance exception, records the exception, faulting module, stack and
    module list, optionally writes a minidump, writes the stock "Application
    Error" event 1000 with the same five strings faultrep writes (so existing
-   event collection keeps working), then shows the MerlinAI error dialog:
-   Send to MerlinAI / Don't Send. The process is ended afterwards, as with the
-   stock dialog.
+   event collection keeps working), ends the crashed process, and only then
+   shows the MerlinAI error dialog: Send to MerlinAI / Don't Send. The dialog
+   never holds the crashed program (Dr. Watson, which XP25 used before, ended
+   it silently; a browser restarting a crashed process must not wait for the
+   user).
 
    Crashes outside the interactive user's context (services, LocalSystem,
    LocalService, NetworkService) never get a dialog, because a SYSTEM process
@@ -612,6 +614,26 @@ static void debug_target(void)
     if (!released && c.event) SetEvent(c.event);
 }
 
+/* Terminate the target, release its pending second-chance event and wait (bounded) for it to exit. */
+static void end_target(void)
+{
+    DEBUG_EVENT de;
+    DWORD deadline = GetTickCount() + 10000;
+    TerminateProcess(c.process, c.exception.ExceptionCode);
+    ContinueDebugEvent(c.pid, c.tid, DBG_EXCEPTION_NOT_HANDLED);
+    while (GetTickCount() < deadline) {
+        if (!WaitForDebugEvent(&de, 1000)) continue;
+        if (de.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT) {
+            ContinueDebugEvent(de.dwProcessId, de.dwThreadId, DBG_CONTINUE);
+            break;
+        }
+        if (de.dwDebugEventCode == LOAD_DLL_DEBUG_EVENT && de.u.LoadDll.hFile) CloseHandle(de.u.LoadDll.hFile);
+        if (de.dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT && de.u.CreateProcessInfo.hFile) CloseHandle(de.u.CreateProcessInfo.hFile);
+        ContinueDebugEvent(de.dwProcessId, de.dwThreadId,
+                           de.dwDebugEventCode == EXCEPTION_DEBUG_EVENT ? DBG_EXCEPTION_NOT_HANDLED : DBG_CONTINUE);
+    }
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_line, int show)
 {
     WCHAR guard[4];
@@ -656,8 +678,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_line,
         merlin_append(marker, sizeof(marker), c.interactive ? " interactive=1" : " interactive=0");
         serial(marker);
     }
+    /* Everything the report needs is captured: end the crashed program before asking anything, so the
+       dialog never holds it (a browser restarting a crashed process must not wait for the user). */
+    end_target();
     if (c.interactive) interact();
     else save_report(FALSE, FALSE, FALSE);          /* queued silently, discovered locally */
-    TerminateProcess(c.process, c.exception.ExceptionCode);
     return 0;
 }
