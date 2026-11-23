@@ -6,8 +6,8 @@
       xp25-merlin NIC filter (relay and deployment-agent ports only) and a
       libvirt domain with the XP25 hardware profile (1 vCPU, 1 GiB, IDE, RTL8139,
       VNC on 127.0.0.1, COM1 to DIR/serial.log). Nothing else changes.
-  enroll_vm.py enroll --dir DIR --installation ID --builder-key HEX --agent-config FILE
-                      [--disk-dir DIR] [--builder-agent NAME --builder-agent-key-file FILE]
+  enroll_vm.py enroll --dir DIR --installation ID (--builder-key HEX | --builder-key-file FILE) --agent-config FILE
+                      [--disk-dir DIR] [--builder-agent NAME --builder-agent-key-file FILE] [--keyboard]
       with the VM shut off: a new deployment key (DIR/deploy.key, 0600), the
       installation added to the deployment agent's configuration, and a one-time
       logon script staged into the guest that runs
@@ -21,16 +21,20 @@
 
       SECURITY: ntfscp gives the staged files no security descriptor, so until the
       first XP25 logon runs and deletes them, every account on the VM can read the
-      keys. Use offline enrollment only for a VM no other account can log on to;
-      otherwise type MerlinAI.exe /configure ... in an administrator's console in
-      the guest (no file, no Run history)."""
+      keys. Use offline enrollment only for a VM no other account can log on to.
+      --keyboard instead needs the VM running with an administrator's console
+      window focused: it types MerlinAI.exe /configure ... there through libvirt
+      (keys are not logged), clears the console and closes it. Nothing is written
+      to the guest's disk except MerlinAI's protected Credentials key."""
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
@@ -115,14 +119,41 @@ def create(args):
     print(json.dumps(record))
 
 
+TYPED = {' ': ['KEY_SPACE'], '\\': ['KEY_BACKSLASH'], '.': ['KEY_DOT'], '/': ['KEY_SLASH'], '-': ['KEY_MINUS'],
+         ':': ['KEY_LEFTSHIFT', 'KEY_SEMICOLON'], '"': ['KEY_LEFTSHIFT', 'KEY_APOSTROPHE']}
+
+
+def type_line(domain, text):
+    """Type one line into the guest through libvirt; nothing is logged (the line can hold keys)."""
+    for c in text + '\n':
+        if c == '\n':
+            keys = ['KEY_ENTER']
+        elif c.isascii() and c.isupper():
+            keys = ['KEY_LEFTSHIFT', 'KEY_' + c]
+        elif c.isascii() and c.isalnum():
+            keys = ['KEY_' + c.upper()]
+        else:
+            keys = TYPED[c]
+        subprocess.run(VIRSH + ['send-key', domain, '--codeset', 'linux', '--holdtime', '60'] + keys, check=True, capture_output=True)
+        time.sleep(0.12)
+
+
 def enroll(args):
     import xp_lab as lab
     d = args.dir.resolve()
     vm = json.loads((d / 'vm.json').read_text())
-    if run(VIRSH + ['domstate', vm['name']]).stdout.strip() != 'shut off':
+    state = run(VIRSH + ['domstate', vm['name']]).stdout.strip()
+    if args.keyboard and state != 'running':
+        raise SystemExit('keyboard enrollment needs the VM running with an administrator console focused')
+    if not args.keyboard and state != 'shut off':
         raise SystemExit('shut the VM down first')
-    if not all(c in '0123456789abcdef' for c in args.builder_key) or len(args.builder_key) != 64:
+    if args.builder_key_file:
+        text = args.builder_key_file.read_text().strip()
+        args.builder_key = json.loads(text)['builder_key'] if text.startswith('{') else text
+    if not args.builder_key or not all(c in '0123456789abcdef' for c in args.builder_key) or len(args.builder_key) != 64:
         raise SystemExit('the builder key is 64 lowercase hex characters')
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', args.installation):
+        raise SystemExit('bad installation id')
     deploy_key = secrets.token_hex(32)
     key_file = d / 'deploy.key'
     fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -136,6 +167,16 @@ def enroll(args):
         entry.update(builder_agent=args.builder_agent, builder_key_file=str(args.builder_agent_key_file.resolve()))
     cfg.setdefault('installations', {})[args.installation] = entry
     cfg_path.write_text(json.dumps(cfg, indent=1) + '\n')
+    if args.keyboard:
+        type_line(vm['name'], '"C:\\Program Files\\XP25\\MerlinAI\\MerlinAI.exe" /configure %s %s %s %s %s'
+                  % (args.relay, args.agent_url, args.installation, args.builder_key, deploy_key))
+        time.sleep(5)
+        type_line(vm['name'], 'cls')                   # the keys leave the screen
+        time.sleep(1)
+        type_line(vm['name'], 'exit')
+        print(json.dumps({'installation': args.installation, 'deploy_key_file': str(key_file), 'agent_config': str(cfg_path),
+                          'typed': 'MerlinAI.exe /configure (keys not logged)'}))
+        return
     work = d / 'enroll'
     work.mkdir(exist_ok=True)
     script = work / 'merlin-enroll.cmd'
@@ -172,7 +213,11 @@ def main():
     p = sub.add_parser('enroll')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('--installation', required=True)
-    p.add_argument('--builder-key', required=True)
+    p.add_argument('--builder-key')
+    p.add_argument('--builder-key-file', type=Path, help='the JSON printed by builder_vm.py register, or the key alone')
+    p.add_argument('--keyboard', action='store_true')
+    p.add_argument('--relay', default='http://10.25.0.1:8740')
+    p.add_argument('--agent-url', default='http://10.25.0.1:8746')
     p.add_argument('--agent-config', type=Path, required=True)
     p.add_argument('--disk-dir', type=Path)
     p.add_argument('--builder-agent')
