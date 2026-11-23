@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -156,6 +157,27 @@ class InvestigatorTests(unittest.TestCase):
         seen = self.run_model('anthropic')
         self.assertEqual(seen[0]['path'], '/v1/messages')
         self.assertEqual(seen[0]['auth'], 'test-key')
+
+
+class PipelineTests(unittest.TestCase):
+    def test_cancel_stops_the_jobs_guests_only(self):
+        # QEMU runs in its own session, so a cancelled or timed-out step must stop it by name.
+        from merlin_builder import pipeline
+        argv = ['qemu-system-test', '-c', 'sleep 30; true', '-name']
+        mine = subprocess.Popen(argv + ['merlinjob-j-20990101-000000-abcdef-after-up'], executable='/bin/sh')
+        other = subprocess.Popen(argv + ['merlinjob-j-20990101-000000-ffffff-after-up'], executable='/bin/sh')
+        try:
+            time.sleep(0.5)
+            killed = pipeline.kill_job_guests('J-20990101-000000-abcdef')
+            self.assertIn(mine.pid, killed)
+            self.assertNotIn(other.pid, killed)
+            mine.wait(timeout=5)
+            self.assertIsNone(other.poll())
+        finally:
+            for p in (mine, other):
+                if p.poll() is None:
+                    p.kill()
+                    p.wait()
 
 
 class RelayTests(unittest.TestCase):

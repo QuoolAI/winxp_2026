@@ -37,6 +37,30 @@ class Cancelled(Exception):
     pass
 
 
+def kill_job_guests(job):
+    """Stop the QEMU guests of a job (build VM merlin-<job>, test VMs merlin-<job>-...). The tools start QEMU in its own
+    session, so killing a step's process group leaves them running; they are found by their -name, which carries the job."""
+    marker = job.lower()
+    killed = []
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            argv = (proc / 'cmdline').read_bytes().split(b'\0')
+        except OSError:
+            continue
+        if not argv or not os.path.basename(argv[0].decode(errors='replace')).startswith('qemu-system'):
+            continue
+        names = [argv[i + 1].decode(errors='replace') for i, a in enumerate(argv[:-1]) if a == b'-name']
+        if any(marker in n for n in names):
+            try:
+                os.kill(int(proc.name), signal.SIGKILL)
+                killed.append(int(proc.name))
+            except OSError:
+                pass
+    return killed
+
+
 class StepFailed(Exception):
     pass
 
@@ -94,10 +118,12 @@ class Job:
                 if time.time() > deadline:
                     os.killpg(p.pid, signal.SIGKILL)
                     p.wait()
+                    kill_job_guests(self.job)
                     raise StepFailed('%s timed out after %d s' % (step, timeout))
                 if self.store.load(self.job).get('cancel_requested'):
                     os.killpg(p.pid, signal.SIGKILL)
                     p.wait()
+                    kill_job_guests(self.job)
                     raise Cancelled()
                 time.sleep(2)
             self.processes.remove(p)
