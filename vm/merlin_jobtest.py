@@ -44,7 +44,12 @@ def suite(checks):
         if any(c in command for c in '&|<>^%\r\n') or len(command) > 400:
             raise SystemExit('check commands must be plain command lines')
         lines += [command, 'call :mark XP25_JOBTEST_CHECK_%d_EXIT=%%ERRORLEVEL%%' % i]
-    lines += ['tasklist /fi "imagename eq explorer.exe" | find /i "explorer.exe" >nul && call :mark XP25_JOBTEST_EXPLORER=1 || call :mark XP25_JOBTEST_EXPLORER=0',
+    # tasklist queries WMI, whose first answer can take minutes under nested TCG: retry before recording 0.
+    lines += ['set N=0', ':explorer',
+              'tasklist /fi "imagename eq explorer.exe" | find /i "explorer.exe" >nul && goto explorer_yes',
+              'set /a N+=1', 'if %N% GEQ 6 goto explorer_no', 'ping -n 11 127.0.0.1 >nul', 'goto explorer',
+              ':explorer_no', 'call :mark XP25_JOBTEST_EXPLORER=0', 'goto explorer_done',
+              ':explorer_yes', 'call :mark XP25_JOBTEST_EXPLORER=1', ':explorer_done',
               'if exist "%s" "%s" /status' % (MERLIN, MERLIN),
               'if not exist "%s" call :mark XP25_JOBTEST_MERLIN=absent' % MERLIN,
               'del "%USERPROFILE%\\Start Menu\\Programs\\Startup\\XP25JobTest.cmd"',
