@@ -6,6 +6,29 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## MerlinAI continuation, 2026-11-22/23
+
+Frozen build-10 image-04 (`378e9edd…8183`), under
+`xp25-merlin/.work/merlin-vm-20261122/`. These results supersede the earlier
+unpackaged-client and no-model limitations for this specific lab baseline.
+
+| Test | Recorded result |
+| --- | --- |
+| Boot, logon, desktop, checks, MerlinAI status and normal turn-off | 6/6 under KVM UP, two-vCPU KVM and TCG (`wf-image04-*`) |
+| Screen saver; account-switch painting | 10/10; 9/9 switches (KVM UP) |
+| Security proof | 34/35; only the four inherited USB-driver audit findings fail |
+| Browser gateway regression (KVM UP) | 23/26 aggregate; DevTools 11/11, persistence, MSI and AI 55/0 + 7/0 pass; disabled Remote Registry and explicit untested cases prevent a full pass |
+| Model investigation, baseline `xp25wf4`, `J-20261123-020135-92f5c3` | Ready; controlled defect reproduced before; repaired check and six regression gates pass under nested UP/MP/TCG |
+| Native build 10 9A suite | UP and TCG 24/24; MP 21/24, premature crash-dialog input; failed run retained |
+
+Build 11 adds a dialog-ready marker and the harness waits for it. Compilation
+and 26 host tests pass; the focused two-vCPU KVM 9A rerun passes 24/24
+(`dialog-ready-mp-01`). Build 11 UP/TCG are untested. Exact evidence is in
+[the continuation](merlin-dialog-readiness.md). No general repair capability,
+physical hardware support or registered-VM deployment follows from these
+results. The browser's intermittent `chrome.dll+0x842214` failure remains open.
+[Image and model evidence](merlinai-milestone9.md).
+
 ## MerlinAI (Milestone 9), 2026-11-21
 
 Lab runs use overlays of `XP25-M9-Baseline.qcow2` (`a3bde9b2…5e08`), with

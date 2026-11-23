@@ -334,7 +334,9 @@ class Scenario:
     def run(self, text):
         s = self.scale
         after = text.split('XP25_MERLIN_STEP=crash_dialog', 1)[1] if 'XP25_MERLIN_STEP=crash_dialog' in text else ''
-        if self.step('crash_dialog', after, 'interactive=1'):
+        # Capturing the exception precedes end_target(), which can take ten
+        # seconds. Only type once the report dialog has initialized.
+        if self.step('crash_dialog', after, 'XP25_MERLIN_CRASH_DIALOG_READY'):
             time.sleep(6 * s)
             self.shot('01-crash-dialog')
             self.keys('alt-v')                         # View report details (the preview before transmission)

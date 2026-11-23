@@ -13,6 +13,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'components/merlin/builder'))
@@ -154,6 +155,23 @@ class BuilderApiTests(unittest.TestCase):
 
 
 class SourceTests(unittest.TestCase):
+    def test_crash_automation_waits_for_dialog_after_capture(self):
+        sys.path.insert(0, str(ROOT / 'vm'))
+        import merlin_lab
+        scenario = merlin_lab.Scenario(None, 1)
+        captured = ('XP25_MERLIN_STEP=crash_dialog\n'
+                    'XP25_MERLIN_CRASH_CAPTURED interactive=1\n')
+        with mock.patch.object(scenario, 'keys') as keys, \
+             mock.patch.object(scenario, 'shot'), mock.patch.object(merlin_lab.time, 'sleep'), \
+             mock.patch.object(merlin_lab.lab, 'record'):
+            scenario.run(captured)
+            keys.assert_not_called()
+            scenario.run(captured + 'XP25_MERLIN_CRASH_DIALOG_READY\n')
+            self.assertIn(mock.call('alt-s'), keys.call_args_list)
+            count = keys.call_count
+            scenario.run(captured + 'XP25_MERLIN_CRASH_DIALOG_READY\n')
+            self.assertEqual(keys.call_count, count)
+
     def test_no_certificate_bypass_or_microsoft_endpoints(self):
         text = '\n'.join(p.read_text(errors='replace') for p in (ROOT / 'components/merlin').rglob('*') if p.suffix in ('.c', '.h', '.py'))
         for forbidden in ('watson.microsoft.com', 'SECURITY_FLAG_IGNORE', 'CERT_NONE', 'verify=False', 'check_hostname = False'):

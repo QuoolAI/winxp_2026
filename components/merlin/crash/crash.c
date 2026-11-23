@@ -431,6 +431,8 @@ static INT_PTR CALLBACK details_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     return FALSE;
 }
 
+static void serial(const char *line);
+
 static INT_PTR CALLBACK report_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
     (void)lp;
@@ -461,6 +463,7 @@ static INT_PTR CALLBACK report_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         EnableWindow(GetDlgItem(dlg, IDC_DUMP), FALSE);
         if (!c.report.dump[0]) SetDlgItemTextW(dlg, IDC_DUMP, L"Include the memory dump (none was written)");
         SetForegroundWindow(dlg);
+        serial("XP25_MERLIN_CRASH_DIALOG_READY");
         return TRUE;
     }
     case WM_COMMAND:

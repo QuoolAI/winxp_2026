@@ -5,7 +5,10 @@ Evidence root `.work/merlin-20261121/` (`E`); native build-VM runs under
 `.work/boot-debug-20261022/merlin-native-*`; builder VM under
 `.work/merlin-builder-vm-20261121/`. `Source/` is not touched.
 
-## Status (2026-11-21)
+## Original checkpoint (2026-11-21)
+
+The later model-investigation and image-validation record below supersedes
+the unconfigured-provider and unpackaged-client limitations in this table.
 
 | Stage | Observed | Not yet |
 | --- | --- | --- |
@@ -14,8 +17,9 @@ Evidence root `.work/merlin-20261121/` (`E`); native build-VM runs under
 | 9C personalized image and tests | Candidates tested before/after; after-tests pass under nested KVM UP, two-vCPU KVM and TCG; `fixed_verified` | Only MerlinAI's own components are rebuilt automatically |
 | 9D user-approved replacement | Apply and Roll Back on `XP25-MerlinAI-Demo` with health check; three agent defects found in the demonstration, fixed and kept (Phase 12) | Health check is minimal; overlay chains are never merged |
 
-The milestone is **not complete as specified**: no AI model has investigated a
-problem, and the self-repair loop is shown for one controlled defect class.
+At this checkpoint no AI model had investigated a problem. A real model run
+is recorded below; the self-repair loop remains limited to one controlled defect
+class, and replacement of the XP25-Winlogon-Fix VM remains pending.
 
 ## What MerlinAI is
 
@@ -251,10 +255,10 @@ build's linker map (`symbol_at`), read a component's provenance
 replace text in files under `components/`, run the MinGW check and conclude.
 There is no shell. Diagnostics are passed as delimited untrusted data, and a
 report's text never becomes a command. The OpenAI Responses and Anthropic
-Messages tool loops are implemented and tested against local mock servers
-only. **No model provider is configured on this builder (no key was
-provided), so every job here was decided by the labelled offline rule-based
-investigator.** It repairs one fault class, an unchecked NULL from a lookup
+Messages tool loops were initially tested against local mock servers
+only. **At the 2026-11-21 checkpoint no model provider was configured, so
+those jobs were decided by the labelled offline rule-based investigator.**
+The later real-provider runs are recorded below. It repairs one fault class, an unchecked NULL from a lookup
 located through the crash offset, and classifies common non-XP25 causes
 (third-party module, out of memory, hardware or virtual hardware) without a
 change. Its conclusions say so in the build review ("Investigated by: MerlinAI
@@ -381,6 +385,117 @@ The production VMs (XP25-AI, XP25-Winlogon-Fix, XP25-Security-8.1, …), the
 frozen images and the builder's baseline were not modified. The demonstration
 VM, its overlays and the agent's journal are its own.
 
+## Model investigation and VM-image validation (2026-11-22/23)
+
+Evidence `xp25-merlin/.work/merlin-vm-20261122/` (`W`).
+
+### Model investigation
+
+The user's OpenAI key was installed on the builder with `builder_vm.py provider
+--kind openai --model gpt-4.1`. The key was typed into the user's own terminal,
+travelled over SSH into `/etc/merlin-builder/provider.key` (root:merlinsvc
+0640), and was accepted by the provider (HTTP 200). First model-driven job,
+`J-20261122-230605-224659` (`W/ai-job/`), on the MerlinTest crash report:
+
+* tool calls: `symbol_at` (MerlinTest.exe+0x1495 → `load_display`),
+  `component_info`, `search_code`, four `read_file`s, `edit_file`,
+  `compile_check`, `read_file`, conclusion;
+* change: `if (!t) t = "XP25 Display Greeting";` after the `Title` lookup (the
+  offline investigator had chosen an empty string);
+* native build, candidate image, defect reproduced before the change;
+  afterwards the check passes (`title_length=21`) and every regression gate
+  passes under nested KVM UP, two-vCPU KVM and TCG; `fixed_verified`, ready.
+
+The review states the investigator (`MerlinAI model investigator (OpenAI
+Responses API, model gpt-4.1)`). The model saw only the redacted report and its
+restricted tools.
+
+### Several baselines, per-installation credentials
+
+An installation is built and tested on its own system image. `builder_vm.py
+add-baseline` copies a frozen image (checked against its manifest), attaches
+it to the running builder as another read-only virtio disk (serial
+`merlin-bl-NAME`), and puts its source snapshot on its own branch of the
+immutable repository. It also installs the image's linker maps and records
+the baseline in `/etc/merlin-builder/baselines.d/` (kept across
+re-bootstraps). `bootstrap --tools-commit` updates the builder's own scripts
+without changing any baseline's source: the M9 snapshot reproduced exactly
+as `c88f545de`. The deployment agent can hold a separate builder credential
+per installation, which reads only that installation's jobs. The builder VM
+got four spare PCIe root ports (its definition was redefined and restarted
+once; both definitions are kept in `vm-01/`).
+
+### Defects found on the way (fixed; failures kept)
+
+| Found by | Defect | Fix |
+| --- | --- | --- |
+| `proof` of the first VM image (`wf-proof-up-01`, 32/35) | `C:\xp25\image-revision.txt` modifiable by non-administrators (`acl.xp25_lab`). `ntfscp` gives a file it **creates** no security descriptor at all; a **replaced** file keeps its descriptor (checked on a scratch overlay) | The revision file is created in the guest; the builder refuses a baseline without it; the deployment agent refuses any update that would create a file, before the guest shuts down |
+| the same mechanism | `enroll_vm.py` stages a script **with keys** that every local account can read until the first XP25 logon deletes it | `enroll_vm.py --keyboard`: types `MerlinAI.exe /configure` into an administrator console through libvirt, keys not logged, nothing written to the guest's disk; the offline method warns |
+| job test of the VM image (`wf-image01-up`) and the builder's nested TCG test (`J-20261122-232024-d33440`) | Winlogon's `core_ready` lost on COM1 → the harness never logged on | `merlin_jobtest.py`: all markers also go to `C:\xp25\jobtest.log`; logon also starts on Winlogon's visible-dialog record; gates read the guest's logs from the frozen overlay |
+| screen-saver probe of the VM image (`wf-ss-up-02` 4/10; unchanged disk `wf-ss-ref-01` 10/10) | MerlinSvc wrote a COM1 line on every 30-s health-report retry (30 per boot on an unenrolled image), crowding out the Winlogon records the probe paces itself by | MerlinSvc writes the first result, changes, success and giving up (native build 09) |
+| cancelling the hung nested TCG test | the test VM kept running: QEMU runs in its own session | `kill_job_guests`: a cancelled or timed-out step also stops the job's QEMU guests by name |
+| nested TCG test of `J-20261123-005336-fc7b5d` | `tasklist` (WMI) did not answer in time: `desktop started` failed, job not ready | the Explorer check retries for a minute |
+| two-vCPU job test | a relative `--mp-kernel` path resolved after `chdir` | paths resolved first |
+| browser regression of image-03 (`wf03-browser2-up`) | Supermium hit its known intermittent CHECK (`chrome.dll+0x842214`) while restarting, and the MerlinAI dialog kept the crashed `chrome.exe` attached until answered; Dr. Watson, which the VM used before, ended it silently | MerlinCrash ends the crashed program (after capturing report, stack, dump and event) before it shows the dialog (native build 10) |
+
+The packaged M9 image `XP25-M9-MerlinAI.qcow2` and the demonstration VM still
+carry the first, offline-created revision file. It has no access control there.
+The demo VM and the M9 baseline were left as they are.
+
+### XP25-Winlogon-Fix VM image
+
+Reference: the VM's own disk, shut off, frozen as
+`W/reference/XP25-Winlogon-Fix.f5da32b5.qcow2` (`f5da32b5…54a6`; it differs from
+the last packaged image `9e1e8f08…`, so the user's changes since then are
+kept). MerlinAI native build 09 was installed by its own installer
+(`wf-merlin-install-03`: every step 0; user policy loaded=1 offline=1
+default_user=1 failed=0) → `W/image-03/XP25-Winlogon-Fix-MerlinAI.qcow2`
+**`c5d5eca1a326e6693f7680a81ec7bb73774605bda6d4e544689e1811d4b7ed9a`**, revision
+`XP25-Winlogon-Fix-MerlinAI-1`. Images 01 (`4240dc03…`) and 02 (`269d57c6…`) are
+superseded by the two defects above and kept.
+
+| Test on image-03 | Result |
+| --- | --- |
+| Job test KVM UP / two-vCPU KVM / TCG: boot, logon, desktop, MerlinTest defect present as shipped (exit 2), Security Center policy present, MerlinSvc and firewall running, `MerlinAI.exe /status`, Start-menu turn-off | 6/6, 6/6, 6/6; MerlinSvc one COM1 line per boot |
+| Security `proof` | 34/35: the four USB drivers the unchanged disk already had (as before MerlinAI) |
+| Screen-saver probe | 10/10 |
+| Two-account switch oracle | 9/9 |
+| Browser regression matrix through a gateway | Superseded by image-04 results below |
+| Builder job on baseline `xp25wf3` (this image), model gpt-4.1, `J-20261123-011458-fc9b9c` | ready, `fixed_verified`, all gates under nested UP/MP/TCG |
+
+Image-04 packages native build 10, including the crashed-process termination
+fix: `W/image-04/XP25-Winlogon-Fix-MerlinAI.qcow2`, SHA-256
+`378e9edd71f9fc3435800ca3b0ad856a08f435e3a6b09e66d2dc32fee3e58183`.
+Its parent is the frozen VM reference above. Offline installed-file hashes are
+in `image-04/manifest.json`; no source-kernel rebuild is implied.
+
+| Test on image-04 | Recorded result |
+| --- | --- |
+| Native boot, logon, desktop, MerlinAI status, checks and normal turn-off | 6/6 under UP, MP and TCG (`wf-image04-*`) |
+| Security `proof` (`wf-proof-up-04`) | 34/35; only the four inherited USB-driver audit findings remain |
+| Screen saver (`wf-ss-up-04`) | 10/10 |
+| Two-account switch (`wf-2acct-up-05`) | 9/9 painted switches; alternating accounts; wrong password rejected |
+| Browser (`wf04-browser-up`, `matrix-03`) | 23/26 aggregate checks; DevTools 11/11 and persistence pass; MSI and AI 55/0 + 7/0 pass; normal turn-off |
+| Model builder job `J-20261123-020135-92f5c3`, baseline `xp25wf4` | Ready, defect reproduced before; repaired check and six regression gates pass under nested UP/MP/TCG |
+
+The browser aggregate remains **failed**: disabled Remote Registry produces
+errors 1058/1062 (case-results and exit-code gates); four explicit `not_tested`
+probe cases fail the full-coverage gate. These are the same limitations as the
+pre-MerlinAI browser image. The browser's known intermittent
+`chrome.dll+0x842214` CHECK is not fixed by terminating crashed processes.
+
+Native build 10's separate 9A suite passed 24/24 under UP (`merlin-9a-up-11`)
+and TCG (`merlin-9a-tcg-04`), but MP (`merlin-9a-mp-04`) passed 21/24: its
+interactive report was not queued or transferred, and the trace records
+`dont_send`. Capture completion precedes the bounded process-termination wait;
+the harness sent dialog keys before dialog initialization. The continuation
+below records the readiness fix and its focused rerun.
+
+**Deployment is pending.** This continuation does not replace a registered VM's
+disk, enroll it, apply an update or change the running builder. Frozen inputs,
+superseded images, failed runs and the unfinished deployment evidence remain
+available. [Focused continuation](merlin-dialog-readiness.md).
+
 ## Protocols and trust
 
 * **Guest → builder** (through the relay): XP25-MERLIN1. `GET /merlin/v1/challenge`
@@ -417,24 +532,19 @@ builder. The link from the guest to the relay is not encrypted; it stays on
 the host's isolated bridge, and the relay uses TLS with certificate checks
 for a builder elsewhere (plain HTTP only to a private address).
 
-## Limitations (as of 2026-11-21)
+## Current limitations (2026-11-22/23)
 
-* **No AI model was used.** The model investigators are implemented and tested
-  only against local mock servers. Every recorded job was decided by the
-  offline rule-based investigator, which handles one fault class. A real run
-  needs a provider key on the builder. `builder_vm.py provider --dir DIR --kind
-  openai --model gpt-4.1` installs one: the key is typed without echo or read
-  from stdin, travels only over SSH into `/etc/merlin-builder/provider.key`
-  (root:merlinsvc 0640), and is checked against the provider. The command was
-  verified with a fake key (rejected with 401; the builder was then set back to
-  the offline investigator). No real key is installed yet.
+* Real model investigation is recorded for the controlled MerlinTest NULL
+  dereference. It does not establish repair of other defects, general kernel
+  changes or third-party applications. Earlier Phase 7 results used the offline
+  investigator; both histories are retained.
 * Only MerlinAI's own components are rebuilt by the pipeline. Fixes to other
   XP25 components (Winlogon, source-built Microsoft components) are reported
   but not built. Binary-only components cannot be fixed.
-* The packaged `XP25-M9-MerlinAI.qcow2`, the builder's baseline and the
-  demonstration VM still carry the first MerlinAI release, whose Control Panel
-  "Security Center" tile opens Windows Security Center. Native build 08 fixes
-  it (Phase 6); it is not yet packaged into an image or the builder baseline.
+* The original `XP25-M9-MerlinAI.qcow2` and demonstration VM retain the first
+  release and the revision-file ACL limitation described above. The newer
+  XP25-Winlogon-Fix image-04 contains the Control Panel fix; its lab results do
+  not establish deployment to the registered VM.
 * The post-deployment health check is minimal (core services running, volume
   not dirty, reported before any logon). The reported problem is tested by
   the builder on its copy of the baseline, not again on the user's disk.

@@ -2,6 +2,25 @@
 
 ## Current checkpoint
 
+2026-11-22/23, MerlinAI continuation in the main checkout. Reconciled the
+unfinished M9 record against retained guest evidence. Native build 10's
+image-04 (`378e9edd…8183`) passes boot/logon/desktop/status/normal turn-off
+6/6 under UP, MP and TCG; screen saver 10/10; nine painted account switches;
+security 34/35 (four inherited USB-driver findings). Browser aggregate remains
+23/26, with Remote Registry disabled and explicit coverage gaps; DevTools
+11/11, persistence, MSI and AI checks pass. The retained model job on baseline
+`xp25wf4` is ready with its controlled repair tested under nested UP/MP/TCG.
+These are recorded private lab results; registered-VM deployment is pending.
+
+Build 10's 9A MP run passed 21/24 because automation used the capture marker
+before the crash dialog was initialized. Added a dialog-readiness marker and
+wait for it in the harness. All 26 MerlinAI host tests pass; native build 11
+is accepted with 52 source matches, six outputs and checked guest imports.
+The focused two-vCPU KVM 9A rerun passes 24/24, including consented transfer
+and guest-requested normal shutdown. Build 11 is not packaged or deployed.
+[Focused evidence, commands and runtime result](merlin-dialog-readiness.md).
+No change to `Source/`, registered VM disks, running builder or remote branches.
+
 2026-11-22, worktrees consolidated. Every branch is contained in `xp25-nt`
 (pushed together with `xp25-merlin`). The checkouts of `xp25-ai`,
 `xp25-security`, `xp25-cve`, `xp25-winlogon-ui` and `xp25-modernization`
