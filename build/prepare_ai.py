@@ -17,18 +17,11 @@ sys.path.insert(0, str(ROOT / 'build'))
 from ai_build import icons
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, required=True)
-    args = parser.parse_args()
-    out = args.output.resolve()
-    if not out.is_relative_to(ROOT / '.work'):
-        parser.error('private .work/ output required')
-    out.mkdir(parents=True, exist_ok=False)
-    media = out / 'media'
+def make_tree(source, out, media):
+    """The AI build tree media/ai from the repository at source; returns the generated wrappers."""
     tree = media / 'ai'
     for name in ('xp25-agent', 'clippyai', 'roverai'):
-        shutil.copytree(ROOT / 'components' / name, tree / name, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+        shutil.copytree(source / 'components' / name, tree / name, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     (tree / 'dirs').write_bytes(b'DIRS=xp25-agent clippyai roverai\r\n')
     wrappers = {}
     for sources in tree.rglob('sources'):
@@ -51,6 +44,19 @@ def main():
         if f.is_file() and f.suffix.lower() in ('.c', '.h', '.rc', '.def', '.manifest') or f.name in ('sources', 'dirs'):
             data = f.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
             f.write_bytes(data)
+    return wrappers
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    out = args.output.resolve()
+    if not out.is_relative_to(ROOT / '.work'):
+        parser.error('private .work/ output required')
+    out.mkdir(parents=True, exist_ok=False)
+    media = out / 'media'
+    wrappers = make_tree(ROOT, out, media)
     (media / 'build.cmd').write_bytes((ROOT / 'build/native-ai-build.cmd').read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
     iso = out / 'native-ai.iso'
     command = ['xorriso', '-as', 'mkisofs', '-quiet', '-iso-level', '3', '-J', '-R', '-V', 'XP25AI', '-o', str(iso), str(media)]

@@ -12,6 +12,16 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def make_tree(source, out, media):
+    """The security build tree media/security from the repository at source (CR LF line ends)."""
+    tree = media / 'security'
+    shutil.copytree(source / 'components/security', tree, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    for f in tree.rglob('*'):
+        if f.is_file():
+            f.write_bytes(f.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+    return {}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -21,11 +31,7 @@ def main():
         parser.error('private .work/ output required')
     out.mkdir(parents=True, exist_ok=False)
     media = out / 'media'
-    tree = media / 'security'
-    shutil.copytree(ROOT / 'components/security', tree, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    for f in tree.rglob('*'):
-        if f.is_file():
-            f.write_bytes(f.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+    make_tree(ROOT, out, media)
     (media / 'build.cmd').write_bytes((ROOT / 'build/native-security-build.cmd').read_bytes()
                                       .replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
     iso = out / 'native-security.iso'

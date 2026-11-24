@@ -21,18 +21,8 @@ sys.path.insert(0, str(ROOT / 'build'))
 import merlin_build
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--source', type=Path, default=ROOT)
-    args = parser.parse_args()
-    out, source = args.output.resolve(), args.source.resolve()
-    if not out.is_relative_to(ROOT / '.work') and not out.is_relative_to(source):
-        parser.error('private .work/ output required')
-    if (source / 'Source').exists() and out.is_relative_to(source / 'Source'):
-        parser.error('output inside Source/ refused')
-    out.mkdir(parents=True, exist_ok=False)
-    media = out / 'media'
+def make_tree(source, out, media):
+    """The MerlinAI build tree media/merlin from the repository at source; returns the generated wrappers."""
     tree = media / 'merlin'
     shutil.copytree(source / 'components/merlin', tree / 'merlin',
                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'builder', 'host', '*.ini'))
@@ -61,6 +51,22 @@ def main():
     for f in tree.rglob('*'):
         if f.is_file() and (f.suffix.lower() in ('.c', '.h', '.rc', '.def', '.manifest') or f.name in ('sources', 'dirs', 'makefile')):
             f.write_bytes(f.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+    return wrappers
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--source', type=Path, default=ROOT)
+    args = parser.parse_args()
+    out, source = args.output.resolve(), args.source.resolve()
+    if not out.is_relative_to(ROOT / '.work') and not out.is_relative_to(source):
+        parser.error('private .work/ output required')
+    if (source / 'Source').exists() and out.is_relative_to(source / 'Source'):
+        parser.error('output inside Source/ refused')
+    out.mkdir(parents=True, exist_ok=False)
+    media = out / 'media'
+    wrappers = make_tree(source, out, media)
     (media / 'build.cmd').write_bytes((ROOT / 'build/native-merlin-build.cmd').read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
     iso = out / 'native-merlin.iso'
     command = ['xorriso', '-as', 'mkisofs', '-quiet', '-iso-level', '3', '-J', '-R', '-V', 'XP25MERLIN', '-o', str(iso), str(media)]

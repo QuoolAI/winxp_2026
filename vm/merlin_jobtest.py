@@ -15,8 +15,10 @@ open it loses its line) and QMP events:
   merlin_status_ok        MerlinAI.exe /status listed its queue (when installed)
   turned_off_normally     QMP SHUTDOWN guest=true reason=guest-shutdown
 results.json also lists every XP25_* line the guest wrote (serial_markers).
+A check is a plain command line, or {"driver": NAME}: the harness then queries that service and records
+XP25_JOBTEST_DRIVER_<NAME in upper case>=running|not_running.
 
-usage: merlin_jobtest.py --name RUN --mode up|mp|tcg --image FROZEN.qcow2 --checks '["cmd", ...]' --runs DIR
+usage: merlin_jobtest.py --name RUN --mode up|mp|tcg --image FROZEN.qcow2 --checks '["cmd", {"driver": "X"}, ...]' --runs DIR
                          [--mp-kernel FILE --mp-hal FILE] [--timeout 2400]"""
 import argparse
 import hashlib
@@ -37,10 +39,25 @@ STARTUP = PROFILE + '/Start Menu/Programs/Startup/XP25JobTest.cmd'
 MERLIN = r'C:\Program Files\XP25\MerlinAI\MerlinAI.exe'
 
 
+SERVICE = re.compile(r'^[A-Za-z0-9_]{1,32}$')
+
+
 def suite(checks):
     # Every marker also goes to C:\xp25\jobtest.log (read offline afterwards): a COM1 line can be lost.
     lines = ['@echo off', 'call :mark XP25_JOBTEST_STARTED', 'ping -n 6 127.0.0.1 >nul']
-    for i, command in enumerate(checks):
+    for i, check in enumerate(checks):
+        if isinstance(check, dict):
+            # {"driver": NAME}: is that driver service running? The harness writes the commands; NAME is validated.
+            name = check.get('driver', '')
+            if set(check) != {'driver'} or not SERVICE.match(name):
+                raise SystemExit('a driver check is {"driver": NAME} with a plain service name')
+            lines += ['sc query %s > C:\\xp25\\jobtest-sc.txt' % name, 'type C:\\xp25\\jobtest-sc.txt >> C:\\xp25\\jobtest.log',
+                      # Marker names are upper case: results.json keeps only XP25_[A-Z0-9_]+ markers.
+                      'find "RUNNING" C:\\xp25\\jobtest-sc.txt >nul && call :mark XP25_JOBTEST_DRIVER_%s=running '
+                      '|| call :mark XP25_JOBTEST_DRIVER_%s=not_running' % (name.upper(), name.upper()),
+                      'call :mark XP25_JOBTEST_CHECK_%d_EXIT=0' % i]
+            continue
+        command = check
         if any(c in command for c in '&|<>^%\r\n') or len(command) > 400:
             raise SystemExit('check commands must be plain command lines')
         lines += [command, 'call :mark XP25_JOBTEST_CHECK_%d_EXIT=%%ERRORLEVEL%%' % i]
@@ -60,6 +77,10 @@ def suite(checks):
               'rem A space before >> keeps "X=1" from becoming "X=" plus a handle-1 redirection.',
               ':mark', 'echo %* > COM1', 'echo %* >> C:\\xp25\\jobtest.log', 'goto :eof']
     return '\r\n'.join(lines) + '\r\n'
+
+
+def serial_markers(text):
+    return [m.strip() for m in re.findall(r'XP25_[A-Z0-9_]+(?:=| )[^\r\n]*', text)]
 
 
 def read_guest(device, path):
@@ -102,8 +123,8 @@ def main():
     if image.stat().st_mode & 0o222:
         parser.error('the image under test must be frozen (read-only)')
     checks = json.loads(args.checks)
-    if not isinstance(checks, list) or not all(isinstance(c, str) for c in checks):
-        parser.error('--checks is a JSON list of command lines')
+    if not isinstance(checks, list) or not all(isinstance(c, (str, dict)) for c in checks):
+        parser.error('--checks is a JSON list of command lines and {"driver": NAME} checks')
     out = args.runs.resolve() / args.name
     out.mkdir(parents=True, exist_ok=False)
     os.chdir(out)
@@ -202,7 +223,7 @@ def main():
     Path('guest-native-winlogon-run.log').write_text(winlogon_log)
     text = serial + '\n' + guest_log
     events = winlogon_events(serial + '\n' + winlogon_log)
-    markers = [m.strip() for m in re.findall(r'XP25_[A-Z0-9_]+(?:=| )[^\r\n]*', text)]
+    markers = serial_markers(text)
     gates = {
         'boot_to_logon_prompt': 'core_ready' in events,
         'logon_completed': 'session_interactive' in events,

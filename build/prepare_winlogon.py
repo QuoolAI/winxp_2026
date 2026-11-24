@@ -3,12 +3,16 @@
 import argparse,hashlib,json,shutil,subprocess
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+def make_tree(source,out,media):
+ """The Winlogon build tree media/winlogon (the files of components/winlogon) from the repository at source."""
+ (media/'winlogon').mkdir(parents=True)
+ for f in (source/'components/winlogon').iterdir():
+  if f.is_file():shutil.copy2(f,media/'winlogon'/f.name)
+ return {}
 def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True);a=p.parse_args();out=a.output.resolve()
  if not out.is_relative_to(ROOT/'.work'):p.error('private output required')
- out.mkdir(parents=True,exist_ok=False);media=out/'media';(media/'winlogon').mkdir(parents=True)
- for source in (ROOT/'components/winlogon').iterdir():
-  if source.is_file():shutil.copy2(source,media/'winlogon'/source.name)
+ out.mkdir(parents=True,exist_ok=False);media=out/'media';make_tree(ROOT,out,media)
  (media/'build.cmd').write_bytes((ROOT/'build/native-winlogon-build.cmd').read_bytes().replace(b'\r\n',b'\n').replace(b'\n',b'\r\n'))
  command=['xorriso','-as','mkisofs','-quiet','-iso-level','3','-J','-R','-V','XP25WL','-o',str(out/'native-winlogon.iso'),str(media)]
  subprocess.run(command,check=True)

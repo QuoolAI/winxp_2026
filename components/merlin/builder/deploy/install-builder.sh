@@ -131,6 +131,7 @@ cat > /etc/merlin-builder/config.json <<CONFIG
   }
  },
  "provider": $( [ -f /etc/merlin-builder/provider.json ] && cat /etc/merlin-builder/provider.json || echo '{"kind": "offline"}' ),
+$( [ -d $S/reference/nt ] && echo " \"reference_source\": \"$S/reference/nt\"," )
  "test_modes": ["up", "mp", "tcg"],
  "sandbox_network": true,
  "limits": {"max_request_bytes": 1048576, "max_dump_bytes": 8388608, "max_reports_per_installation": 500,

@@ -14,8 +14,11 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'components/merlin/builder'))
+from merlin_builder import recipes  # noqa: E402
 SOURCE = ROOT / 'Source/XPSP1/NT/base/ntos/init/ntoskrnl.src'
 # export -> existing line it is inserted after; every routine must already be compiled into the kernel.
 EXPORTS = {'KeFlushQueuedDpcs': '    KeInsertQueueDpc\n'}
@@ -30,14 +33,15 @@ def main():
     if not out.is_relative_to(ROOT / '.work'):
         parser.error('private .work/ output required')
     original = SOURCE.read_bytes()
-    text = original.decode('latin1')
-    for name, anchor in EXPORTS.items():
+    for name in EXPORTS:
         implementation = (ROOT / 'Source/XPSP1/NT' / IMPLEMENTATIONS[name]).read_text('latin1')
         if '\n' + name + '(' not in implementation.replace(' (', '('):
             parser.error(name + ' is not implemented in ' + IMPLEMENTATIONS[name])
-        if ('    ' + name + '\n') in text or text.count(anchor) != 1:
-            parser.error('unexpected export list state for ' + name)
-        text = text.replace(anchor, anchor + '    ' + name + '\n')
+    # The same insertion gives the MerlinAI Builder its effective kernel source (merlin_builder/recipes.py).
+    try:
+        text = recipes.apply_exports(original.decode('latin1'), EXPORTS)
+    except ValueError as error:
+        parser.error(str(error))
     out.mkdir(parents=True, exist_ok=False)
     media = out / 'media'
     (media / 'original').mkdir(parents=True)

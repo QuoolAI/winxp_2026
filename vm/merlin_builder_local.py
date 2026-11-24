@@ -4,9 +4,12 @@ deployment form: that is the builder VM, components/merlin/builder/deploy).
 
   merlin_builder_local.py init --dir .work/<fresh> --commit COMMIT --baseline-image IMG --baseline-sha256 H
                                --revision NAME --symbols DIR [--modes up,mp,tcg]
+                               [--build-vm DISK] [--reference DIR] [--nt-reference DIR]
       a builder data directory, a source-only baseline repository of COMMIT
-      (Source/ excluded, as on the builder VM) and config.json; registers the
-      installation "dev-merlin" and prints its key
+      (Source/ excluded, as on the builder VM; the NT reference tree is given
+      separately and read only) and config.json; registers the installation
+      "dev-merlin" and prints its key. --reference holds guest-modules/ and
+      kernel/ (the multiprocessor kernel and HAL of the two-CPU tests).
   merlin_builder_local.py submit --dir DIR --problem-json FILE [--explanation TEXT]
       submits a build request as the installation would (XP25-MERLIN1)
   merlin_builder_local.py run --dir DIR
@@ -35,16 +38,17 @@ def init(args):
     snap = builder_vm.snapshot_bundle(ROOT, args.commit, bundle)
     subprocess.run(['git', 'clone', '--quiet', '--bare', str(bundle), str(d / 'baseline.git')], check=True)
     subprocess.run(['chmod', '-R', 'a-w', str(d / 'baseline.git')], check=True)
-    reference = ROOT / '.work/merlin-builder-vm-20261121/reference'
+    reference = args.reference.resolve()
     config = {
         'listen': '127.0.0.1:0', 'data': str(d / 'data'), 'log': str(d / 'api.jsonl'), 'tools': str(ROOT),
         'toolchain': str(ROOT / '.work/toolchains/mingw-binutils/usr/bin'), 'default_baseline': 'xp25-m9',
         'baselines': {'xp25-m9': {
             'repository': str(d / 'baseline.git'), 'commit': snap, 'image': str(args.baseline_image.resolve()),
             'image_format': 'qcow2', 'image_sha256': args.baseline_sha256, 'revision': args.revision,
-            'build_vm': str(ROOT / '.work/merlin-20261121/reference/build-vm-ai/disk.qcow2'),
+            'build_vm': str(args.build_vm.resolve()),
             'guest_modules': str(reference / 'guest-modules/WINDOWS/system32'), 'symbols': str(args.symbols.resolve()),
             'mp_kernel': str(reference / 'kernel/ntkrnlmp.exe'), 'mp_hal': str(reference / 'kernel/halmacpi.dll')}},
+        'reference_source': str(args.nt_reference.resolve()),
         'provider': {'kind': 'offline'}, 'test_modes': args.modes.split(','), 'sandbox_network': True,
         'limits': {'job_disk_reserve_gb': 10}}
     (d / 'config.json').write_text(json.dumps(config, indent=1) + '\n')
@@ -91,6 +95,9 @@ def main():
     p.add_argument('--revision', required=True)
     p.add_argument('--symbols', type=Path, required=True)
     p.add_argument('--modes', default='up')
+    p.add_argument('--build-vm', type=Path, default=ROOT / '.work/merlin-20261121/reference/build-vm-ai/disk.qcow2')
+    p.add_argument('--reference', type=Path, default=ROOT / '.work/merlin-builder-vm-20261121/reference')
+    p.add_argument('--nt-reference', type=Path, default=ROOT / 'Source/XPSP1/NT')
     p = sub.add_parser('submit')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('--problem-json', type=Path, required=True)

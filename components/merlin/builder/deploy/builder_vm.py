@@ -25,6 +25,9 @@
       installs the model provider's API key on the builder (read from FILE, from stdin, or
       typed without echo; never printed or stored on the host), points the builder's
       configuration at it, restarts the services and checks the key against the provider.
+  builder_vm.py reference-source --dir DIR --source Source/XPSP1/NT
+      copies Microsoft's NT reference tree into the builder (/srv/merlin/reference/nt, read-only,
+      checked by a digest of every file on both sides) for investigations and NT recipes
   builder_vm.py ssh --dir DIR -- COMMAND...
 
 Nothing here depends on the builder running on this host except the read-only
@@ -35,6 +38,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -417,6 +421,57 @@ def shlex_quote(text):
     return shlex.quote(text)
 
 
+# The same digest on both sides: SHA-256 over "<file sha256>  <relative path>" lines, sorted by path.
+TREE_DIGEST = r"""
+import hashlib, os, sys
+root = sys.argv[1]
+lines = []
+for top, dirs, files in os.walk(root):
+    dirs.sort()
+    for name in files:
+        path = os.path.join(top, name)
+        h = hashlib.sha256()
+        with open(path, 'rb') as f:
+            for block in iter(lambda: f.read(1 << 20), b''):
+                h.update(block)
+        lines.append('%s  %s' % (h.hexdigest(), os.path.relpath(path, root)))
+lines.sort(key=lambda l: l.split('  ', 1)[1])
+print(len(lines), hashlib.sha256(('\n'.join(lines) + '\n').encode()).hexdigest())
+"""
+
+
+def reference_source(args):
+    """Copy Microsoft's NT reference tree into the builder, read-only, as /srv/merlin/reference/nt. Investigations
+    read it (as effective source) and NT recipes take their reference files from it; nothing writes it."""
+    d = args.dir.resolve()
+    record = json.loads((d / 'builder-vm.json').read_text())
+    base = ssh_base(d, record['ip'])
+    source = args.source.resolve()
+    local = run([sys.executable, '-c', TREE_DIGEST, str(source)]).stdout.split()
+    tar = subprocess.Popen(['tar', '-C', str(source), '-c', '.'], stdout=subprocess.PIPE)
+    r = subprocess.run(base + ['sudo rm -rf /srv/merlin/reference/nt.new && sudo mkdir -p /srv/merlin/reference/nt.new && '
+                               'sudo tar -x --no-same-owner --no-same-permissions -C /srv/merlin/reference/nt.new'],
+                       stdin=tar.stdout, capture_output=True, text=True)
+    tar.stdout.close()
+    if tar.wait() or r.returncode:
+        raise SystemExit('copy failed: ' + r.stderr[-500:])
+    remote = run(base + ['python3 - /srv/merlin/reference/nt.new'], input=TREE_DIGEST).stdout.split()
+    if remote != local:
+        raise SystemExit('the copy differs from the source tree: %s != %s' % (remote, local))
+    script = ('set -e; cd /srv/merlin/reference; rm -rf nt.old; if [ -d nt ]; then chmod -R u+w nt; mv nt nt.old; fi; mv nt.new nt; '
+              'rm -rf nt.old; chown -R root:root nt; chmod -R a-w,a+rX nt; '
+              'python3 -c "import json; p=\'/etc/merlin-builder/config.json\'; c=json.load(open(p)); '
+              'c[\'reference_source\']=\'/srv/merlin/reference/nt\'; open(p,\'w\').write(json.dumps(c, indent=1)+chr(10))"; '
+              'systemctl restart merlin-builder-api.service merlin-builder-runner.service')
+    r = subprocess.run(base + ['sudo bash -c ' + shlex.quote(script)], capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit('installing the reference tree failed: ' + r.stderr[-500:])
+    record['reference_source'] = {'path': '/srv/merlin/reference/nt', 'files': int(local[0]), 'tree_sha256': local[1],
+                                  'from': str(source), 'installed': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    (d / 'builder-vm.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps(record['reference_source']))
+
+
 def ssh(args):
     d = args.dir.resolve()
     record = json.loads((d / 'builder-vm.json').read_text())
@@ -467,12 +522,15 @@ def main():
     p.add_argument('--key-file', type=Path)
     p.add_argument('--endpoint')
     p.add_argument('--max-steps', type=int, default=30)
+    p = sub.add_parser('reference-source')
+    p.add_argument('--dir', type=Path, required=True)
+    p.add_argument('--source', type=Path, required=True, help='Source/XPSP1/NT of this repository')
     p = sub.add_parser('ssh')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     return {'provision': provision, 'bootstrap': bootstrap, 'add-baseline': add_baseline, 'register': register,
-            'provider': provider, 'ssh': ssh}[args.action](args) or 0
+            'provider': provider, 'reference-source': reference_source, 'ssh': ssh}[args.action](args) or 0
 
 
 if __name__ == '__main__':

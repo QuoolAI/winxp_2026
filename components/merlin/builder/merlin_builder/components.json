@@ -1,63 +1,316 @@
 {
-  "comment": "How MerlinAI maps an installed XP25 binary to its source and build. 'xp25' entries are XP25's own code that the builder can rebuild natively today; 'xp25-manual' are XP25 code whose native rebuild is not automated in the builder yet; 'microsoft-source' are Microsoft components XP25 builds from the 5.1.2600.1106 reference tree (rebuilding them needs the reviewed patch flow of components/cve, not automated here); 'binary-only' are Microsoft binaries without source in XP25.",
-  "binaries": {
-    "merlintest.exe": {"origin": "xp25", "source": "components/merlin/testapp", "build": "merlin", "target": "MerlinTest.exe",
-                       "guest_path": "/Program Files/XP25/MerlinAI/MerlinTest.exe", "pdb": "MerlinTest.pdb",
-                       "reproduce": {"command": "\"C:\\Program Files\\XP25\\MerlinAI\\MerlinTest.exe\" /check", "failure": "XP25_MERLINTEST_CHECK=crash", "success": "XP25_MERLINTEST_CHECK=ok"}},
-    "merlinai.exe": {"origin": "xp25", "source": "components/merlin/app", "build": "merlin", "target": "MerlinAI.exe",
-                     "guest_path": "/Program Files/XP25/MerlinAI/MerlinAI.exe", "pdb": "MerlinAI.pdb"},
-    "merlinclient.dll": {"origin": "xp25", "source": "components/merlin/client", "build": "merlin", "target": "MerlinClient.dll",
-                         "guest_path": "/Program Files/XP25/MerlinAI/MerlinClient.dll", "pdb": "MerlinClient.pdb"},
-    "merlincrash.exe": {"origin": "xp25", "source": "components/merlin/crash", "build": "merlin", "target": "MerlinCrash.exe",
-                        "guest_path": "/Program Files/XP25/MerlinAI/MerlinCrash.exe", "pdb": "MerlinCrash.pdb"},
-    "merlinai.cpl": {"origin": "xp25", "source": "components/merlin/cpl", "build": "merlin", "target": "MerlinAI.cpl",
-                     "guest_path": "/WINDOWS/system32/MerlinAI.cpl", "pdb": "MerlinAI.pdb"},
-    "merlinsvc.exe": {"origin": "xp25", "source": "components/merlin/svc", "build": "merlin", "target": "MerlinSvc.exe",
-                      "guest_path": "/Program Files/XP25/MerlinAI/MerlinSvc.exe", "pdb": "MerlinSvc.pdb"},
-    "winlogon.exe": {"origin": "xp25-manual", "source": "components/winlogon", "build": "build/prepare_winlogon.py",
-                     "guest_path": "/WINDOWS/system32/winlogon.exe"},
-    "clippyai.exe": {"origin": "xp25-manual", "source": "components/clippyai", "build": "build/prepare_ai.py",
-                     "guest_path": "/Program Files/XP25/ClippyAI.exe"},
-    "roverai.exe": {"origin": "xp25-manual", "source": "components/roverai", "build": "build/prepare_ai.py",
-                    "guest_path": "/Program Files/XP25/RoverAI.exe"},
-    "roveraiband.dll": {"origin": "xp25-manual", "source": "components/roverai/explorer", "build": "build/prepare_ai.py",
-                        "guest_path": "/Program Files/XP25/RoverAIBand.dll"},
-    "xp25agent.dll": {"origin": "xp25-manual", "source": "components/xp25-agent", "build": "build/prepare_ai.py",
-                      "guest_path": "/Program Files/XP25/xp25agent.dll"},
-    "xp25broker.exe": {"origin": "xp25-manual", "source": "components/xp25-agent/broker", "build": "build/prepare_ai.py",
-                       "guest_path": "/Program Files/XP25/XP25Broker.exe"},
-    "xp25sec.exe": {"origin": "xp25-manual", "source": "components/security/xp25sec", "build": "build/prepare_security.py"},
-    "xp25audit.exe": {"origin": "xp25-manual", "source": "components/security/xp25audit", "build": "build/prepare_security.py"},
-    "xp25krnl.exe": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/ntos"},
-    "xp25hal.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/hals"},
-    "win32k.sys": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/windows/core/ntuser/kernel"},
-    "csrss.exe": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/subsys/csr"},
-    "csrsrv.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/subsys/csr"},
-    "basesrv.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/server"},
-    "winsrv.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/windows/core/ntcon"},
-    "ntdll.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/ntdll"},
-    "kernel32.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/win32/client"},
-    "user32.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/windows/core/ntuser/client"},
-    "gdi32.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/windows/core/ntgdi/client"},
-    "imm32.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/windows/core/imm"},
-    "lsasrv.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/ds/security/base/lsa/server"},
-    "secur32.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/ds/security/base/lsa/security"},
-    "services.exe": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/screg/sc/server"},
-    "smss.exe": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/smss"},
-    "msgina.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/ds/security/gina/msgina"},
-    "userenv.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/ds/security/gina/userenv"},
-    "regsvc.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/base/screg/winreg/server"},
-    "ws2_32.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/net/sockets/winsock2/dll/winsock2"},
-    "ws2help.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/net/sockets/winsock2/dll/ws2help"},
-    "wshtcpip.dll": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/net/sockets/winsock2/wsp/wshtcpip"},
-    "explorer.exe": {"origin": "microsoft-source", "source": "Source/XPSP1/NT/shell/explorer"},
-    "faultrep.dll": {"origin": "binary-only", "note": "SP3 binary; XP25 bypasses it with the MerlinAI crash handler"},
-    "dwwin.exe": {"origin": "binary-only"},
-    "msvcrt.dll": {"origin": "binary-only"},
-    "comctl32.dll": {"origin": "binary-only"},
-    "shell32.dll": {"origin": "binary-only"},
-    "ole32.dll": {"origin": "binary-only"},
-    "advapi32.dll": {"origin": "binary-only"}
+ "comment": "How MerlinAI maps an installed XP25 binary to its source and its build. 'recipe' names the builder recipe that rebuilds it (see 'recipes'); 'output' is the built file relative to the recipe's build tree in the build VM. 'xp25' entries are XP25's own code; 'microsoft-source' entries are built from the 5.1.2600.1106 reference tree (Source/XPSP1/NT), possibly with XP25's own changes; 'binary-only' are Microsoft binaries without source in XP25. A microsoft-source entry without a recipe is mapped to its source but not rebuilt by the builder yet. A recipe with control_build (and every NT recipe) first builds the job's unchanged baseline source; that build must reproduce the installed binary, else the builder refuses to replace it. 'known_builds' lists installed hashes whose provenance is established; where it is given, the builder also refuses an installed file that is not one of them.",
+ "binaries": {
+  "merlintest.exe": {
+   "origin": "xp25",
+   "source": "components/merlin/testapp",
+   "target": "MerlinTest.exe",
+   "guest_path": "/Program Files/XP25/MerlinAI/MerlinTest.exe",
+   "pdb": "MerlinTest.pdb",
+   "reproduce": {
+    "command": "\"C:\\Program Files\\XP25\\MerlinAI\\MerlinTest.exe\" /check",
+    "failure": "XP25_MERLINTEST_CHECK=crash",
+    "success": "XP25_MERLINTEST_CHECK=ok"
+   },
+   "recipe": "merlin",
+   "output": "merlin/testapp/obj/i386/MerlinTest.exe"
   },
-  "default": {"origin": "unknown", "note": "not part of XP25; probably a third-party or user program"}
+  "merlinai.exe": {
+   "origin": "xp25",
+   "source": "components/merlin/app",
+   "target": "MerlinAI.exe",
+   "guest_path": "/Program Files/XP25/MerlinAI/MerlinAI.exe",
+   "pdb": "MerlinAI.pdb",
+   "recipe": "merlin",
+   "output": "merlin/app/obj/i386/MerlinAI.exe"
+  },
+  "merlinclient.dll": {
+   "origin": "xp25",
+   "source": "components/merlin/client",
+   "target": "MerlinClient.dll",
+   "guest_path": "/Program Files/XP25/MerlinAI/MerlinClient.dll",
+   "pdb": "MerlinClient.pdb",
+   "recipe": "merlin",
+   "output": "merlin/client/obj/i386/MerlinClient.dll"
+  },
+  "merlincrash.exe": {
+   "origin": "xp25",
+   "source": "components/merlin/crash",
+   "target": "MerlinCrash.exe",
+   "guest_path": "/Program Files/XP25/MerlinAI/MerlinCrash.exe",
+   "pdb": "MerlinCrash.pdb",
+   "recipe": "merlin",
+   "output": "merlin/crash/obj/i386/MerlinCrash.exe"
+  },
+  "merlinai.cpl": {
+   "origin": "xp25",
+   "source": "components/merlin/cpl",
+   "target": "MerlinAI.cpl",
+   "guest_path": "/WINDOWS/system32/MerlinAI.cpl",
+   "pdb": "MerlinAI.pdb",
+   "recipe": "merlin",
+   "output": "merlin/cpl/obj/i386/MerlinAI.cpl"
+  },
+  "merlinsvc.exe": {
+   "origin": "xp25",
+   "source": "components/merlin/svc",
+   "target": "MerlinSvc.exe",
+   "guest_path": "/Program Files/XP25/MerlinAI/MerlinSvc.exe",
+   "pdb": "MerlinSvc.pdb",
+   "recipe": "merlin",
+   "output": "merlin/svc/obj/i386/MerlinSvc.exe"
+  },
+  "winlogon.exe": {
+   "origin": "xp25",
+   "source": "components/winlogon",
+   "guest_path": "/WINDOWS/system32/winlogon.exe",
+   "recipe": "winlogon",
+   "target": "winlogon.exe",
+   "output": "obj/i386/winlogon.exe"
+  },
+  "clippyai.exe": {
+   "origin": "xp25",
+   "source": "components/clippyai",
+   "guest_path": "/Program Files/XP25/ClippyAI.exe",
+   "recipe": "ai",
+   "target": "ClippyAI.exe",
+   "output": "clippyai/app/obj/i386/ClippyAI.exe"
+  },
+  "roverai.exe": {
+   "origin": "xp25",
+   "source": "components/roverai",
+   "guest_path": "/Program Files/XP25/RoverAI.exe",
+   "recipe": "ai",
+   "target": "RoverAI.exe",
+   "output": "roverai/app/obj/i386/RoverAI.exe"
+  },
+  "roveraiband.dll": {
+   "origin": "xp25",
+   "source": "components/roverai/explorer",
+   "guest_path": "/Program Files/XP25/RoverAIBand.dll",
+   "recipe": "ai",
+   "target": "RoverAIBand.dll",
+   "output": "roverai/explorer/obj/i386/RoverAIBand.dll"
+  },
+  "xp25agent.dll": {
+   "origin": "xp25",
+   "source": "components/xp25-agent",
+   "guest_path": "/Program Files/XP25/xp25agent.dll",
+   "recipe": "ai",
+   "target": "xp25agent.dll",
+   "output": "xp25-agent/dll/obj/i386/xp25agent.dll"
+  },
+  "xp25broker.exe": {
+   "origin": "xp25",
+   "source": "components/xp25-agent/broker",
+   "guest_path": "/Program Files/XP25/XP25Broker.exe",
+   "recipe": "ai",
+   "target": "XP25Broker.exe",
+   "output": "xp25-agent/broker/obj/i386/XP25Broker.exe"
+  },
+  "xp25sec.exe": {
+   "origin": "xp25",
+   "source": "components/security/xp25sec",
+   "recipe": "security",
+   "target": "XP25Sec.exe",
+   "output": "xp25sec/obj/i386/XP25Sec.exe",
+   "guest_path": "/Program Files/XP25/Security/XP25Sec.exe"
+  },
+  "xp25audit.exe": {
+   "origin": "xp25",
+   "source": "components/security/xp25audit",
+   "recipe": "security",
+   "target": "XP25Audit.exe",
+   "output": "xp25audit/obj/i386/XP25Audit.exe",
+   "guest_path": "/Program Files/XP25/Security/XP25Audit.exe"
+  },
+  "xp25krnl.exe": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/ntos",
+   "recipe": "nt-kernel",
+   "target": "xp25krnl.exe",
+   "guest_path": "/WINDOWS/system32/xp25krnl.exe",
+   "variants": {
+    "up": "base/ntos/init/up/obj/i386/ntoskrnl.exe",
+    "mp": "base/ntos/init/mp/obj/i386/ntkrnlmp.exe"
+   },
+   "known_builds": {
+    "b95319473fa0ddbaf3ea039ad6a5f56f3b495128999a8668ecd2ed4ca88809d9": {
+     "variant": "up",
+     "built_as": "reference kernel relinked with the XP25 export KeFlushQueuedDpcs (Milestone 8, sec-kexport-01)"
+    },
+    "426620748bd9cb2aceccd39fa760476f8457ebb1df9c589f7121531d66d4ad01": {
+     "variant": "mp",
+     "built_as": "reference MP kernel relinked with the XP25 export KeFlushQueuedDpcs (Milestone 8, sec-kexport-01)"
+    }
+   }
+  },
+  "xp25hal.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/hals"
+  },
+  "win32k.sys": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/windows/core/ntuser/kernel"
+  },
+  "csrss.exe": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/subsys/csr"
+  },
+  "csrsrv.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/subsys/csr"
+  },
+  "basesrv.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/server"
+  },
+  "winsrv.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/windows/core/ntcon"
+  },
+  "ntdll.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/ntdll"
+  },
+  "kernel32.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/win32/client"
+  },
+  "user32.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/windows/core/ntuser/client"
+  },
+  "gdi32.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/windows/core/ntgdi/client"
+  },
+  "imm32.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/windows/core/imm"
+  },
+  "lsasrv.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/ds/security/base/lsa/server"
+  },
+  "secur32.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/ds/security/base/lsa/security"
+  },
+  "services.exe": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/screg/sc/server"
+  },
+  "smss.exe": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/smss"
+  },
+  "msgina.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/ds/security/gina/msgina"
+  },
+  "userenv.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/ds/security/gina/userenv"
+  },
+  "regsvc.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/base/screg/winreg/server"
+  },
+  "ws2_32.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/net/sockets/winsock2/dll/winsock2"
+  },
+  "ws2help.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/net/sockets/winsock2/dll/ws2help"
+  },
+  "wshtcpip.dll": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/net/sockets/winsock2/wsp/wshtcpip"
+  },
+  "explorer.exe": {
+   "origin": "microsoft-source",
+   "source": "Source/XPSP1/NT/shell/explorer"
+  },
+  "faultrep.dll": {
+   "origin": "binary-only",
+   "note": "SP3 binary; XP25 bypasses it with the MerlinAI crash handler"
+  },
+  "dwwin.exe": {
+   "origin": "binary-only"
+  },
+  "msvcrt.dll": {
+   "origin": "binary-only"
+  },
+  "comctl32.dll": {
+   "origin": "binary-only"
+  },
+  "shell32.dll": {
+   "origin": "binary-only"
+  },
+  "ole32.dll": {
+   "origin": "binary-only"
+  },
+  "advapi32.dll": {
+   "origin": "binary-only"
+  }
+ },
+ "default": {
+  "origin": "unknown",
+  "note": "not part of XP25; probably a third-party or user program"
+ },
+ "recipes": {
+  "merlin": {
+   "kind": "xp25",
+   "tree": "merlin",
+   "sources": [
+    "components/merlin",
+    "components/xp25-agent/llm"
+   ],
+   "description": "MerlinAI's own programs (build/prepare_merlin.py)",
+   "control_build": false,
+   "provenance": "a baseline records the commit its MerlinAI build came from (builder_vm.py add-baseline --commit)"
+  },
+  "winlogon": {
+   "kind": "xp25",
+   "tree": "winlogon",
+   "sources": [
+    "components/winlogon"
+   ],
+   "description": "the XP25 Winlogon (build/prepare_winlogon.py)",
+   "control_build": true
+  },
+  "ai": {
+   "kind": "xp25",
+   "tree": "ai",
+   "sources": [
+    "components/xp25-agent",
+    "components/clippyai",
+    "components/roverai"
+   ],
+   "description": "ClippyAI, RoverAI and the XP25 agent (build/prepare_ai.py)",
+   "control_build": true
+  },
+  "security": {
+   "kind": "xp25",
+   "tree": "security",
+   "sources": [
+    "components/security"
+   ],
+   "description": "XP25Sec and XP25Audit (build/prepare_security.py)",
+   "control_build": true
+  },
+  "nt-kernel": {
+   "kind": "nt",
+   "sources": [
+    "Source/XPSP1/NT/base/ntos"
+   ],
+   "link_dir": "base/ntos/init",
+   "xp25_changes": {
+    "base/ntos/init/ntoskrnl.src": "build/prepare_kernel_exports.py"
+   },
+   "description": "the NT kernel from the reference tree with XP25's own changes (the kernel export list of build/prepare_kernel_exports.py), relinked in the build VM. Every build is preceded by a control build of XP25's unchanged sources, which must reproduce the installed kernel"
+  }
+ }
 }
