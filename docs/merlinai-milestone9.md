@@ -18,9 +18,12 @@ the unconfigured-provider and unpackaged-client limitations in this table.
 | 9D user-approved replacement | Apply and Roll Back on `XP25-MerlinAI-Demo` with health check; three agent defects found in the demonstration, fixed and kept (Phase 12) | Health check is minimal; overlay chains are never merged |
 
 At this checkpoint no AI model had investigated a problem. A real model run
-is recorded below; the self-repair loop remains limited to one controlled defect
-class. The XP25-Winlogon-Fix VM runs MerlinAI since 2026-11-23 (enrolled,
-health reported; no update applied on it yet).
+is recorded below. Until 2026-11-24 the builder rebuilt only MerlinAI's own
+programs. Since then it also rebuilds the XP25 Winlogon, AI and security
+components and the kernel, each behind a control build that must reproduce the
+installed binary; the first real OS defect repaired is the Filter Manager that
+did not load ([whole-OS record](merlinai-whole-os.md)). The XP25-Winlogon-Fix VM
+runs MerlinAI since 2026-11-23 (enrolled, health reported).
 
 ## What MerlinAI is
 
@@ -265,7 +268,9 @@ located through the crash offset, and classifies common non-XP25 causes
 change. Its conclusions say so in the build review ("Investigated by: MerlinAI
 offline investigator (rule-based; no AI model was used)").
 
-Only MerlinAI's own components are rebuilt automatically (`build: merlin`).
+Only MerlinAI's own components are rebuilt automatically (`build: merlin`; the
+2026-11-21 state, superseded by recipes on 2026-11-24, see
+[merlinai-whole-os.md](merlinai-whole-os.md)).
 A justified change elsewhere is reported as not built, and binary-only
 components are reported as such. AI changes never reach the baseline: they
 exist only in the job's workspace and update content.
@@ -603,9 +608,12 @@ for a builder elsewhere (plain HTTP only to a private address).
   dereference. It does not establish repair of other defects, general kernel
   changes or third-party applications. Earlier Phase 7 results used the offline
   investigator; both histories are retained.
-* Only MerlinAI's own components are rebuilt by the pipeline. Fixes to other
-  XP25 components (Winlogon, source-built Microsoft components) are reported
-  but not built. Binary-only components cannot be fixed.
+* Since 2026-11-24 the pipeline rebuilds MerlinAI, the XP25 Winlogon, AI and
+  security components and the kernel (`base/ntos`); see
+  [merlinai-whole-os.md](merlinai-whole-os.md) for what is verified. The other
+  Microsoft-source components are mapped but not rebuilt; binary-only components
+  cannot be. On the XP25-Winlogon-Fix baseline the installed AI components are not
+  reproducible from current source, so the builder refuses to replace them.
 * The original `XP25-M9-MerlinAI.qcow2` and demonstration VM retain the first
   release and the revision-file ACL limitation described above. The newer
   XP25-Winlogon-Fix image-04 contains the Control Panel fix and is the VM's disk

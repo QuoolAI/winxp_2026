@@ -2,6 +2,27 @@
 
 ## Current checkpoint
 
+2026-11-24, MerlinAI repairs XP25 itself, steps 1 and 2: the builder no longer rebuilds only MerlinAI.
+* **Recipes.** It now builds MerlinAI, the XP25 Winlogon, AI and security components, and the kernel from
+  Microsoft's reference source.
+* **Reference source.** The builder VM holds that source as a read-only squashfs image, and investigations
+  read it as effective source (reference plus XP25's own changes).
+* **Provenance gate.** Each job's control build must reproduce the installed binary, and the candidate may
+  differ from it only by the job's change. A candidate may not drop exports, every import must resolve on
+  the installed system, and moved ordinals are refused when something imports them.
+* **First real OS defect.** The Filter Manager never loaded on the XP25-Winlogon-Fix VM. `fltmgr.sys` (SP3)
+  imports `RtlAddAccessAllowedAceEx`, which XP25's source-built kernel implements but does not export.
+  * Host pipeline, offline rule: ready, `fixed_verified` (FltMgr STOPPED → RUNNING under KVM UP, two-vCPU
+    KVM and TCG; 18/18 regression gates).
+  * The VM's own *Build an Update* on the builder VM: gpt-4.1 found the same cause with the new tools.
+    ready, `fixed_verified` (gpt-4.1 investigation; nested tests under UP, two-vCPU and TCG pass; provenance as above). Not applied: that is the user's decision
+* **Found on the way.** The installed AI binaries on that VM are not reproducible from current source;
+  HTTP and Server still fail (their missing kernel functions are FASTCALL or not implemented). Two local
+  jobs failed and are kept (marker case; build-VM shutdown under host load).
+* **Disk.** The host disk reached 98%; storing the reference tree as a squashfs image returned 5 GB.
+
+[Record](merlinai-whole-os.md).
+
 2026-11-23, MerlinAI on the XP25-Winlogon-Fix VM; native build 12. The VM's
 disk is now image-04 (`378e9edd…8183`, MerlinAI build 10; the previous disk is
 kept as `XP25-Winlogon-Fix.supermium.qcow2`). Its NIC filter

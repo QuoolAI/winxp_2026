@@ -6,6 +6,18 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## MerlinAI repairs XP25 components, 2026-11-24
+
+| Test | Recorded result |
+| --- | --- |
+| FltMgr (SP3 `fltmgr.sys`) on image-04 with the candidate kernel (one export added) | Loads: `sc query FltMgr` STOPPED → RUNNING under KVM UP, two-vCPU KVM (candidate MP kernel) and TCG; boot, logon, desktop, checks, MerlinAI status and turn-off pass in each |
+| Kernel control relink in the builder's build VM | Reproduces the installed UP `b9531947…` and MP `42662074…` kernels exactly (link stamps aside) |
+| Control builds of today's source vs image-04 | Winlogon, XP25Sec, XP25Audit and 5 of 6 MerlinAI files reproduced; the AI binaries are not |
+| HTTP (`http.sys`), Server (`srv.sys`) | Still fail to load: push-lock (FASTCALL) and `RtlIpv4AddressToStringExW` exports missing; not repaired |
+| Builder job from the VM (`J-20261124-103813-56bc78`) | ready, `fixed_verified` (gpt-4.1 investigation; nested tests under UP, two-vCPU and TCG pass; provenance as above). Not applied: that is the user's decision |
+
+[Record](merlinai-whole-os.md).
+
 ## MerlinAI on the XP25-Winlogon-Fix VM; native build 12, 2026-11-23
 
 | Test | Recorded result |

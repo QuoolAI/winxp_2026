@@ -21,13 +21,13 @@ directories, all in `/mnt/01962c02-074f-47e7-8ee3-699a169f4905/`:
 
 | Directory | Milestone `.work/` topics (originals) |
 | --- | --- |
-| `winxp_2026/` (main checkout) | Milestones 1–6, native desktop, Winlogon (`winlogon-*-202610*`), branding, OneCore, toolchains, `xp-sp3-install-20261018`, `boot-debug-20261022` (also MerlinAI native builds 11 and 12), MerlinAI `merlin-dialog-ready-20261122`, `merlin-foreground-20261123` |
+| `winxp_2026/` (main checkout) | Milestones 1–6, native desktop, Winlogon (`winlogon-*-202610*`), branding, OneCore, toolchains, `xp-sp3-install-20261018`, `boot-debug-20261022` (also MerlinAI native builds 11 and 12), MerlinAI `merlin-dialog-ready-20261122`, `merlin-foreground-20261123`, `merlin-os-20261124` (whole-OS recipes, FltMgr) |
 | `xp25-ai/` | AI components and the XP25-AI VM: `ai-20261025`, `virt-manager-XP25-AI-*`, `vm-*-20261025/26`, `oem-*`, `guacamole-remote-20261026`, `xp25-ai-gateway-20261111` |
 | `xp25-security/` | Milestones 8 and 8.1: `security-20261111`, `security81-20261112`, `virt-manager-XP25-Security-81-20261112` |
 | `xp25-cve/` | Milestone 8.2: `cve82-20261112` |
 | `xp25-winlogon-ui/` | Account-switch fix and its VM: `winlogon-ui-20261113`, `winlogon-ui-20261116`, `winlogon-vm-20261118`, `virt-manager-XP25-Winlogon-Fix-20261118` |
 | `xp25-modernization/` | Milestone 8.4, R-0, R-1, Supermium: `modernization-20261118`, `screensaver-20261119`, `r1-20261119`, `vm-redeploy-20261119`, `winlogon-vm-20261119`, `supermium-vm-20261120` |
-| `xp25-merlin/` | Milestone 9: `merlin-20261121`, `merlin-builder-vm-20261121`, `merlin-demo-vm-20261121`, `merlin-vm-20261122` (XP25-Winlogon-Fix images, tests, enrollment and deployment) |
+| `xp25-merlin/` | Milestone 9: `merlin-20261121`, `merlin-builder-vm-20261121`, `merlin-demo-vm-20261121`, `merlin-vm-20261122` (XP25-Winlogon-Fix images, tests, enrollment and deployment; `deploy-02`: the FltMgr build requested from the VM) |
 
 Directories such as `ai-20261025`, `security-20261111` or `cve82-20261112`
 also appear in later worktrees. Those are the reflinked reference copies that
