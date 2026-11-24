@@ -2,6 +2,26 @@
 
 ## Current checkpoint
 
+2026-11-23, MerlinAI on the XP25-Winlogon-Fix VM; native build 12. The VM's
+disk is now image-04 (`378e9edd…8183`, MerlinAI build 10; the previous disk is
+kept as `XP25-Winlogon-Fix.supermium.qcow2`). Its NIC filter
+`xp25-browser-merlin` adds the relay (8740) and deployment-agent (8746) ports.
+It is enrolled as `xp25-winlogon-fix` (builder baseline `xp25wf4`, its own
+builder credential). Observed in the VM: two authenticated health reports
+(one before any logon); the Control Panel with MerlinAI and without Security
+Center or Automatic Updates; the builder answering through the relay; a
+normal guest-requested turn-off. Disk afterwards `55723697…c082`. No update
+was built or applied on it. An enrolled existing VM needs
+`merlin_deploy_agent.py adopt`, which `enroll_vm.py` now prints. Build 11
+failed 20/24 under TCG: Windows refused the crash dialog the foreground,
+because since build 10 the crashed program had already been ended. Native
+build 12 takes the foreground first: 9A 24/24 under UP and MP, TCG 24/24.
+The VM keeps build 10 (its dialog can come up without keyboard focus).
+[VM deployment](merlinai-milestone9.md#deployment-to-the-xp25-winlogon-fix-vm-2026-11-2223),
+[build 12](merlin-dialog-readiness.md). The image-04 switch oracle's first run
+failed 3/5 (a Found New Hardware wizard took the keys) and is kept; the
+repetition passed 9/9.
+
 2026-11-22/23, MerlinAI continuation in the main checkout. Reconciled the
 unfinished M9 record against retained guest evidence. Native build 10's
 image-04 (`378e9edd…8183`) passes boot/logon/desktop/status/normal turn-off

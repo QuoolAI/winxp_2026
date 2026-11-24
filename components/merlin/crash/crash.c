@@ -11,11 +11,11 @@
    second-chance exception, records the exception, faulting module, stack and
    module list, optionally writes a minidump, writes the stock "Application
    Error" event 1000 with the same five strings faultrep writes (so existing
-   event collection keeps working), ends the crashed process, and only then
-   shows the MerlinAI error dialog: Send to MerlinAI / Don't Send. The dialog
-   never holds the crashed program (Dr. Watson, which XP25 used before, ended
-   it silently; a browser restarting a crashed process must not wait for the
-   user).
+   event collection keeps working), creates the MerlinAI error dialog and takes
+   the foreground for it, ends the crashed process, and only then shows the
+   dialog: Send to MerlinAI / Don't Send. The dialog never holds the crashed
+   program (Dr. Watson, which XP25 used before, ended it silently; a browser
+   restarting a crashed process must not wait for the user).
 
    Crashes outside the interactive user's context (services, LocalSystem,
    LocalService, NetworkService) never get a dialog, because a SYSTEM process
@@ -432,6 +432,7 @@ static INT_PTR CALLBACK details_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 static void serial(const char *line);
+static void end_target(void);
 
 static INT_PTR CALLBACK report_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -462,8 +463,13 @@ static INT_PTR CALLBACK report_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         CheckDlgButton(dlg, IDC_DUMP, BST_UNCHECKED);
         EnableWindow(GetDlgItem(dlg, IDC_DUMP), FALSE);
         if (!c.report.dump[0]) SetDlgItemTextW(dlg, IDC_DUMP, L"Include the memory dump (none was written)");
-        SetForegroundWindow(dlg);
-        serial("XP25_MERLIN_CRASH_DIALOG_READY");
+        /* Take the foreground while the crashed program still exists, stopped under this debugger: Windows
+           allows that. Once it has ended, Windows hands the foreground to another window and refuses it to
+           this dialog, which then only flashes on the taskbar. Then end it, before the dialog is visible. */
+        merlin_copy(text, sizeof(text), SetForegroundWindow(dlg) ? "XP25_MERLIN_CRASH_DIALOG_READY foreground=1"
+                                                                 : "XP25_MERLIN_CRASH_DIALOG_READY foreground=0");
+        end_target();
+        serial(text);
         return TRUE;
     }
     case WM_COMMAND:
@@ -682,9 +688,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_line,
         serial(marker);
     }
     /* Everything the report needs is captured: end the crashed program before asking anything, so the
-       dialog never holds it (a browser restarting a crashed process must not wait for the user). */
-    end_target();
+       dialog never holds it (a browser restarting a crashed process must not wait for the user). The
+       dialog does that itself, once it has the foreground (report_proc). */
     if (c.interactive) interact();
-    else save_report(FALSE, FALSE, FALSE);          /* queued silently, discovered locally */
+    else {
+        end_target();
+        save_report(FALSE, FALSE, FALSE);           /* queued silently, discovered locally */
+    }
     return 0;
 }

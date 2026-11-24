@@ -6,6 +6,19 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## MerlinAI on the XP25-Winlogon-Fix VM; native build 12, 2026-11-23
+
+| Test | Recorded result |
+| --- | --- |
+| XP25-Winlogon-Fix (virt-manager, KVM, 1 vCPU, 1 GiB), image-04 `378e9edd…8183`, MerlinAI build 10 | Enrolled; two authenticated health reports (one 11 s after boot, before logon); Control Panel shows MerlinAI, no Security Center, no Automatic Updates; builder reachable through the relay (authenticated job list); normal guest-requested turn-off. No update built, applied or rolled back on it |
+| Image-04 switch oracle, first run `wf-2acct-up-04` | **Failed**, 3/5 painted (a Found New Hardware wizard took the keys); repetition `wf-2acct-up-05` 9/9 |
+| Build 11, 9A suite | UP 24/24; TCG **failed** 20/24 (crash dialog refused the foreground) |
+| Build 12, 9A suite (M9 baseline overlays) | UP 24/24, two-vCPU KVM 24/24, TCG 24/24; the crash dialog reports `foreground=1` |
+
+The VM keeps build 10, whose crash dialog can come up without keyboard focus.
+[Deployment](merlinai-milestone9.md#deployment-to-the-xp25-winlogon-fix-vm-2026-11-2223),
+[build 12](merlin-dialog-readiness.md).
+
 ## MerlinAI continuation, 2026-11-22/23
 
 Frozen build-10 image-04 (`378e9edd…8183`), under

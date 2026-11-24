@@ -172,6 +172,22 @@ class SourceTests(unittest.TestCase):
             scenario.run(captured + 'XP25_MERLIN_CRASH_DIALOG_READY\n')
             self.assertEqual(keys.call_count, count)
 
+    def test_crash_automation_types_nothing_without_the_foreground(self):
+        sys.path.insert(0, str(ROOT / 'vm'))
+        import merlin_lab
+        scenario = merlin_lab.Scenario(None, 1)
+        text = ('XP25_MERLIN_STEP=crash_dialog\n'
+                'XP25_MERLIN_CRASH_CAPTURED interactive=1\n'
+                'XP25_MERLIN_CRASH_DIALOG_READY foreground=0\n')
+        with mock.patch.object(scenario, 'keys') as keys, \
+             mock.patch.object(scenario, 'shot'), mock.patch.object(merlin_lab.time, 'sleep'), \
+             mock.patch.object(merlin_lab.lab, 'record') as record:
+            scenario.run(text)
+            keys.assert_not_called()
+            self.assertIn(mock.call({'scenario_step': 'crash_dialog_not_foreground'}), record.call_args_list)
+            scenario.run(text.replace('foreground=0', 'foreground=1'))
+            keys.assert_not_called()                  # the dialog step runs once
+
     def test_no_certificate_bypass_or_microsoft_endpoints(self):
         text = '\n'.join(p.read_text(errors='replace') for p in (ROOT / 'components/merlin').rglob('*') if p.suffix in ('.c', '.h', '.py'))
         for forbidden in ('watson.microsoft.com', 'SECURITY_FLAG_IGNORE', 'CERT_NONE', 'verify=False', 'check_hostname = False'):

@@ -12,6 +12,54 @@ it runs the R-0 Winlogon `020eaf40…` and the R-1 `win32k.sys`, `user32.dll` an
 `gdi32.dll` ([redeploy](#redeploy-with-r-0-and-r-1-2026-11-20)). **Since
 2026-11-21 Supermium is its only web browser and Internet Explorer is removed**
 ([Supermium replaces IE](#supermium-replaces-internet-explorer-2026-11-21)).
+**Since 2026-11-23 MerlinAI replaces error reporting, Security Center and
+Automatic Updates** ([MerlinAI](#merlinai-replaces-error-reporting-security-center-and-automatic-updates-2026-11-23)).
+
+## MerlinAI replaces error reporting, Security Center and Automatic Updates, 2026-11-23
+
+The VM's own disk of 2026-11-22 (`f5da32b5…54a6`, frozen as a reference), with
+MerlinAI native build 10 installed by its own installer, is
+`W/image-04/XP25-Winlogon-Fix-MerlinAI.qcow2`
+(`378e9edd71f9fc3435800ca3b0ad856a08f435e3a6b09e66d2dc32fee3e58183`), where `W` is
+`xp25-merlin/.work/merlin-vm-20261122`. The image's tests and every deployment
+step are in [merlinai-milestone9.md](merlinai-milestone9.md#deployment-to-the-xp25-winlogon-fix-vm-2026-11-2223).
+
+- Disk: a reflink copy of `image-04`, which hashed `378e9edd…` before its first
+  boot. The previous disk is kept, unchanged, as
+  `V/XP25-Winlogon-Fix.supermium.qcow2`.
+- NIC filter `xp25-browser-merlin`: the rules of `xp25-browser-gateway` plus TCP
+  8740 (MerlinAI relay) and 8746 (deployment agent) to `10.25.0.1`. Memory, CPU,
+  MAC and address are unchanged.
+- Enrolled as installation `xp25-winlogon-fix`; updates are built on the builder's
+  baseline `xp25wf4`, which is this image. The host user services `merlin-relay`
+  and `merlin-deploy-agent` must run (`systemctl --user status merlin-relay
+  merlin-deploy-agent`), and the VM `MerlinAI-Builder` must run for builds.
+- Tests of the image (one-vCPU KVM overlays unless noted): job test 6/6 under KVM
+  UP, two-vCPU KVM and TCG; `proof` 34/35 (the same four USB drivers as
+  before); screen-saver probe 10/10; switch oracle 9/9 (an earlier run, 3/5,
+  failed and is kept); browser regression 23/26 (the same three false checks
+  as before).
+- In the VM: two authenticated health reports reached the deployment agent; the
+  Control Panel shows *MerlinAI Health and Updates* and neither Security Center
+  nor Automatic Updates; MerlinAI shows the builder and the agent configured.
+  The VM was left shut off. No update has been built or applied on it.
+
+**What changes for you.** A program crash opens the *MerlinAI Error Report*
+dialog instead of Dr. Watson; the crashed program is ended first. Nothing leaves
+the VM unless you choose it: *Send to MerlinAI* keeps the report in the local
+queue, and only the *Transfer* tick box or the Control Panel sends it to the
+builder. Control Panel → *MerlinAI Health and Updates* lists the problems,
+builds an update on the builder VM when you ask, and applies it only after you
+approve it. The VM then restarts on a new disk overlay in `V`; *Roll Back*
+returns to the previous one. Windows Firewall stays.
+
+To go back, shut the VM down, move `V/XP25-Winlogon-Fix.qcow2` (and any
+overlays MerlinAI created) away, rename `V/XP25-Winlogon-Fix.supermium.qcow2` to
+`V/XP25-Winlogon-Fix.qcow2`, and redefine the domain from
+`W/enroll-wf/XP25-Winlogon-Fix.before.xml` (filter `xp25-browser-gateway`).
+Remove `xp25-winlogon-fix` from the agent's configuration
+(`xp25-merlin/.work/merlin-demo-vm-20261121/host/agent.json`; the version before
+enrollment is `W/enroll-wf/agent.json.before`) and restart `merlin-deploy-agent`.
 
 ## Supermium replaces Internet Explorer, 2026-11-21
 
@@ -341,8 +389,8 @@ except:
 
 | Setting | Value |
 | --- | --- |
-| Disk | `XP25-Winlogon-Fix.qcow2` (IDE `hda`, writeback), a standalone reflink copy. It hashed equal to its image before its first boot (`fe633d15…` on 2026-11-18, `471e1b06…` on 2026-11-19, `c5183228…` on 2026-11-20, `9e1e8f08…` on 2026-11-21) |
-| NIC | RTL8139, MAC `52:54:00:25:00:07`, network `XP25-Isolated` (reserved `10.25.0.26` since 2026-11-21), filter `xp25-browser-gateway` since 2026-11-21 (`GATEWAY_IP` 10.25.0.1, `GATEWAY_PORT` 8443, `BROWSER_PORT` 3128; before, `xp25-gateway-only` without the browser port). No route off the host |
+| Disk | `XP25-Winlogon-Fix.qcow2` (IDE `hda`, writeback), a standalone reflink copy. It hashed equal to its image before its first boot (`fe633d15…` on 2026-11-18, `471e1b06…` on 2026-11-19, `c5183228…` on 2026-11-20, `9e1e8f08…` on 2026-11-21, `378e9edd…` on 2026-11-22) |
+| NIC | RTL8139, MAC `52:54:00:25:00:07`, network `XP25-Isolated` (reserved `10.25.0.26` since 2026-11-21), filter `xp25-browser-merlin` since 2026-11-22 (`GATEWAY_IP` 10.25.0.1, `GATEWAY_PORT` 8443, `BROWSER_PORT` 3128, `RELAY_PORT` 8740, `DEPLOY_PORT` 8746); from 2026-11-21 `xp25-browser-gateway` without the MerlinAI ports, before that `xp25-gateway-only` without the browser port. No route off the host |
 | Profile | KVM `i686`, `pc-i440fx-8.2`, `qemu32`, **1 vCPU** (the image boots the uniprocessor kernel and HAL), 1 GiB since 2026-11-21 (512 MiB before) |
 | Console | VNC on the host's loopback interface only, autoport. COM1 to `serial.log` (root-only while libvirt runs it) |
 

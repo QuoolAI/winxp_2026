@@ -75,6 +75,65 @@ Build-10 image-04's broader recorded compatibility results remain separate:
 [image-validation record](merlinai-milestone9.md#model-investigation-and-vm-image-validation-2026-11-2223).
 The readiness marker is diagnostic, not a claim of OS or application support.
 
+## Build 11 under UP and TCG; the foreground fix (native build 12), 2026-11-23
+
+Build 11 under KVM UP, `W/runs/dialog-ready-up-01`: **24/24** (readiness,
+then `CHOICE=send`). Under TCG, `W/runs/dialog-ready-tcg-01` **failed**, 20/24,
+and is kept with its `failure.json`. The readiness record was written, but
+Windows refused the dialog the foreground: its taskbar button flashes orange in
+screenshots 01 and 03. The harness's keys went elsewhere. Enter opened the
+selected desktop icon (Internet Explorer), Alt+T opened IE's Tools menu, and
+the report was never answered (no `CHOICE` record).
+
+Cause: since build 10, `end_target()` ends the crashed program before the
+dialog exists. Up to build 09 the dialog called `SetForegroundWindow` while the
+crashed program was still stopped under MerlinCrash's debugger, which Windows
+allows. Once that program has exited, Windows activates another window and
+can refuse the foreground to the dialog, which then only flashes on the
+taskbar. A user can click it; automation types into the wrong window.
+
+Native build 12: the dialog takes the foreground in `WM_INITDIALOG`, then calls
+`end_target()`. This is still before the dialog is visible, so the dialog never
+holds the crashed program. It then writes
+`XP25_MERLIN_CRASH_DIALOG_READY foreground=1` (or `=0` when Windows refused).
+The harness types nothing into a dialog that reports `foreground=0` and records
+`crash_dialog_not_foreground` instead; a host test covers that case (27
+MerlinAI host tests).
+
+Evidence `F = .work/merlin-foreground-20261123/` (media, logs, `commands.jsonl`,
+runs; the M9 baseline is a reflink copy of `W/baseline`). Native build
+`.work/boot-debug-20261022/merlin-foreground-native-12/` is accepted: all 52
+compiled sources match the media, there is no NMAKE failure, and the imports
+are checked. The parent is `108ad0451` plus this change. Media ISO
+`e060f1171930f30e21b8d807207763805d29d3196955716ed09fcc58b36fb34c`; `MerlinCrash.exe`
+`b149c3f136a94b5a83c38dddd867b5fb98118732761cd6cdc7cc57827021b74c` (32,256 bytes).
+
+| Build 12 run (M9 baseline overlay) | Result |
+| --- | --- |
+| `F/runs/foreground-up-01`, KVM UP | 24/24; `foreground=1`, `CHOICE=send`, transfer 0 |
+| `F/runs/foreground-mp-01`, two-vCPU KVM | 24/24; `foreground=1`, `CHOICE=send`, transfer 0 |
+| `F/runs/foreground-tcg-01`, TCG | 24/24; `foreground=1`, `CHOICE=send`, transfer 0 |
+
+Build 12 is not packaged into a VM image. The XP25-Winlogon-Fix VM runs build
+10, whose crash dialog can come up without keyboard focus (flashing taskbar
+button; clicking it works). Installing build 12 there needs a new system
+revision and a matching builder baseline, so that later updates still match
+the files they expect.
+
+```bash
+F=.work/merlin-foreground-20261123
+python3 build/prepare_merlin.py --output $F/native-media-12
+python3 vm/merlin_native_build.py --media $F/native-media-12 --name merlin-foreground-native-12 \
+  --base .work/merlin-dialog-ready-20261122/reference/buildvm.qcow2 \
+  --guest-modules ../xp25-merlin/.work/merlin-20261121/guest-modules-82/WINDOWS/system32 \
+  --toolchain .work/toolchains/mingw-binutils/usr/bin
+# lab build = collect/build + the lab-only merlin_probe.exe; then for up, mp, tcg:
+XP25_MERLIN_WORK=$PWD/$F python3 vm/merlin_lab.py launch --name foreground-<mode>-01 --mode <mode> \
+  --image $F/baseline --build $F/native-12-lab
+XP25_MERLIN_WORK=$PWD/$F python3 vm/merlin_lab.py wait foreground-<mode>-01 --timeout 5400
+XP25_MERLIN_WORK=$PWD/$F python3 vm/merlin_lab.py results foreground-<mode>-01
+```
+
 ## Commands
 
 Run from the main checkout. Fresh output names are required. Prior evidence

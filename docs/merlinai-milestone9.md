@@ -19,7 +19,8 @@ the unconfigured-provider and unpackaged-client limitations in this table.
 
 At this checkpoint no AI model had investigated a problem. A real model run
 is recorded below; the self-repair loop remains limited to one controlled defect
-class, and replacement of the XP25-Winlogon-Fix VM remains pending.
+class. The XP25-Winlogon-Fix VM runs MerlinAI since 2026-11-23 (enrolled,
+health reported; no update applied on it yet).
 
 ## What MerlinAI is
 
@@ -437,6 +438,9 @@ once; both definitions are kept in `vm-01/`).
 | nested TCG test of `J-20261123-005336-fc7b5d` | `tasklist` (WMI) did not answer in time: `desktop started` failed, job not ready | the Explorer check retries for a minute |
 | two-vCPU job test | a relative `--mp-kernel` path resolved after `chdir` | paths resolved first |
 | browser regression of image-03 (`wf03-browser2-up`) | Supermium hit its known intermittent CHECK (`chrome.dll+0x842214`) while restarting, and the MerlinAI dialog kept the crashed `chrome.exe` attached until answered; Dr. Watson, which the VM used before, ended it silently | MerlinCrash ends the crashed program (after capturing report, stack, dump and event) before it shows the dialog (native build 10) |
+| 9A of native build 10 under two-vCPU KVM (`merlin-9a-mp-04`, 21/24) | the harness typed into the crash dialog on the capture record, which precedes `end_target()`'s wait of up to 10 s; Alt+T/Alt+S reached the details window and the report was later answered Don't Send | MerlinCrash writes `XP25_MERLIN_CRASH_DIALOG_READY` once its dialog is initialized; the harness waits for it (native build 11, `108ad0451`, [record](merlin-dialog-readiness.md)). A repetition of build 10 (`merlin-9a-mp-05`) passed 24/24: timing in the harness, not the product |
+| 9A of native build 11 under TCG (`dialog-ready-tcg-01`, 20/24) | Windows refused the crash dialog the foreground (flashing taskbar button): since build 10 the crashed program, stopped under the debugger, is ended before the dialog asks for it. The harness's Enter then opened Internet Explorer from the desktop | the dialog takes the foreground, then ends the program, before it is visible, and reports `foreground=1/0`; the harness never types into a dialog without the foreground (native build 12) |
+| enrolling the XP25-Winlogon-Fix VM | an existing VM enrolled into the agent had no recorded current disk: the guest showed *current system unknown* and `restore-current` had nothing to start | `merlin_deploy_agent.py adopt ID REVISION` after the first health report; `enroll_vm.py` now prints this step |
 
 The packaged M9 image `XP25-M9-MerlinAI.qcow2` and the demonstration VM still
 carry the first, offline-created revision file. It has no access control there.
@@ -474,7 +478,7 @@ in `image-04/manifest.json`; no source-kernel rebuild is implied.
 | Native boot, logon, desktop, MerlinAI status, checks and normal turn-off | 6/6 under UP, MP and TCG (`wf-image04-*`) |
 | Security `proof` (`wf-proof-up-04`) | 34/35; only the four inherited USB-driver audit findings remain |
 | Screen saver (`wf-ss-up-04`) | 10/10 |
-| Two-account switch (`wf-2acct-up-05`) | 9/9 painted switches; alternating accounts; wrong password rejected |
+| Two-account switch (`wf-2acct-up-04` **failed**, kept; repetition `wf-2acct-up-05`) | First run: 3 of 5 switches painted. At cycle 4 the Found New Hardware wizard was in front of the desktop and took the switch keys; cycle 5 never reached a painted dialog (`failure.json`; no crash, one MerlinSvc COM1 line). Repetition, nothing else running: 9/9 painted switches, alternating accounts, wrong password rejected |
 | Browser (`wf04-browser-up`, `matrix-03`) | 23/26 aggregate checks; DevTools 11/11 and persistence pass; MSI and AI 55/0 + 7/0 pass; normal turn-off |
 | Model builder job `J-20261123-020135-92f5c3`, baseline `xp25wf4` | Ready, defect reproduced before; repaired check and six regression gates pass under nested UP/MP/TCG |
 
@@ -485,16 +489,77 @@ pre-MerlinAI browser image. The browser's known intermittent
 `chrome.dll+0x842214` CHECK is not fixed by terminating crashed processes.
 
 Native build 10's separate 9A suite passed 24/24 under UP (`merlin-9a-up-11`)
-and TCG (`merlin-9a-tcg-04`), but MP (`merlin-9a-mp-04`) passed 21/24: its
+and TCG (`merlin-9a-tcg-04`). MP (`merlin-9a-mp-04`) passed 21/24: its
 interactive report was not queued or transferred, and the trace records
-`dont_send`. Capture completion precedes the bounded process-termination wait;
-the harness sent dialog keys before dialog initialization. The continuation
-below records the readiness fix and its focused rerun.
+`dont_send`. Capture completion precedes the bounded process-termination wait,
+and the harness sent dialog keys before the dialog was initialized. A
+repetition of build 10 (`merlin-9a-mp-05`) passed 24/24. Build 11 added a
+readiness record: MP 24/24, UP 24/24, TCG **failed** 20/24 because Windows
+refused the dialog the foreground. Build 12 takes the foreground before ending
+the crashed program: UP 24/24, MP 24/24, TCG 24/24. Details:
+[dialog readiness and foreground](merlin-dialog-readiness.md).
 
-**Deployment is pending.** This continuation does not replace a registered VM's
-disk, enroll it, apply an update or change the running builder. Frozen inputs,
-superseded images, failed runs and the unfinished deployment evidence remain
-available. [Focused continuation](merlin-dialog-readiness.md).
+[Focused continuation](merlin-dialog-readiness.md).
+
+### Deployment to the XP25-Winlogon-Fix VM (2026-11-22/23)
+
+Evidence `W/enroll-wf/` (domain definitions before and after, agent
+configuration before enrollment) and `W/deploy-01/` (screenshots, the libvirt
+command journal `commands.jsonl`, disk hash). The VM's directory is `V =
+xp25-winlogon-ui/.work/virt-manager-XP25-Winlogon-Fix-20261118/`.
+
+1. With the domain shut off and its disk still `f5da32b5…54a6` (the frozen
+   reference), that disk was renamed `V/XP25-Winlogon-Fix.supermium.qcow2`
+   (kept) and image-04 was reflink-copied to `V/XP25-Winlogon-Fix.qcow2`
+   (`378e9edd…8183`). The superseded staged copy of image-03 in `V` (hash
+   checked, `c5d5eca1…`) was deleted; image-03 itself stays in `W/image-03/`.
+2. `virsh nwfilter-define components/merlin/host/xp25-browser-merlin.nwfilter.xml`.
+   The domain was redefined with two changes only: filter
+   `xp25-browser-gateway` → `xp25-browser-merlin` (adds RELAY_PORT 8740 and
+   DEPLOY_PORT 8746 on 10.25.0.1; the AI gateway 8443 and browser gateway 3128
+   are unchanged) and the description.
+3. First boot, 2026-11-22 18:52 PST: logon dialog (`00-boot.png`). These tools
+   sent nothing further; the domain was shut down normally at 21:18 PST
+   (libvirt reason `shutdown`) by a request not journaled here. The disk was
+   then `d485e136…830a`, revision `XP25-Winlogon-Fix-MerlinAI-1`.
+4. Enrollment, offline (not `--keyboard`): `enroll_vm.py enroll` staged
+   `C:\xp25\merlin-enroll.cmd` and an XP25 Startup entry, and added the
+   installation to the agent's configuration with a new deployment key and the
+   per-installation builder credential `xp25-host-wf`. Until the first logon
+   the staged files had no access control; the disk's only user profiles are
+   `XP25` and `Administrator`, both administrators. After that logon both
+   files were gone (checked read-only after shutdown). The agent's builder
+   credential reads no other installation's job (404) and a wrong key is
+   refused.
+5. Second boot, 2026-11-23 21:05 PST. Logon as `XP25` (Enter, blank password,
+   caret in the password field checked first): the Startup entry ran
+   `MerlinAI.exe /configure`, and MerlinSvc's next retry delivered an
+   authenticated health report 102 s after boot (agent journal 05:08:08Z).
+   Restart through Start → Turn Off Computer → Restart: health report 11 s
+   after boot, before any logon (05:09:43Z): revision
+   `XP25-Winlogon-Fix-MerlinAI-1`, Winlogon, RPC, Event Log and firewall
+   running, volume not dirty.
+6. `merlin_deploy_agent.py adopt xp25-winlogon-fix XP25-Winlogon-Fix-MerlinAI-1`
+   recorded the domain's disk as current (see the defect table).
+7. Control Panel, classic view as this VM is set (`14`, `15`): *MerlinAI
+   Health and Updates* present; no Security Center, no Automatic Updates;
+   Windows Firewall present. MerlinAI (`16`–`19`): Builder and Deployment agent
+   *configured*; revision shown; 20 outstanding problems from the VM's own
+   event history (drivers failing to load, W32Time, SSDP, HTTP, Server,
+   Computer Browser, firewall/ICS); Previous Builds empty, which the relay
+   journal confirms as authenticated `GET /merlin/v1/jobs` for
+   `xp25-winlogon-fix` with status 200; agent status *idle; current system
+   XP25-Winlogon-Fix-MerlinAI-1; no previous system to roll back to*.
+8. Start → Turn Off Computer → Turn Off: libvirt *Shutdown Finished after
+   guest request*. Disk afterwards
+   `55723697d22e69ae10d6d2104ef89948258f7e5699990e0b9c0d64233e7cc082`.
+
+Not done on this VM: no update was built, reviewed, applied or rolled back
+(Apply and Roll Back are shown on `XP25-MerlinAI-Demo`; the builder's model
+job on this VM's baseline `xp25wf4` is above). The VM runs native build 10
+(source `361a3b6d0`). Builds 11 and 12 change only MerlinCrash (readiness
+record; foreground before ending the crashed program) and are not installed
+on it.
 
 ## Protocols and trust
 
@@ -543,8 +608,17 @@ for a builder elsewhere (plain HTTP only to a private address).
   but not built. Binary-only components cannot be fixed.
 * The original `XP25-M9-MerlinAI.qcow2` and demonstration VM retain the first
   release and the revision-file ACL limitation described above. The newer
-  XP25-Winlogon-Fix image-04 contains the Control Panel fix; its lab results do
-  not establish deployment to the registered VM.
+  XP25-Winlogon-Fix image-04 contains the Control Panel fix and is the VM's disk
+  since 2026-11-23. On that VM enrollment, health reports, the Control Panel
+  and the builder connection are observed; Build, Review, Apply and Roll Back
+  are not yet exercised there. Its 20 queued problems (the VM's own event
+  history) are not MerlinAI components, so a build for them can at most
+  report them.
+* The source merged as of this record is native build 12; the XP25-Winlogon-Fix
+  VM runs build 10 (the demo VM an older release). They differ only in
+  MerlinCrash: build 10's crash dialog can come up without keyboard focus (its
+  taskbar button flashes; clicking it works), and it has no readiness record.
+  Moving the VM to build 12 needs a new system revision and builder baseline.
 * The post-deployment health check is minimal (core services running, volume
   not dirty, reported before any logon). The reported problem is tested by
   the builder on its copy of the baseline, not again on the user's disk.
@@ -590,4 +664,16 @@ python3 components/merlin/host/enroll_vm.py enroll --dir .work/merlin-demo-vm-20
   --builder-key <key> --agent-config .work/merlin-demo-vm-20261121/host/agent.json
 systemctl --user enable --now merlin-relay merlin-deploy-agent      # units in components/merlin/host
 python3 components/merlin/host/merlin_deploy_agent.py --config <agent.json> restore-current xp25-merlin-demo   # operator recovery
+# an existing virt-manager VM (XP25-Winlogon-Fix): shut off, disk replaced by the tested image, filter + domain redefined
+virsh -c qemu:///system nwfilter-define components/merlin/host/xp25-browser-merlin.nwfilter.xml
+python3 components/merlin/builder/deploy/builder_vm.py add-baseline --dir $B --name xp25wf4 --repo . --commit 361a3b6d0 \
+  --image .work/merlin-vm-20261122/image-04/XP25-Winlogon-Fix-MerlinAI.qcow2 --revision XP25-Winlogon-Fix-MerlinAI-1 --symbols <linker maps>
+# (snapshot commit cf8bdf54, disk serial merlin-bl-xp25wf4)
+python3 components/merlin/builder/deploy/builder_vm.py register --dir $B --installation xp25-winlogon-fix --baseline xp25wf4
+python3 components/merlin/builder/deploy/builder_vm.py register --dir $B --agent xp25-host-wf --installations xp25-winlogon-fix
+python3 components/merlin/host/enroll_vm.py enroll --dir <dir with vm.json> --installation xp25-winlogon-fix \
+  --builder-key-file $B/keys/xp25-winlogon-fix.json --agent-config <agent.json> --disk-dir <VM directory> \
+  --builder-agent xp25-host-wf --builder-agent-key-file <file> [--keyboard]
+systemctl --user restart merlin-deploy-agent      # then log on once (offline enrollment) and wait for the health report
+python3 components/merlin/host/merlin_deploy_agent.py --config <agent.json> adopt xp25-winlogon-fix XP25-Winlogon-Fix-MerlinAI-1
 ```

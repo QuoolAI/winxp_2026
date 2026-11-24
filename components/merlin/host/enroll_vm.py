@@ -18,6 +18,8 @@
       guest only this way or by typing them
       into MerlinAI Settings; the staged file's clusters may persist in NTFS free
       space after deletion (documented limitation of offline enrollment).
+      Afterwards restart the agent and, once the VM has reported its health,
+      run merlin_deploy_agent.py adopt ID REVISION to record its disk as current.
 
       SECURITY: ntfscp gives the staged files no security descriptor, so until the
       first XP25 logon runs and deletes them, every account on the VM can read the
@@ -167,6 +169,9 @@ def enroll(args):
         entry.update(builder_agent=args.builder_agent, builder_key_file=str(args.builder_agent_key_file.resolve()))
     cfg.setdefault('installations', {})[args.installation] = entry
     cfg_path.write_text(json.dumps(cfg, indent=1) + '\n')
+    # Without a recorded current disk the guest shows "current system unknown" and restore-current cannot run.
+    next_steps = ('restart the deployment agent; after the first health report: merlin_deploy_agent.py --config %s '
+                  'adopt %s <reported revision>' % (cfg_path, args.installation))
     if args.keyboard:
         type_line(vm['name'], '"C:\\Program Files\\XP25\\MerlinAI\\MerlinAI.exe" /configure %s %s %s %s %s'
                   % (args.relay, args.agent_url, args.installation, args.builder_key, deploy_key))
@@ -175,7 +180,7 @@ def enroll(args):
         time.sleep(1)
         type_line(vm['name'], 'exit')
         print(json.dumps({'installation': args.installation, 'deploy_key_file': str(key_file), 'agent_config': str(cfg_path),
-                          'typed': 'MerlinAI.exe /configure (keys not logged)'}))
+                          'typed': 'MerlinAI.exe /configure (keys not logged)', 'next': next_steps}))
         return
     work = d / 'enroll'
     work.mkdir(exist_ok=True)
@@ -198,7 +203,7 @@ def enroll(args):
     print('warning: the staged enrollment script has no access control until the first XP25 logon deletes it; '
           'use this only for a VM no other account can log on to', file=sys.stderr)
     print(json.dumps({'installation': args.installation, 'deploy_key_file': str(key_file), 'agent_config': str(cfg_path),
-                      'staged': ['/xp25/merlin-enroll.cmd', 'Startup/XP25MerlinEnroll.cmd']}))
+                      'staged': ['/xp25/merlin-enroll.cmd', 'Startup/XP25MerlinEnroll.cmd'], 'next': next_steps}))
 
 
 def main():
