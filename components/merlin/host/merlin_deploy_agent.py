@@ -138,7 +138,8 @@ class Installation:
         return self.virsh('domstate', self.domain).strip()
 
     def system_disk(self):
-        xml = self.virsh('dumpxml', '--inactive', self.domain)
+        # --security-info: a definition read without it has no VNC password, and defining it drops the password.
+        xml = self.virsh('dumpxml', '--inactive', '--security-info', self.domain)
         m = re.search(r"<disk type='file' device='disk'>.*?<source file='([^']+)'.*?</disk>", xml, re.S)
         if not m:
             raise RuntimeError('no file-backed system disk in the domain')
@@ -148,14 +149,22 @@ class Installation:
         current, xml = self.system_disk()
         if Path(new).resolve().parent != self.disk_dir:
             raise RuntimeError('refusing a disk outside the installation directory')
-        (self.dir / ('domain-%d.xml' % int(time.time()))).write_text(xml)
+        private(self.dir / ('domain-%d.xml' % int(time.time())), xml)
         changed = xml.replace("<source file='%s'" % current, "<source file='%s'" % new, 1)
         if changed == xml:
             raise RuntimeError('disk source not found in the domain definition')
         path = self.dir / 'domain-next.xml'
-        path.write_text(changed)
+        private(path, changed)
         self.virsh('define', str(path))
         return current
+
+
+def private(path, text):
+    """Owner-only: a definition read with --security-info holds the console password."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write(text)
 
 
 class Agent:

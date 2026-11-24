@@ -399,6 +399,28 @@ class DeployAgentTests(unittest.TestCase):
         journal = (Path(self.dir.name) / 'state/inst-a/journal.jsonl').read_text()
         self.assertIn('health_report', journal)
 
+    def test_disk_switch_keeps_the_console_password(self):
+        """The domain is redefined from a definition read with its security info, and the copies are owner-only."""
+        d = Path(self.dir.name)
+        inst = self.mod.Installation('inst-a', {'deploy_key_file': str(d / 'deploy-a.key'), 'domain': 'D', 'disk_dir': str(d)},
+                                     d / 'state')
+        xml = ("<domain><devices><disk type='file' device='disk'><source file='%s'/></disk>"
+               "<graphics type='vnc' port='5926' passwd='secret12'/></devices></domain>") % (d / 'old.qcow2')
+        calls = []
+
+        def virsh(*args, check=True):
+            calls.append(args)
+            return xml if args[0] == 'dumpxml' else ''
+        inst.virsh = virsh
+        self.assertEqual(inst.switch_disk(d / 'new.qcow2'), d / 'old.qcow2')
+        self.assertEqual(calls[0], ('dumpxml', '--inactive', '--security-info', 'D'))
+        defined = Path(calls[-1][1])
+        self.assertEqual(calls[-1][0], 'define')
+        self.assertIn("passwd='secret12'", defined.read_text())
+        self.assertIn("<source file='%s'" % (d / 'new.qcow2'), defined.read_text())
+        for saved in inst.dir.glob('domain-*.xml'):
+            self.assertEqual(saved.stat().st_mode & 0o777, 0o600, saved.name)
+
 
 if __name__ == '__main__':
     unittest.main()

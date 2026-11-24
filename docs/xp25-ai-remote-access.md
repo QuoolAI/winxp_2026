@@ -1,5 +1,10 @@
 # XP25-AI remote access through Guacamole (2026-10-26)
 
+> **Superseded on 2026-11-24.** The XP25-AI VM no longer exists. The same MEA desktop (connection 11, renamed
+> "XP25") and the same relay and tunnel now lead to a fresh, disposable XP25 VM for every connection. See
+> [mea-xp25-desktops.md](mea-xp25-desktops.md). The relay, tunnel and security design below still applies. The
+> statements about one shared VM, its offline network and reconnecting into the same session do not.
+
 **Result:** the rebuilt XP25-AI VM is reachable from a browser through the
 existing Mise En Abyme (MEA) Guacamole deployment, by any verified Newbie user,
 one at a time. A live end-to-end test signed in through the public site,

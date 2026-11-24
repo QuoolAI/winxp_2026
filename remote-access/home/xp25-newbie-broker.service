@@ -1,0 +1,18 @@
+# systemd --user unit: a fresh XP25 VM for every MEA Newbie connection (see xp25_newbie_broker.py).
+# Install: copy to ~/.config/systemd/user/, set the paths, systemctl --user enable --now xp25-newbie-broker.
+# The user must be in the libvirt group (qemu:///system). Like the tunnel, it runs with the user's session.
+[Unit]
+Description=XP25 Newbie broker (a disposable XP25 VM per Mise En Abyme connection on 127.0.0.1:5925)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /mnt/01962c02-074f-47e7-8ee3-699a169f4905/winxp_2026/remote-access/home/xp25_newbie_broker.py --config %h/.config/xp25/newbie-broker.json
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=90
+UMask=0077
+
+[Install]
+WantedBy=default.target

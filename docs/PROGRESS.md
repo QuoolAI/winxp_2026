@@ -2,6 +2,25 @@
 
 ## Current checkpoint
 
+2026-11-24, one XP25 VM, disposable Newbie desktops in Mise En Abyme, cleanup.
+* **FltMgr update applied.** The user applied it on XP25-Winlogon-Fix through MerlinAI (`apply_healthy` 17:14:18Z).
+* **VMs.** XP25-Winlogon-Fix is the only XP25 virt-manager VM. `XP25-AI`, `XP25-MerlinAI-Demo` and
+  `XP25-Security-8.1` were removed with their disks. 279 old disk layers and test-run disks were deleted, including
+  those of 107 failed runs, whose logs are kept. The data disk went from 97% to 51%.
+* **Newbie desktops.** MEA's Newbie desktop, renamed "XP25", now starts a fresh VM per connection: a frozen
+  template made from image-04 plus the FltMgr update, with its own MerlinAI installation and no administrator data.
+  A loopback broker behind the unchanged relay tunnel starts and destroys these VMs. Observed on this host:
+  automatic logon, an HTTPS page loading in Supermium, MerlinAI reaching the builder as `xp25-newbie`, cleanup on
+  disconnect, and VNC authentication through the relay. A browser session by a real Newbie account was not
+  observed.
+* **Deployment agent.** It kept no VNC password when redefining a domain; fixed. It and the relay now run from
+  `winxp_2026`.
+* **Pending.** The admin-only XP25-Winlogon-Fix desktop needs relay port 5902, which auto mode would not change on
+  the production relay. Three template runs failed and are kept.
+* **Process.** How the engineering loop and MerlinAI fit together: [development-with-merlinai.md](development-with-merlinai.md).
+
+[Record](mea-xp25-desktops.md).
+
 2026-11-24, MerlinAI repairs XP25 itself, steps 1 and 2: the builder no longer rebuilds only MerlinAI.
 * **Recipes.** It now builds MerlinAI, the XP25 Winlogon, AI and security components, and the kernel from
   Microsoft's reference source.

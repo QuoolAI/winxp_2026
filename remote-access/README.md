@@ -1,25 +1,29 @@
-# XP25-AI remote access through Guacamole
+# XP25 remote access through Guacamole
 
-Operational scripts that make the home-hosted **XP25-AI** VM usable from a
-browser through the existing Mise En Abyme (MEA) Guacamole deployment. Any
-verified Newbie user can borrow it there, one user at a time. The milestone
-record, with results and evidence, is
-[docs/xp25-ai-remote-access.md](../docs/xp25-ai-remote-access.md).
+Operational scripts that make home-hosted XP25 usable from a browser through
+the existing Mise En Abyme (MEA) Guacamole deployment. Since 2026-11-24, any
+verified Newbie user who connects to the **XP25** desktop gets a fresh,
+disposable XP25 VM for that connection, one user at a time. The VM has Internet
+access through the browser gateway and MerlinAI, and is destroyed on disconnect.
+Records:
+* [docs/mea-xp25-desktops.md](../docs/mea-xp25-desktops.md): the disposable VMs, the template and the broker.
+* [docs/xp25-ai-remote-access.md](../docs/xp25-ai-remote-access.md): the relay and tunnel, built for the former
+  XP25-AI VM.
 
 ```text
 Browser (anywhere) --HTTPS + MEA sign-in--> MEA (CloudFront / ALB)
   --> Guacamole + guacd (ECS Fargate)
   --> relay EC2, private address:5900   (security group: Guacamole task only)
   <== SSH reverse tunnel, carried over AWS SSM Session Manager (outbound only)
-  --> home KVM host: QEMU VNC on 127.0.0.1 (password)
-  --> XP25-AI (one filtered NIC: DHCP/DNS/ICMP and the XP25 gateway port on the host)
+  --> home KVM host: 127.0.0.1:5925, xp25-newbie-broker
+  --> a new XP25-Newbie VM per connection (overlay of the frozen Newbie template; QEMU VNC on
+      127.0.0.1 with the same password; filter xp25-browser-merlin: browser gateway, MerlinAI relay)
 ```
 
-There is no port forwarding on the home router and no public VNC, RDP, SSH or
-guacd port, and no VPN client. Since 2026-11-11 the guest has one network
-adapter. Its libvirt filter, `xp25-gateway-only`, lets it reach only the host's
-DHCP and DNS, ICMP, and the XP25 gateway port. See
-[docs/xp25-ai-gateway.md](../docs/xp25-ai-gateway.md).
+There is no port forwarding on the home router, no public VNC, RDP, SSH or
+guacd port, and no VPN client. Nothing a Newbie does in one VM reaches the next
+connection. The administrator-only XP25-Winlogon-Fix desktop uses relay port
+5902 and its own key; it is pending, see the record.
 
 ## Files
 
@@ -31,14 +35,19 @@ DHCP and DNS, ICMP, and the XP25 gateway port. See
 | `home/xp25-ssm-proxy` | home host | SSH `ProxyCommand`: a signed `ssm:StartSession` (`AWS-StartSSHSession`) with only the Python standard library, handed to the Session Manager plugin. |
 | `home/xp25-tunnel-health` | home host | Logs whether the local VNC console answers before each tunnel attempt. |
 | `home/xp25-tunnel.service` | home host | systemd unit: starts after the network, restarts forever every 15 s, runs as the unprivileged account with a read-only system and no capabilities. |
+| `newbie_template.py` | home host | Builds the frozen Newbie template from image-04 and an applied MerlinAI update. The template has its own MerlinAI installation, no Supermium profile and automatic logon; it is checked offline and by a verification boot. |
+| `home/xp25_newbie_broker.py` | home host, as the libvirt user | On 127.0.0.1:5925: for every connection, a new overlay and the transient domain `XP25-Newbie`. VNC is relayed to that VM, which is destroyed with its overlay on disconnect. |
+| `home/xp25-newbie-broker.service` | home host | systemd `--user` unit for the broker; configuration in `~/.config/xp25/newbie-broker.json`. |
 
 No private key, access key or VNC password is stored in this repository.
 
 ## Setup
 
-1. **VM.** XP25-AI's VNC console listens on a fixed loopback port with a
-   password, the VM has a USB tablet for absolute pointing, and its network
-   adapter is removed (see `docs/virt-manager-xp25-ai.md`).
+1. **VM.** Since 2026-11-24 the broker supplies the VM on 127.0.0.1:5925. Build
+   the template, write the broker configuration and enable its unit; see
+   [docs/mea-xp25-desktops.md](../docs/mea-xp25-desktops.md). (Before that date,
+   XP25-AI's own VNC console listened there with a password, a USB tablet and
+   no network adapter; see `docs/virt-manager-xp25-ai.md`.)
 2. **Relay.** Generate the tunnel key outside the repository
    (`ssh-keygen -t ed25519 -N '' -f KEYFILE`), then run:
 

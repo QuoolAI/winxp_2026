@@ -16,12 +16,21 @@ git-ignored `.work/`. On 2026-11-22 the worktrees were consolidated:
 * `xp25-merlin` remains a worktree: the MerlinAI relay and deployment agent
   run its code, and the builder and demonstration VMs use its `.work/`.
 
+On 2026-11-24 every guest disk was deleted, except XP25-Winlogon-Fix's chain, the MerlinAI-Builder VM's disks,
+image-04 and the reference build VMs with their chains. Test-run disks went too, including failed runs, whose logs
+are kept. The domains `XP25-AI`, `XP25-MerlinAI-Demo` and `XP25-Security-8.1` were removed. A record's evidence
+below therefore has its logs, screenshots and results, but usually no disk. The deleted files are listed in
+`winxp_2026/.work/cleanup-20261124/deleted-disks.json`, and
+[mea-xp25-desktops.md](mea-xp25-desktops.md) has the details. The relay and the deployment agent now run from
+`winxp_2026`, but the agent's configuration and state stay in
+`xp25-merlin/.work/merlin-demo-vm-20261121/host/`.
+
 A record's `.work/<topic>` path therefore resolves under one of these
 directories, all in `/mnt/01962c02-074f-47e7-8ee3-699a169f4905/`:
 
 | Directory | Milestone `.work/` topics (originals) |
 | --- | --- |
-| `winxp_2026/` (main checkout) | Milestones 1–6, native desktop, Winlogon (`winlogon-*-202610*`), branding, OneCore, toolchains, `xp-sp3-install-20261018`, `boot-debug-20261022` (also MerlinAI native builds 11 and 12), MerlinAI `merlin-dialog-ready-20261122`, `merlin-foreground-20261123`, `merlin-os-20261124` (whole-OS recipes, FltMgr) |
+| `winxp_2026/` (main checkout) | Milestones 1–6, native desktop, Winlogon (`winlogon-*-202610*`), branding, OneCore, toolchains, `xp-sp3-install-20261018`, `boot-debug-20261022` (also MerlinAI native builds 11 and 12), MerlinAI `merlin-dialog-ready-20261122`, `merlin-foreground-20261123`, `merlin-os-20261124` (whole-OS recipes, FltMgr), `mea-newbie-20261124` (Newbie template runs 01–04, broker tests), `cleanup-20261124` (deleted disks, removed domain definitions) |
 | `xp25-ai/` | AI components and the XP25-AI VM: `ai-20261025`, `virt-manager-XP25-AI-*`, `vm-*-20261025/26`, `oem-*`, `guacamole-remote-20261026`, `xp25-ai-gateway-20261111` |
 | `xp25-security/` | Milestones 8 and 8.1: `security-20261111`, `security81-20261112`, `virt-manager-XP25-Security-81-20261112` |
 | `xp25-cve/` | Milestone 8.2: `cve82-20261112` |

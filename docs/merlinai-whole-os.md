@@ -161,6 +161,10 @@ baseline's recorded commit, as before.
     the new provenance record yet (the native client predates it).
   - **Not applied.** Applying replaces your kernel and is your decision. The VM was turned off normally
     afterwards (disk `2a2b0bb2…`).
+  - **Applied later that day by the user** in the VM (MerlinAI → Previous Builds → Review Build → Apply Update).
+    The agent wrote both files into a new layer (`apply_written`). The VM reported revision
+    `…+J-20261124-103813-56bc78` 15 s after start (`apply_healthy`, 17:14:18Z). See
+    [mea-xp25-desktops.md](mea-xp25-desktops.md).
 
 ## Defects found on the way (failures kept)
 
@@ -190,7 +194,8 @@ baseline's recorded commit, as before.
   driver reasoning is only as good as the model's.
 * The VM's Review Build does not show the provenance record (control build, exports added); the builder's
   job record has it. Showing it needs a MerlinAI client update.
-* The FltMgr update is built and tested, but not applied to the XP25-Winlogon-Fix VM.
+* The FltMgr update was applied to the XP25-Winlogon-Fix VM by the user on 2026-11-24. Its export is not yet in
+  the repository's kernel export list ([development-with-merlinai.md](development-with-merlinai.md)).
 
 ## Reproduction
 

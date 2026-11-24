@@ -6,6 +6,19 @@ authentication, Explorer/Luna, file/application checks and normal shutdown.
 stability evidence exists; it is not a prediction of compatibility. Guest runtime
 and hardware support must cite an image hash, exact version, environment and logs.
 
+## Disposable Newbie desktops for Mise En Abyme, 2026-11-24
+
+| Test | Recorded result |
+| --- | --- |
+| FltMgr update `J-20261124-103813-56bc78` applied by the user on XP25-Winlogon-Fix (deployment agent) | `apply_written`, then `apply_healthy` (health report 15 s after start); revision `…+J-20261124-103813-56bc78` |
+| Newbie template `9412c7c5…e274` (image-04 + the same update + setup), lab boot, KVM 1 vCPU, no NIC | Offline checks pass; automatic logon to the desktop in 18 s with no key sent. The lab hardware profile showed a Found New Hardware wizard (not seen under libvirt). Runs 01–03 **failed** (logon cue, `%APPDATA%` unset in an XP25 Winlogon session, `if exist` with `\nul`) |
+| `XP25-Newbie` under libvirt (KVM, 1 vCPU, 1 GiB, RTL8139, USB tablet), via the broker | Desktop by automatic logon, 640×480; DHCP 10.25.0.27 within 24 s; `https://example.com` loaded in Supermium through the browser gateway; MerlinAI → builder through the relay as `xp25-newbie` (challenge, jobs: 200); VM destroyed and overlay deleted on disconnect; a second connection replaces the first |
+| Whole relay route (SSM port forward to relay :5900 → tunnel → broker) | RFB 3.8, VNC authentication passed, `QEMU (XP25-Newbie)` |
+| MEA browser sign-in and Guacamole session by a real Newbie account | Not tested |
+| Admin-only `xp25-winlogon-fix` desktop (relay :5902) | Not set up: the production relay change is pending |
+
+[Record](mea-xp25-desktops.md).
+
 ## MerlinAI repairs XP25 components, 2026-11-24
 
 | Test | Recorded result |
