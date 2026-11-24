@@ -104,7 +104,10 @@ done
 for d in toolchains reference; do
   if [ -d $S/incoming/$d ]; then cp -a $S/incoming/$d/. $S/$d/; fi
 done
-chown -R root:root $S/toolchains $S/reference
+# The NT reference tree is a read-only image mounted at $S/reference/nt (builder_vm.py reference-source); it is
+# already root-owned and cannot be changed, so it is left out.
+chown -R root:root $S/toolchains
+for f in $S/reference/*; do [ "$f" = "$S/reference/nt" ] || chown -R root:root "$f"; done
 
 install -d -m 0755 /etc/merlin-builder
 cat > /etc/merlin-builder/config.json <<CONFIG

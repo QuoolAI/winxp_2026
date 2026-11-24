@@ -26,8 +26,9 @@
       typed without echo; never printed or stored on the host), points the builder's
       configuration at it, restarts the services and checks the key against the provider.
   builder_vm.py reference-source --dir DIR --source Source/XPSP1/NT
-      copies Microsoft's NT reference tree into the builder (/srv/merlin/reference/nt, read-only,
-      checked by a digest of every file on both sides) for investigations and NT recipes
+      copies Microsoft's NT reference tree into the builder as a read-only squashfs image mounted at
+      /srv/merlin/reference/nt (checked by a digest of every file on both sides, on the mounted image)
+      for investigations and NT recipes; --reuse-installed converts a tree already there
   builder_vm.py ssh --dir DIR -- COMMAND...
 
 Nothing here depends on the builder running on this host except the read-only
@@ -440,34 +441,67 @@ print(len(lines), hashlib.sha256(('\n'.join(lines) + '\n').encode()).hexdigest()
 """
 
 
+SQUASH_INSTALL = r"""set -e
+R=/srv/merlin/reference
+cd $R
+# The tree becomes a compressed, read-only image mounted at nt (fstab): a fraction of the space, unwritable by design.
+if mountpoint -q nt; then umount nt; fi
+if [ -d nt ] && [ "$(ls -A nt)" ]; then chmod -R u+w nt; rm -rf nt; fi
+mkdir -p nt
+mv nt.sqfs.new nt.sqfs
+grep -v ' /srv/merlin/reference/nt ' /etc/fstab > /etc/fstab.new || true
+echo '/srv/merlin/reference/nt.sqfs /srv/merlin/reference/nt squashfs ro,loop,nodev,nosuid,noexec 0 0' >> /etc/fstab.new
+mv /etc/fstab.new /etc/fstab
+mount /srv/merlin/reference/nt
+rm -rf nt.new
+fstrim /srv/merlin || true
+python3 -c "import json; p='/etc/merlin-builder/config.json'; c=json.load(open(p)); c['reference_source']='/srv/merlin/reference/nt'; open(p,'w').write(json.dumps(c, indent=1)+chr(10))"
+systemctl restart merlin-builder-api.service merlin-builder-runner.service
+"""
+
+
 def reference_source(args):
-    """Copy Microsoft's NT reference tree into the builder, read-only, as /srv/merlin/reference/nt. Investigations
-    read it (as effective source) and NT recipes take their reference files from it; nothing writes it."""
+    """Copy Microsoft's NT reference tree into the builder as a read-only squashfs image mounted at
+    /srv/merlin/reference/nt. Investigations read it (as effective source) and NT recipes take their reference
+    files from it; nothing can write it. The tree is checked by a digest of every file on both sides, on the
+    mounted image, before anything already installed is replaced. --reuse-installed converts a tree already
+    on the builder (it must have the same digest) instead of copying it again."""
     d = args.dir.resolve()
     record = json.loads((d / 'builder-vm.json').read_text())
     base = ssh_base(d, record['ip'])
     source = args.source.resolve()
     local = run([sys.executable, '-c', TREE_DIGEST, str(source)]).stdout.split()
-    tar = subprocess.Popen(['tar', '-C', str(source), '-c', '.'], stdout=subprocess.PIPE)
-    r = subprocess.run(base + ['sudo rm -rf /srv/merlin/reference/nt.new && sudo mkdir -p /srv/merlin/reference/nt.new && '
-                               'sudo tar -x --no-same-owner --no-same-permissions -C /srv/merlin/reference/nt.new'],
-                       stdin=tar.stdout, capture_output=True, text=True)
-    tar.stdout.close()
-    if tar.wait() or r.returncode:
-        raise SystemExit('copy failed: ' + r.stderr[-500:])
-    remote = run(base + ['python3 - /srv/merlin/reference/nt.new'], input=TREE_DIGEST).stdout.split()
-    if remote != local:
-        raise SystemExit('the copy differs from the source tree: %s != %s' % (remote, local))
-    script = ('set -e; cd /srv/merlin/reference; rm -rf nt.old; if [ -d nt ]; then chmod -R u+w nt; mv nt nt.old; fi; mv nt.new nt; '
-              'rm -rf nt.old; chown -R root:root nt; chmod -R a-w,a+rX nt; '
-              'python3 -c "import json; p=\'/etc/merlin-builder/config.json\'; c=json.load(open(p)); '
-              'c[\'reference_source\']=\'/srv/merlin/reference/nt\'; open(p,\'w\').write(json.dumps(c, indent=1)+chr(10))"; '
-              'systemctl restart merlin-builder-api.service merlin-builder-runner.service')
-    r = subprocess.run(base + ['sudo bash -c ' + shlex.quote(script)], capture_output=True, text=True)
+    if args.reuse_installed:
+        tree = '/srv/merlin/reference/nt'
+    else:
+        tree = '/srv/merlin/reference/nt.new'
+        tar = subprocess.Popen(['tar', '-C', str(source), '-c', '.'], stdout=subprocess.PIPE)
+        r = subprocess.run(base + ['sudo rm -rf /srv/merlin/reference/nt.new && sudo mkdir -p /srv/merlin/reference/nt.new && '
+                                   'sudo tar -x --no-same-owner --no-same-permissions -C /srv/merlin/reference/nt.new'],
+                           stdin=tar.stdout, capture_output=True, text=True)
+        tar.stdout.close()
+        if tar.wait() or r.returncode:
+            raise SystemExit('copy failed: ' + r.stderr[-500:])
+    r = subprocess.run(base + ['sudo bash -c ' + shlex.quote(
+        'set -e; cd /srv/merlin/reference; rm -f nt.sqfs.new; '
+        'mksquashfs %s nt.sqfs.new -comp xz -noappend -all-root -no-progress -quiet; '
+        'mkdir -p nt.check; mount -o ro,loop nt.sqfs.new nt.check' % tree)], capture_output=True, text=True)
     if r.returncode:
-        raise SystemExit('installing the reference tree failed: ' + r.stderr[-500:])
-    record['reference_source'] = {'path': '/srv/merlin/reference/nt', 'files': int(local[0]), 'tree_sha256': local[1],
-                                  'from': str(source), 'installed': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        raise SystemExit('making the image failed: ' + r.stderr[-500:])
+    try:
+        remote = run(base + ['python3 - /srv/merlin/reference/nt.check'], input=TREE_DIGEST).stdout.split()
+    finally:
+        subprocess.run(base + ['sudo umount /srv/merlin/reference/nt.check && sudo rmdir /srv/merlin/reference/nt.check'],
+                       capture_output=True)
+    if remote != local:
+        raise SystemExit('the image differs from the source tree: %s != %s' % (remote, local))
+    r = subprocess.run(base + ['sudo bash -c ' + shlex.quote(SQUASH_INSTALL)], capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit('installing the reference image failed: ' + r.stderr[-500:])
+    size = run(base + ['stat -c %s /srv/merlin/reference/nt.sqfs']).stdout.strip()
+    record['reference_source'] = {'path': '/srv/merlin/reference/nt', 'image': '/srv/merlin/reference/nt.sqfs', 'image_bytes': int(size),
+                                  'files': int(local[0]), 'tree_sha256': local[1], 'from': str(source),
+                                  'installed': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
     (d / 'builder-vm.json').write_text(json.dumps(record, indent=1) + '\n')
     print(json.dumps(record['reference_source']))
 
@@ -525,6 +559,7 @@ def main():
     p = sub.add_parser('reference-source')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('--source', type=Path, required=True, help='Source/XPSP1/NT of this repository')
+    p.add_argument('--reuse-installed', action='store_true', help='convert the tree already on the builder (same digest) into the image')
     p = sub.add_parser('ssh')
     p.add_argument('--dir', type=Path, required=True)
     p.add_argument('command', nargs=argparse.REMAINDER)
