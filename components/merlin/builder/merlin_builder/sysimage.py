@@ -97,6 +97,23 @@ class SystemImage:
             return '/WINDOWS/system32/' + self.boot()['hal']
         return self.find(dll) if NAME.match(dll) else None
 
+    def importers_by_ordinal(self, names):
+        """Installed executables that import any of names (DLL names, lower case) by ordinal: {guest path: [dll#n]}."""
+        out = {}
+        with self.open():
+            for directory in SEARCH:
+                for low, real in sorted(self.listing(directory).items()):
+                    if not low.endswith(('.dll', '.exe', '.sys', '.cpl', '.drv', '.ocx')):
+                        continue
+                    try:
+                        imports = pe.PE(self.read(directory + '/' + real)).imports()
+                    except (pe.PEError, RuntimeError):
+                        continue
+                    hits = ['%s!%s' % (dll, n) for dll in names for n in imports.get(dll, []) if n.startswith('#')]
+                    if hits:
+                        out[directory + '/' + real] = hits
+        return out
+
     def describe(self, name, table=None):
         """Version, hash, provenance and import resolution of an installed binary."""
         with self.open():

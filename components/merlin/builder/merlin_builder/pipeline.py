@@ -315,6 +315,17 @@ class Job:
                                       code_differences=change['differences'])
                         if before - after:
                             raise StepFailed('the candidate %s drops exports: %s' % (info['target'], ', '.join(sorted(before - after))))
+                        old, new = pe.PE(control).export_ordinal_map(), pe.PE(candidate).export_ordinal_map()
+                        moved = sorted(n for n in old if new.get(n) != old[n])
+                        record['export_ordinals_changed'] = len(moved)
+                        if moved:
+                            # Only harmless when nothing installed imports this binary by ordinal.
+                            aliases = ['ntoskrnl.exe', 'ntkrnlpa.exe', 'ntkrnlmp.exe'] if kind == 'nt' else [info['target'].lower()]
+                            users = system.importers_by_ordinal(aliases)
+                            if users:
+                                raise StepFailed('the candidate %s moves %d export ordinals, and installed files import it by ordinal: %s'
+                                                 % (info['target'], len(moved), ', '.join(sorted(users))[:300]))
+                            record['ordinal_importers_on_installed_system'] = 0
                     else:
                         record['provenance'] = table['recipes'][recipe].get('provenance', 'not established by a control build')
                     if variant:

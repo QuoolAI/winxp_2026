@@ -493,6 +493,19 @@ class ProvenanceTests(unittest.TestCase):
         with self.assertRaises(pipeline.StepFailed):
             job.provenance(collections, groups)
 
+    def test_moved_ordinals_are_refused_when_something_imports_by_ordinal(self):
+        installed = make_pe(exports=['A', 'C'])
+        candidate = make_pe(exports=['A', 'B', 'C'])             # C moves from ordinal 2 to 3
+        user = make_pe(imports={'winlogon.exe': ['#2']})
+        job, collections, groups = self.xp25_job(installed, installed, candidate,
+                                                 {'/WINDOWS/system32/user.dll': user})
+        with self.assertRaises(pipeline.StepFailed) as raised:
+            job.provenance(collections, groups)
+        self.assertIn('/WINDOWS/system32/user.dll', str(raised.exception))
+        job, collections, groups = self.xp25_job(installed, installed, candidate)
+        rebuilt, _ = job.provenance(collections, groups)
+        self.assertEqual(rebuilt['winlogon.exe'][1]['export_ordinals_changed'], 1)
+
     def test_refuses_imports_the_installed_system_lacks(self):
         new = make_pe(imports={'kernel32.dll': ['GetTickCount', 'GetTickCount64']})
         old = make_pe(imports={'kernel32.dll': ['GetTickCount']})

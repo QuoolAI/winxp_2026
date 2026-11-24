@@ -89,6 +89,18 @@ class PE:
                 out['#%d' % (base + index)] = self.u32(self.offset(address_table) + 4 * index)
         return out
 
+    def export_ordinal_map(self):
+        """{name: ordinal} of the named exports."""
+        rva, _ = self.directory(DIR_EXPORT)
+        if not rva:
+            return {}
+        d = self.offset(rva)
+        base, functions, names, _, name_table, ordinal_table = struct.unpack_from('<IIIIII', self.data, d + 16)
+        if functions > 65536 or names > functions:
+            raise PEError('implausible export table')
+        return {self.string(self.u32(self.offset(name_table) + 4 * i)): base + self.u16(self.offset(ordinal_table) + 2 * i)
+                for i in range(names)}
+
     def export_ordinals(self):
         """'#<ordinal>' for every exported function (an import by ordinal resolves against these)."""
         rva, _ = self.directory(DIR_EXPORT)
