@@ -15,8 +15,9 @@
   observed.
 * **Deployment agent.** It kept no VNC password when redefining a domain; fixed. It and the relay now run from
   `winxp_2026`.
-* **Pending.** The admin-only XP25-Winlogon-Fix desktop needs relay port 5902, which auto mode would not change on
-  the production relay. Three template runs failed and are kept.
+* **Admin-only desktop.** XP25-Winlogon-Fix is an admin-only MEA desktop (connection 54) through relay port 5902,
+  using its own key, after the user approved the relay change. A VNC login through the relay passed before it was
+  enabled. Three template runs failed and are kept.
 * **Process.** How the engineering loop and MerlinAI fit together: [development-with-merlinai.md](development-with-merlinai.md).
 
 [Record](mea-xp25-desktops.md).

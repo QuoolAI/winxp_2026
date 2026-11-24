@@ -15,7 +15,7 @@ and hardware support must cite an image hash, exact version, environment and log
 | `XP25-Newbie` under libvirt (KVM, 1 vCPU, 1 GiB, RTL8139, USB tablet), via the broker | Desktop by automatic logon, 640×480; DHCP 10.25.0.27 within 24 s; `https://example.com` loaded in Supermium through the browser gateway; MerlinAI → builder through the relay as `xp25-newbie` (challenge, jobs: 200); VM destroyed and overlay deleted on disconnect; a second connection replaces the first |
 | Whole relay route (SSM port forward to relay :5900 → tunnel → broker) | RFB 3.8, VNC authentication passed, `QEMU (XP25-Newbie)` |
 | MEA browser sign-in and Guacamole session by a real Newbie account | Not tested |
-| Admin-only `xp25-winlogon-fix` desktop (relay :5902) | Not set up: the production relay change is pending |
+| Admin-only `xp25-winlogon-fix` desktop (connection 54, relay :5902 → XP25-Winlogon-Fix :5926) | VNC authentication through the whole route passed, `QEMU (XP25-Winlogon-Fix)` 800×600; registered disabled, then enabled. Browser session through MEA not observed |
 
 [Record](mea-xp25-desktops.md).
 

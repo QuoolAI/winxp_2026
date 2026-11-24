@@ -2,8 +2,8 @@
 
 On 2026-11-24 the host was reduced to one XP25 virt-manager VM, XP25-Winlogon-Fix. Mise En Abyme (MEA) changed
 in two ways. Newbie users no longer share a VM: each connection now gets a fresh, disposable XP25 VM with Internet
-access and MerlinAI. XP25-Winlogon-Fix becomes an administrator-only MEA desktop. That last step is prepared,
-but not done; see [Pending](#pending-the-admin-only-desktop).
+access and MerlinAI. XP25-Winlogon-Fix is an administrator-only MEA desktop
+([below](#the-admin-only-desktop)).
 
 ## Cleanup
 
@@ -125,27 +125,38 @@ the user interface.
   can start MerlinAI builds, which spend the builder's gpt-4.1 key. Both were requested.
 * **Host session:** the services run with the Linux user's session (`Linger=no`), like the existing tunnels.
 
-## Pending: the admin-only desktop
+## The admin-only desktop
 
 The design uses MEA's existing private-desktop support (`adminOnly`, `adminUser`) and needs no MEA code change:
 
-* kind `xp25-winlogon-fix`, name `XP25-Winlogon-Fix`, for your MEA administrator account only;
+* kind `xp25-winlogon-fix`, name `XP25-Winlogon-Fix`, Guacamole connection 54, for your MEA administrator account
+  only;
 * relay port 10.84.0.118:5902, carried by its own restricted SSH key and its own unit `mea-xp25-admin-tunnel`
   (the Linux hypervisor's tunnel is not restarted);
 * destination: XP25-Winlogon-Fix's console on 127.0.0.1:5926.
 
-Claude Code's auto mode refused to change the production relay: the sshd `PermitListen` setting, a new
-`authorized_keys` line and a security-group rule for 5902 from the Guacamole task's group. So the user runs these
-steps:
+Claude Code's auto mode at first refused to change the production relay. With the user's approval the change was
+then made by `/home/artemd/mea-xp25-20261124/relay_admin_xp25.py`:
 
-1. `python3 /home/artemd/mea-xp25-20261124/relay_admin_xp25.py` (backups, `sshd -t`, reload keeps sessions, revert on failure)
-2. `systemctl --user enable --now mea-xp25-admin-tunnel`
-3. Start XP25-Winlogon-Fix.
-4. `cd /home/artemd/mea-xp25-20261124 && python3 register_mea.py admin` (registers disabled, authenticates VNC
-   through relay port 5902, then enables)
+* **Relay sshd:** backups first, then `sshd -t`, then a reload that keeps existing sessions. `PermitListen` now has
+  `10.84.0.118:5900 10.84.0.118:5901 10.84.0.118:5902`. The new key's `authorized_keys` line is
+  `restrict,port-forwarding,permitlisten="10.84.0.118:5902"`.
+* **Security group** `sg-0d36f7cf397ed568a`: TCP 5902 from the Guacamole task's group `sg-0d57fd0af15df0be0` only.
+  The 5900 and 5901 rules are unchanged.
+* **Home:** `mea-xp25-admin-tunnel` was enabled. It authenticated to the relay and holds 5902, with no restarts.
+  With `ExitOnForwardFailure`, a refused forward would have ended it.
+* **XP25-Winlogon-Fix** was started.
+* **Registration** (`register_mea.py admin`): first disabled (connection 54). A VNC login through the whole route
+  then passed: SSM port forward to relay 5902, the tunnel, the VM's console, RFB 3.8, `QEMU (XP25-Winlogon-Fix)`,
+  800×600. Then enabled.
 
-Until then the administrator reaches XP25-Winlogon-Fix through the existing admin-only Linux hypervisor desktop
-(virt-manager).
+The admin-only policy comes from the registration. The control function stores it only after resolving the named
+account as a verified, active administrator, and the Guacamole guard and the API enforce it as for the Linux
+hypervisor desktop. It was not audited separately: there is no read-only listing action, and no audit function was
+deployed. A browser session through MEA was not observed.
+
+The card works while XP25-Winlogon-Fix is running and the Linux user's session is up (`Linger=no`). The VM does not
+start automatically.
 
 ## Reproduction
 

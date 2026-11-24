@@ -22,8 +22,8 @@ Browser (anywhere) --HTTPS + MEA sign-in--> MEA (CloudFront / ALB)
 
 There is no port forwarding on the home router, no public VNC, RDP, SSH or
 guacd port, and no VPN client. Nothing a Newbie does in one VM reaches the next
-connection. The administrator-only XP25-Winlogon-Fix desktop uses relay port
-5902 and its own key; it is pending, see the record.
+connection. The administrator-only XP25-Winlogon-Fix desktop (connection 54) uses relay
+port 5902, its own restricted key and the user unit `mea-xp25-admin-tunnel`.
 
 ## Files
 
